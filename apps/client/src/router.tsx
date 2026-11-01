@@ -8,12 +8,14 @@ import { sessionQuery } from './auth/session.ts';
 import { SignInPage } from './auth/sign-in-page.tsx';
 import { VerifyLinkPage } from './auth/verify-link-page.tsx';
 import { ConversationPage } from './chat/conversation-page.tsx';
+import { conversationsQuery } from './chat/conversations-query.ts';
 import { NewChatPage } from './chat/new-chat-page.tsx';
 import { FilesPage } from './files/files-page.tsx';
 import { queryClient } from './lib/query-client.ts';
 import { MemoryPage } from './memory/memory-page.tsx';
 import { RootError } from './root-error.tsx';
 import { AppLayout } from './shell/app-layout.tsx';
+import { loadIcons } from './shell/conversation-icon.tsx';
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,
@@ -45,6 +47,12 @@ const appRoute = createRoute({
     if (!user) throw redirect({ to: '/sign-in' });
     return { user };
   },
+  // Behind the loading screen, once: the sidebar's icons, so they do not pop in. A failing list shows in the sidebar.
+  loader: async ({ context }) => {
+    const conversations = await context.queryClient.ensureQueryData(conversationsQuery).catch(() => []);
+    await loadIcons(conversations.flatMap((conversation) => conversation.icon ?? []));
+  },
+  staleTime: Infinity,
   component: AppLayout,
 });
 

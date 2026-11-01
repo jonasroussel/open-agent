@@ -12,7 +12,47 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Open Agent" />
     <title>Open Agent</title>
-    <!-- Before the first paint, so a dark theme never flashes white. Kept in sync with `src/theme/theme.ts`. -->
+    <!--
+      Before the first paint, so a dark theme never flashes white. Kept in sync with `src/theme/theme.ts` and the
+      `--background` colors of `src/index.css`, which loads later.
+    -->
+    <style>
+      html {
+        background: oklch(1 0 0);
+      }
+      html.dark {
+        background: oklch(0.205 0.005 260);
+        color-scheme: dark;
+      }
+      /* The loading screen, replaced by the app once `src/main.tsx` has the font and the first page ready. Shown
+         after a short delay, so a fast load does not flash it. */
+      .loading-screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        animation: loading-screen-in 0.3s ease-out 0.2s both;
+      }
+      .loading-screen img {
+        animation: loading-screen-pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes loading-screen-in {
+        from {
+          opacity: 0;
+        }
+      }
+      @keyframes loading-screen-pulse {
+        50% {
+          opacity: 0.55;
+          transform: scale(0.94);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .loading-screen img {
+          animation: none;
+        }
+      }
+    </style>
     <script>
       {
         const theme = localStorage.getItem('theme');
@@ -22,7 +62,11 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="loading-screen" role="status" aria-label="Open Agent">
+        <img src="/icon.svg" alt="" width="64" height="64" />
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

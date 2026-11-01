@@ -1,19 +1,42 @@
-import { MessageSquare } from 'lucide-react';
-import { lazy, Suspense } from 'react';
+import { MessageSquare, type LucideIcon } from 'lucide-react';
+import { createElement, useEffect, useSyncExternalStore, type ReactElement } from 'react';
 
-const LucideIcon = lazy(() => import('./lucide-icon.tsx'));
-
-const defaultIcon = () => <MessageSquare />;
+/** Loaded icons by name; `null`: a name Lucide does not have. */
+const icons: Partial<Record<string, ReactElement | null>> = {};
+const listeners = new Set<() => void>();
 
 /**
- * The icon the model chose with the title. Each icon is its own small file, loaded the first time it shows; the
- * default one stands in while it loads, and for a name Lucide does not have.
+ * Loads the icons the model chose with the titles. Each is its own small file; the map of Lucide's 2,000+ files is
+ * itself too big for the first screen, hence the lazy import. A file that fails to load is tried again next time.
+ */
+export async function loadIcons(names: readonly string[]): Promise<void> {
+  const missing = names.filter((name) => !(name in icons));
+  if (missing.length === 0) return;
+  const { default: imports } = await import('lucide-react/dynamicIconImports');
+  await Promise.allSettled(
+    missing.map(async (name) => {
+      const load = imports[name as keyof typeof imports] as (() => Promise<{ default: LucideIcon }>) | undefined;
+      icons[name] = load ? createElement((await load()).default) : null;
+    }),
+  );
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/**
+ * The icon of a conversation, drawn at once when `loadIcons` already has it (the loading screen waits for those of
+ * the list); otherwise the default one stands in until it loads, and for a name Lucide does not have.
  */
 export function ConversationIcon({ name }: { name: string | null }) {
-  if (!name) return defaultIcon();
-  return (
-    <Suspense fallback={defaultIcon()}>
-      <LucideIcon name={name} fallback={defaultIcon} />
-    </Suspense>
-  );
+  const icon = useSyncExternalStore(subscribe, () => (name ? icons[name] : null));
+
+  useEffect(() => {
+    if (name) void loadIcons([name]);
+  }, [name]);
+
+  return icon ?? <MessageSquare />;
 }
