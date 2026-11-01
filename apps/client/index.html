@@ -6,8 +6,8 @@
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <!-- Installable on the home screen (PWA). No service worker: every answer needs the network anyway. -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#f5f7f9" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0f1112" media="(prefers-color-scheme: dark)" />
+    <!-- Set by the theme script below and `src/theme/theme.ts`: it follows the app's theme, not only the device's. -->
+    <meta name="theme-color" content="#f5f7f9" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Open Agent" />
@@ -58,6 +58,7 @@
         const theme = localStorage.getItem('theme');
         const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#0f1112' : '#f5f7f9';
       }
     </script>
   </head>

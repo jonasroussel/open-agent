@@ -7,8 +7,9 @@ import { AdminUsersPage } from './admin/admin-users-page.tsx';
 import { sessionQuery } from './auth/session.ts';
 import { SignInPage } from './auth/sign-in-page.tsx';
 import { VerifyLinkPage } from './auth/verify-link-page.tsx';
+import { hasChat } from './chat/chat-store.ts';
 import { ConversationPage } from './chat/conversation-page.tsx';
-import { conversationsQuery } from './chat/conversations-query.ts';
+import { conversationQuery, conversationsQuery } from './chat/conversations-query.ts';
 import { NewChatPage } from './chat/new-chat-page.tsx';
 import { FilesPage } from './files/files-page.tsx';
 import { queryClient } from './lib/query-client.ts';
@@ -64,6 +65,11 @@ const conversationRoute = createRoute({
   // `?doc=`: the canvas document open next to the conversation; back closes it.
   validateSearch: (search: Record<string, unknown>): { doc?: string } =>
     typeof search.doc === 'string' ? { doc: search.doc } : {},
+  // Messages arrive with the page, not right after it. A missing one stays an error in the cache: the page leaves.
+  loader: async ({ context, params }) => {
+    if (hasChat(params.conversationId)) return;
+    await context.queryClient.ensureQueryData(conversationQuery(params.conversationId)).catch(() => undefined);
+  },
   component: ConversationPage,
 });
 
