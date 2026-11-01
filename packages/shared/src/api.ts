@@ -2,6 +2,7 @@ import type { UIMessage } from 'ai';
 
 import type { FileKind } from './files.ts';
 import type { Locale } from './locale.ts';
+import type { ModelCapability, ModelRole, PromptName } from './settings.ts';
 
 /** Bun route patterns; the client fills the `:params` with `apiPath`. */
 export const API_ROUTES = {
@@ -49,6 +50,18 @@ export const API_ROUTES = {
   artifactVersions: '/api/artifacts/:artifactId/versions',
   /** GET: one version's content, as `ArtifactVersionResponse`. */
   artifactVersion: '/api/artifacts/:artifactId/versions/:number',
+  /** GET: the models and prompts in use, and their defaults, as `AdminSettingsResponse`. */
+  adminSettings: '/api/admin/settings',
+  /** PUT `UpdateModelBody`: the model of a role, checked against OpenRouter. */
+  adminModel: '/api/admin/settings/models/:role',
+  /** PUT `UpdatePromptBody`: a prompt's text; `null` brings back the default. */
+  adminPrompt: '/api/admin/settings/prompts/:name',
+  /** GET: OpenRouter's models with their prices and capabilities, as `ListModelsResponse`. */
+  adminModels: '/api/admin/models',
+  /** GET: a person's memory rules, as `ListMemoryRulesResponse`. */
+  adminUserMemory: '/api/admin/users/:userId/memory',
+  /** DELETE: forgets one of a person's rules. */
+  adminUserMemoryRule: '/api/admin/users/:userId/memory/:ruleId',
 } as const;
 
 export function apiPath(route: string, params: Record<string, string | number>): string {
@@ -85,7 +98,11 @@ export type ApiError = {
     /** More than the model can read at once; it is refused rather than read in part. */
     | 'file_too_long'
     /** The document changed since the version the user edited (the model rewrote it meanwhile). */
-    | 'artifact_changed';
+    | 'artifact_changed'
+    /** OpenRouter has no model with this id. */
+    | 'model_not_found'
+    /** The model lacks what its role needs (pictures, tools, thinking or JSON). */
+    | 'model_unsuitable';
 };
 
 export type HealthResponse = { status: 'ok'; version: string };
@@ -260,3 +277,26 @@ export type ArtifactVersionResponse = ArtifactVersionDto & { content: string };
 export type SaveArtifactBody = { content: string; baseVersion: number };
 
 export type SaveArtifactResponse = { artifact: ArtifactDto };
+
+export type ModelInfoDto = {
+  id: string;
+  name: string;
+  capabilities: ModelCapability[];
+  /** USD per million tokens. */
+  inputPrice: number;
+  outputPrice: number;
+};
+
+export type ListModelsResponse = { models: ModelInfoDto[] };
+
+export type AdminSettingsResponse = {
+  models: Record<ModelRole, string>;
+  defaultModels: Record<ModelRole, string>;
+  prompts: Record<PromptName, string>;
+  defaultPrompts: Record<PromptName, string>;
+};
+
+export type UpdateModelBody = { modelId: string };
+
+/** `text: null` brings back the default. */
+export type UpdatePromptBody = { text: string | null };

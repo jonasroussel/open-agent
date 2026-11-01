@@ -15,6 +15,8 @@ import type {
   ListAdminUsersResponse,
   AdminUserDto,
   QuotaResponse,
+  AdminSettingsResponse,
+  ModelCapability,
   UploadFileResponse,
   ListConversationsResponse,
   ListMemoryRulesResponse,
@@ -27,7 +29,7 @@ import type { Knex } from 'knex';
 import { createApp } from './app.ts';
 import { UnreadableDocument, type PdfPage } from './application/ports/document-reader.ts';
 import type { SignInEmail } from './application/ports/mailer.ts';
-import type { ModelCatalog } from './application/ports/model-catalog.ts';
+import type { ModelCatalog, ModelInfo } from './application/ports/model-catalog.ts';
 import type { WebSearchRequest } from './application/ports/web-search.ts';
 import { createDatabase } from './infrastructure/database/connection.ts';
 import { DiskFileStore } from './infrastructure/files/disk-file-store.ts';
@@ -151,12 +153,37 @@ function fakeModels(): ModelCatalog {
       },
     }),
   };
-  const openRouter = new OpenRouterModelCatalog(null, { fast: '', reasoning: '', background: '' });
+  const openRouter = new OpenRouterModelCatalog(null);
   return {
-    choose: (role) => ({ model: models[role], modelId: `${role}-model` }),
+    choose: (role, modelId) => ({ model: models[role], modelId }),
     costOf: (metadata) => openRouter.costOf(metadata),
   };
 }
+
+/** The models OpenRouter offers in the tests: those of the environment, a newer one, and one blind to pictures. */
+const MODEL_LIST: ModelInfo[] = [
+  ...(['fast-model', 'reasoning-model', 'background-model'] as const).map((id) => ({
+    id,
+    name: id,
+    capabilities: ['text', 'image', 'tools', 'reasoning', 'thinking_off', 'structured_outputs'] as ModelCapability[],
+    inputPrice: 0.15,
+    outputPrice: 0.6,
+  })),
+  {
+    id: 'vendor/newer-model',
+    name: 'Newer',
+    capabilities: ['text', 'image', 'tools', 'thinking_off'],
+    inputPrice: 0.1,
+    outputPrice: 0.4,
+  },
+  {
+    id: 'vendor/text-only',
+    name: 'Text only',
+    capabilities: ['text', 'tools', 'thinking_off'],
+    inputPrice: 0.05,
+    outputPrice: 0.2,
+  },
+];
 
 /** What the fake document reader finds in the next PDF; `null`: the PDF is broken. */
 let pdfPages: PdfPage[] | null;
@@ -189,6 +216,7 @@ beforeEach(async () => {
         clock,
         mailer,
         models: fakeModels(),
+        modelDirectory: { list: async () => MODEL_LIST },
         webSearch: {
           search: async (request) => {
             searches.push(request);
@@ -211,6 +239,7 @@ beforeEach(async () => {
         adminEmail: ADMIN,
         devSignInCode: DEV_CODE,
         defaultMonthlyQuotaUsd: DEFAULT_QUOTA,
+        defaultModels: { fast: 'fast-model', reasoning: 'reasoning-model', background: 'background-model' },
       },
     ),
     fetch: () => new Response(null, { status: 404 }),
@@ -755,6 +784,74 @@ describe('canvas', () => {
       await call(`/api/artifacts/${game!.id}`, { cookie: adminCookie })
     ).json()) as ArtifactResponse;
     expect(opened).toMatchObject({ content: '<p>secret</p>', artifact: { version: 1 } });
+  });
+});
+
+async function settingsOf(cookie: string): Promise<AdminSettingsResponse> {
+  return (await (await call('/api/admin/settings', { cookie })).json()) as AdminSettingsResponse;
+}
+
+describe('admin settings', () => {
+  test('the admin switches a role to another model, checked against OpenRouter, and the next answers use it', async () => {
+    const cookie = await signIn(ADMIN);
+    const setFast = (modelId: string) =>
+      call('/api/admin/settings/models/fast', { method: 'PUT', body: { modelId }, cookie });
+
+    expect(await errorOf(await setFast('vendor/unknown'))).toBe('model_not_found');
+    expect(await errorOf(await setFast('vendor/text-only'))).toBe('model_unsuitable');
+    expect((await setFast('vendor/newer-model')).status).toBe(200);
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Bonjour')]);
+    const answer = await database('usage_events').where({ purpose: 'answer' }).first('model');
+    expect(answer.model).toBe('vendor/newer-model');
+
+    await setFast('fast-model');
+    expect((await settingsOf(cookie)).models.fast).toBe('fast-model');
+    expect(await database('settings').count({ count: '*' }).first()).toEqual({ count: 0 });
+  });
+
+  test('an edited prompt applies from the next message, the code still adds what depends on the conversation, and reset brings the default back', async () => {
+    const cookie = await signIn(ADMIN);
+    await call('/api/memory/rules', { method: 'POST', body: { text: 'Réponses courtes.' }, cookie });
+    const setPrompt = (name: string, text: string | null) =>
+      call(`/api/admin/settings/prompts/${name}`, { method: 'PUT', body: { text }, cookie });
+
+    expect((await setPrompt('assistant', 'Tu es un assistant pirate.')).status).toBe(204);
+    expect((await setPrompt('preAnalysis', 'Décide comment répondre, en JSON.')).status).toBe(204);
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Bonjour')]);
+    const answer = JSON.stringify(models.fast.doStreamCalls[0]!.prompt);
+    expect(answer).toContain('Tu es un assistant pirate.');
+    expect(answer).not.toContain('You are Open Agent');
+    expect(answer).toContain('Today is Sunday, 1 November 2026');
+    expect(answer).toContain('Réponses courtes.');
+    const prompts = models.background.doGenerateCalls.map((generation) => JSON.stringify(generation.prompt));
+    expect(prompts.some((prompt) => prompt.includes('Décide comment répondre, en JSON.'))).toBe(true);
+
+    expect((await setPrompt('assistant', null)).status).toBe(204);
+    const settings = await settingsOf(cookie);
+    expect(settings.prompts.assistant).toBe(settings.defaultPrompts.assistant);
+    expect(await errorOf(await setPrompt('assistant', '  '))).toBe('invalid_request');
+    expect(await errorOf(await setPrompt('unknown', 'texte'))).toBe('invalid_request');
+  });
+
+  test("the admin reads and forgets a person's rules, and nobody else can", async () => {
+    const adminCookie = await signIn(ADMIN);
+    const { user: ana } = await invite(adminCookie, 'ana@example.com');
+    const anaCookie = await signIn('ana@example.com');
+    await call('/api/memory/rules', { method: 'POST', body: { text: 'Toujours en majuscules.' }, cookie: anaCookie });
+
+    const listed = (await (
+      await call(`/api/admin/users/${ana.id}/memory`, { cookie: adminCookie })
+    ).json()) as ListMemoryRulesResponse;
+    expect(listed.rules.map((rule) => rule.text)).toEqual(['Toujours en majuscules.']);
+    const forget = (cookie: string) =>
+      call(`/api/admin/users/${ana.id}/memory/${listed.rules[0]!.id}`, { method: 'DELETE', cookie });
+    expect(await errorOf(await forget(anaCookie))).toBe('not_admin');
+    expect((await forget(adminCookie)).status).toBe(204);
+
+    expect(await rulesOf(anaCookie)).toEqual([]);
+    const change = await database('memory_rule_changes').orderBy('id', 'desc').first('operation', 'source');
+    expect(change).toEqual({ operation: 'delete', source: 'admin' });
+    expect((await call('/api/admin/settings', { cookie: anaCookie })).status).toBe(403);
   });
 });
 

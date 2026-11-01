@@ -1,3 +1,4 @@
+import type { ModelRole } from '@open-agent/shared';
 import type { Knex } from 'knex';
 
 import { Artifacts } from './application/artifacts.ts';
@@ -7,14 +8,16 @@ import { Conversations } from './application/conversations.ts';
 import { Library } from './application/library.ts';
 import { MemoryReconciler } from './application/memory-reconciler.ts';
 import { Memory } from './application/memory.ts';
+import { Models } from './application/models.ts';
 import type { Clock } from './application/ports/clock.ts';
 import type { DocumentReader } from './application/ports/document-reader.ts';
 import type { FileStore } from './application/ports/file-store.ts';
 import type { Mailer } from './application/ports/mailer.ts';
-import type { ModelCatalog } from './application/ports/model-catalog.ts';
+import type { ModelCatalog, ModelDirectory } from './application/ports/model-catalog.ts';
 import type { WebSearch } from './application/ports/web-search.ts';
 import { PreAnalysis } from './application/pre-analysis.ts';
 import { Quotas } from './application/quotas.ts';
+import { Settings } from './application/settings.ts';
 import { UsageRecorder } from './application/usage-recorder.ts';
 import { UserAccess } from './application/user-access.ts';
 import { SqliteArtifactRepository } from './infrastructure/database/sqlite-artifact-repository.ts';
@@ -22,6 +25,7 @@ import { SqliteConversationRepository } from './infrastructure/database/sqlite-c
 import { SqliteLibraryRepository } from './infrastructure/database/sqlite-library-repository.ts';
 import { SqliteMemoryRepository } from './infrastructure/database/sqlite-memory-repository.ts';
 import { SqliteSessionStore } from './infrastructure/database/sqlite-session-store.ts';
+import { SqliteSettingsRepository } from './infrastructure/database/sqlite-settings-repository.ts';
 import { SqliteSignInRequestStore } from './infrastructure/database/sqlite-sign-in-request-store.ts';
 import { SqliteUsageLedger } from './infrastructure/database/sqlite-usage-ledger.ts';
 import { SqliteUserRepository } from './infrastructure/database/sqlite-user-repository.ts';
@@ -42,6 +46,8 @@ export type AppOptions = {
   devSignInCode: string | null;
   /** USD per calendar month for users whose quota the admin did not set. */
   defaultMonthlyQuotaUsd: number;
+  /** The models of the environment, until the admin page changes them. */
+  defaultModels: Record<ModelRole, string>;
 };
 
 /**
@@ -51,7 +57,10 @@ export type AppOptions = {
 export type AppAdapters = {
   clock: Clock;
   mailer: Mailer;
+  /** The provider; which model each role uses is a setting. */
   models: ModelCatalog;
+  /** The provider's models, to check the admin's choice. */
+  modelDirectory: ModelDirectory;
   webSearch: WebSearch | null;
   fileStore: FileStore;
   documents: DocumentReader;
@@ -60,7 +69,7 @@ export type AppAdapters = {
 /** Wires the application; the composition root for `main.ts` and the HTTP tests. */
 export async function createApp(
   database: Knex,
-  { clock, mailer, models, webSearch, fileStore, documents }: AppAdapters,
+  { clock, mailer, models, modelDirectory, webSearch, fileStore, documents }: AppAdapters,
   options: AppOptions,
 ) {
   const users = new SqliteUserRepository(database);
@@ -74,6 +83,13 @@ export async function createApp(
   const memory = new Memory(new SqliteMemoryRepository(database), conversations, clock);
   const library = new Library(new SqliteLibraryRepository(database), fileStore, documents, clock);
   const artifacts = new Artifacts(new SqliteArtifactRepository(database), clock);
+  const settings = await Settings.load(
+    new SqliteSettingsRepository(database),
+    modelDirectory,
+    clock,
+    options.defaultModels,
+  );
+  const roleModels = new Models(models, settings);
   if (options.adminEmail) await userAccess.ensureAdmin(options.adminEmail);
 
   return createRoutes({
@@ -94,19 +110,22 @@ export async function createApp(
     memory,
     chatTurns: new ChatTurns(
       conversations,
-      new PreAnalysis(models, usage),
+      new PreAnalysis(roleModels, usage, settings),
       memory,
-      new MemoryReconciler(models, usage),
+      new MemoryReconciler(roleModels, usage, settings),
       usage,
       quotas,
       library,
       artifacts,
-      models,
+      roleModels,
+      settings,
       clock,
       webSearch,
     ),
     quotas,
     library,
     artifacts,
+    settings,
+    modelDirectory,
   });
 }

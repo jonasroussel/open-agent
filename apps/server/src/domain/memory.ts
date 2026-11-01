@@ -18,7 +18,8 @@ export type MemoryChange = {
   operation: MemoryOperation;
   before: string | null;
   after: string | null;
-  source: 'remark' | 'user';
+  /** `remark`: from a conversation. `user`: the memory page. `admin`: the admin page, repairing a rule. */
+  source: 'remark' | 'user' | 'admin';
   conversationId: string | null;
   messageId: string | null;
   undoneAt: Date | null;

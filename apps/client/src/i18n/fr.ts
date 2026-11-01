@@ -115,6 +115,45 @@ export const fr: Translation = {
     preview: 'Aperçu',
     code: 'Code',
   },
+  settings: {
+    title: 'Réglages',
+    models: 'Modèles',
+    modelsDescription:
+      'Le modèle OpenRouter utilisé pour chaque type d’appel. Un changement compte dès le message suivant, pour tout le monde.',
+    role: { fast: 'Réponses courantes', reasoning: 'Réponses avec réflexion', background: 'Arrière-plan' },
+    roleDescription: {
+      fast: 'La plupart des réponses : discussion, rédaction, fichiers, recherche web, documents.',
+      reasoning: 'Calculs, organisation, comparaisons : le modèle réfléchit avant de répondre.',
+      background: 'Les appels invisibles : l’analyse de chaque message, la mémoire, les titres.',
+    },
+    requirement: {
+      fast: 'Seuls les modèles qui lisent le texte et les images, utilisent des outils (recherche web, Canvas) et peuvent répondre sans réfléchir sont proposés.',
+      reasoning:
+        'Seuls les modèles qui lisent le texte et les images, utilisent des outils et savent réfléchir sont proposés.',
+      background: 'Seuls les modèles qui répondent en JSON structuré et peuvent répondre sans réfléchir sont proposés.',
+    },
+    default: 'Par défaut',
+    changed: 'Modifié',
+    change: 'Changer',
+    price: '{{input}} $ en entrée · {{output}} $ en sortie par million de tokens',
+    pickTitle: 'Modèle pour « {{role}} »',
+    search: 'Chercher par nom ou identifiant',
+    noModel: 'Aucun modèle ne correspond.',
+    prompts: 'Prompts',
+    promptsDescription:
+      'Les instructions que reçoivent les modèles. Le code ajoute toujours ce qui dépend de la conversation (date, documents, préférences). Une modification maladroite peut dégrader l’assistant : revenez à l’original en cas de doute.',
+    prompt: { assistant: 'Assistant', preAnalysis: 'Analyse de chaque message', memory: 'Mémoire' },
+    promptDescription: {
+      assistant: 'Comment l’assistant répond : style, ton, et quand utiliser la recherche web et le Canvas.',
+      preAnalysis:
+        'Décide, avant chaque réponse, s’il faut réfléchir, poser une question, chercher sur le web ou retenir une remarque. Il doit continuer à demander ses champs JSON.',
+      memory:
+        'Transforme une remarque en changement des préférences de la personne. Il doit continuer à demander ses champs JSON.',
+    },
+    save: 'Enregistrer',
+    saved: 'Enregistré',
+    reset: 'Revenir à l’original',
+  },
   quota: {
     used: 'Ce mois-ci : {{percent}} % utilisés',
     nearLimit: 'Vous avez utilisé {{percent}} % de votre quota de ce mois-ci.',
@@ -179,6 +218,11 @@ export const fr: Translation = {
     revokeDescription:
       'La personne est déconnectée tout de suite. Ses données sont gardées : la réinviter lui rend l’accès.',
     cancel: 'Annuler',
+    seeMemory: 'Voir sa mémoire',
+    memoryTitle: 'Mémoire de {{email}}',
+    memoryDescription: 'Les préférences que l’assistant suit pour cette personne. Oubliez celle qu’il a mal comprise.',
+    memoryEmpty: 'Aucune préférence pour l’instant.',
+    forgetRule: 'Oublier « {{rule}} »',
     monthCost: 'Ce mois-ci : {{cost}} sur {{quota}}',
     monthCostUnlimited: 'Ce mois-ci : {{cost}}, sans limite',
     setQuota: 'Changer le quota',
@@ -205,6 +249,8 @@ export const fr: Translation = {
     file_unreadable: 'Je ne peux pas ouvrir ce fichier : il est peut-être abîmé ou protégé par un mot de passe.',
     file_too_long: 'Ce fichier est trop long pour que je le lise en entier. Envoyez-le en plusieurs parties.',
     artifact_changed: 'Le document a été modifié entre-temps.',
+    model_not_found: 'OpenRouter n’a pas de modèle avec cet identifiant.',
+    model_unsuitable: 'Ce modèle ne sait pas faire ce que demande ce rôle.',
     network: 'Le serveur est injoignable. Vérifiez votre connexion.',
   },
 };

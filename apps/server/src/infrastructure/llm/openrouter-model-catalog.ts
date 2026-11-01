@@ -8,8 +8,6 @@ import {
   type ModelRole,
 } from '../../application/ports/model-catalog.ts';
 
-export type ModelIds = Record<ModelRole, string>;
-
 /**
  * Thinking per role, tested on deepseek-v4.1-flash-1017 (2026-11-01): off, a title takes about 0.5 s with 0 reasoning
  * tokens; `medium` solved a train-crossing problem in 3.4 s for 0.0007 $, as well as `high` (5.8 s).
@@ -22,17 +20,14 @@ const REASONING: Record<ModelRole, { enabled: boolean; effort: 'none' | 'medium'
 
 export class OpenRouterModelCatalog implements ModelCatalog {
   readonly #provider: OpenRouterProvider | null;
-  readonly #modelIds: ModelIds;
 
-  constructor(apiKey: string | null, modelIds: ModelIds) {
+  constructor(apiKey: string | null) {
     // `strict` sends `stream_options.include_usage`: the cost then arrives at the end of a streamed answer too.
     this.#provider = apiKey ? createOpenRouter({ apiKey, compatibility: 'strict', appName: 'Open Agent' }) : null;
-    this.#modelIds = modelIds;
   }
 
-  choose(role: ModelRole): ModelChoice {
+  choose(role: ModelRole, modelId: string): ModelChoice {
     if (!this.#provider) throw new ModelUnavailableError();
-    const modelId = this.#modelIds[role];
     const model = this.#provider.chat(modelId, { usage: { include: true }, reasoning: REASONING[role] });
     return { model, modelId };
   }

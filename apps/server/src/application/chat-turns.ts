@@ -25,11 +25,13 @@ import type { Artifacts } from './artifacts.ts';
 import type { Library } from './library.ts';
 import type { MemoryReconciler } from './memory-reconciler.ts';
 import type { Memory } from './memory.ts';
+import type { Models } from './models.ts';
 import type { Clock } from './ports/clock.ts';
-import { ModelUnavailableError, type ModelCatalog } from './ports/model-catalog.ts';
+import { ModelUnavailableError } from './ports/model-catalog.ts';
 import type { WebSearch } from './ports/web-search.ts';
 import { textOf, type PreAnalysis } from './pre-analysis.ts';
 import type { Quotas } from './quotas.ts';
+import type { Settings } from './settings.ts';
 import type { UsageRecorder } from './usage-recorder.ts';
 
 /** The memory notices the client sends back with the history: checked like every other part. */
@@ -70,7 +72,8 @@ export class ChatTurns {
   readonly #quotas: Quotas;
   readonly #library: Library;
   readonly #artifacts: Artifacts;
-  readonly #models: ModelCatalog;
+  readonly #models: Models;
+  readonly #settings: Settings;
   readonly #clock: Clock;
   readonly #webSearch: WebSearch | null;
 
@@ -83,7 +86,8 @@ export class ChatTurns {
     quotas: Quotas,
     library: Library,
     artifacts: Artifacts,
-    models: ModelCatalog,
+    models: Models,
+    settings: Settings,
     clock: Clock,
     webSearch: WebSearch | null,
   ) {
@@ -96,6 +100,7 @@ export class ChatTurns {
     this.#library = library;
     this.#artifacts = artifacts;
     this.#models = models;
+    this.#settings = settings;
     this.#clock = clock;
     this.#webSearch = webSearch;
   }
@@ -161,7 +166,14 @@ export class ChatTurns {
           const searchFirst = this.#webSearch !== null && analysis.webSearch;
           const result = streamText({
             model: choice.model,
-            instructions: instructions(user, rules, this.#clock.now(), this.#webSearch !== null, documents),
+            instructions: instructions(
+              this.#settings.prompt('assistant'),
+              user,
+              rules,
+              this.#clock.now(),
+              this.#webSearch !== null,
+              documents,
+            ),
             // Every attached file goes in whole, at each answer: the user may ask about any detail, any time.
             messages: await convertToModelMessages(
               await this.#library.expandFiles(
@@ -332,10 +344,12 @@ function withoutDocumentBodies(messages: ChatMessage[]): ChatMessage[] {
 }
 
 /**
- * The base prompt. Many users are not technical: plain words, structure when it helps, and honesty when unsure. The
- * user's rules come last, so they win over the general style.
+ * The admin's assistant prompt (`DEFAULT_PROMPTS.assistant` until changed), then what only the code knows: the date,
+ * the app's language, whether the web can be searched, the canvas documents and the user's rules. The rules come
+ * last, so they win over the general style.
  */
 function instructions(
+  prompt: string,
   user: User,
   rules: readonly MemoryRule[],
   now: Date,
@@ -344,22 +358,10 @@ function instructions(
 ): string {
   const today = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeZone: 'Europe/Paris' }).format(now);
   return [
-    'You are Open Agent, an assistant for a private circle of family and friends. Many of them are not technical.',
-    `Answer in the language of the user's last message (their app is set to ${user.locale === 'fr' ? 'French' : 'English'}).`,
-    'Be clear and concrete. Prefer short paragraphs and plain words; explain any technical term you must use.',
-    'Use Markdown (headings, lists, tables, code blocks) when it makes the answer easier to read, not by default.',
-    'Never use LaTeX: write math with plain characters (×, ÷, ≈, 28/60, x²) so everyone can read it.',
-    'When you are not sure, say so instead of guessing.',
-    'In French, address the user with « vous », unless their preferences below say otherwise.',
-    `Today is ${today}.`,
-    'Files the user attached come whole between <file name="…"> tags: all their text, and a picture of every PDF page and of every image. Read both; when asked about a detail, find it and say where it is (page, section).',
-    ...(canSearch
-      ? [
-          'Use web_search whenever the answer depends on facts that change or that you may not know: news, prices, weather, opening hours, rates, rules, a given product, business or place.',
-          'Base such answers on the pages found and link the ones you used, as Markdown links named after the site. When the search finds nothing useful, say so.',
-        ]
-      : []),
-    'Write any text the user will keep, send or print (letters, emails of more than a few lines, CVs, reports, lists to print) with create_document, never in the chat; for a game, a card or a small tool, create an html document. Change a document with update_document, also when the user asks in the chat. After using these tools, answer in one or two sentences: what you did, and what the user could ask next.',
+    prompt,
+    '',
+    `Today is ${today}. The user's app is set to ${user.locale === 'fr' ? 'French' : 'English'}.`,
+    ...(canSearch ? [] : ['The web search is not available right now: say so when an answer needs current facts.']),
     ...(documents.length > 0
       ? [
           '',

@@ -2,6 +2,7 @@ import { SIGN_IN_LINK_PATH } from '@open-agent/shared';
 import type { QueryClient } from '@tanstack/react-query';
 import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router';
 
+import { AdminSettingsPage } from './admin/admin-settings-page.tsx';
 import { AdminUsersPage } from './admin/admin-users-page.tsx';
 import { sessionQuery } from './auth/session.ts';
 import { SignInPage } from './auth/sign-in-page.tsx';
@@ -71,11 +72,27 @@ const adminUsersRoute = createRoute({
   component: AdminUsersPage,
 });
 
+const adminSettingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/admin/settings',
+  beforeLoad: ({ context }) => {
+    if (context.user.role !== 'admin') throw redirect({ to: '/' });
+  },
+  component: AdminSettingsPage,
+});
+
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     signInRoute,
     verifyLinkRoute,
-    appRoute.addChildren([newChatRoute, conversationRoute, memoryRoute, filesRoute, adminUsersRoute]),
+    appRoute.addChildren([
+      newChatRoute,
+      conversationRoute,
+      memoryRoute,
+      filesRoute,
+      adminUsersRoute,
+      adminSettingsRoute,
+    ]),
   ]),
   context: { queryClient },
 });

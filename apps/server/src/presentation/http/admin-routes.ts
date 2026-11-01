@@ -13,14 +13,18 @@ export type AdminHttpDependencies = {
   quotas: Quotas;
 };
 
-export function createAdminRoutes({ signedInUser, userAccess, quotas }: AdminHttpDependencies) {
-  /** Checked on every request: a revoked or demoted admin loses the panel at once. */
-  const withAdmin = async (request: BunRequest, handle: (admin: User) => Promise<Response>) => {
+/** Checked on every request: a revoked or demoted admin loses the panel at once. */
+export function adminOnly(signedInUser: (request: BunRequest) => Promise<User | null>) {
+  return async (request: BunRequest, handle: (admin: User) => Promise<Response>) => {
     const user = await signedInUser(request);
     if (!user) return error('not_signed_in', 401);
     if (user.role !== 'admin') return error('not_admin', 403);
     return handle(user);
   };
+}
+
+export function createAdminRoutes({ signedInUser, userAccess, quotas }: AdminHttpDependencies) {
+  const withAdmin = adminOnly(signedInUser);
   const adminUserDto = async (user: User) => toAdminUserDto(user, await quotas.of(user));
 
   return {

@@ -6,10 +6,11 @@ import {
   type AdminUserDto,
   type InviteUserResponse,
   type ListAdminUsersResponse,
+  type ListMemoryRulesResponse,
   type UpdateAdminUserBody,
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Gauge, MoreHorizontal, Send, UserX } from 'lucide-react';
+import { BookmarkCheck, Gauge, MoreHorizontal, Send, Trash2, UserX } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -67,6 +68,7 @@ export function AdminUsersPage() {
   const [pending, setPending] = useState(false);
   const [toRevoke, setToRevoke] = useState<AdminUserDto | null>(null);
   const [quotaOf, setQuotaOf] = useState<AdminUserDto | null>(null);
+  const [memoryOf, setMemoryOf] = useState<AdminUserDto | null>(null);
 
   async function invite(address: string) {
     setPending(true);
@@ -169,6 +171,10 @@ export function AdminUsersPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align='end' className='w-auto min-w-48'>
+                    <DropdownMenuItem onSelect={() => setMemoryOf(user)}>
+                      <BookmarkCheck />
+                      {t('admin.seeMemory')}
+                    </DropdownMenuItem>
                     {user.monthlyQuotaUsd !== null && (
                       <DropdownMenuItem onSelect={() => setQuotaOf(user)}>
                         <Gauge />
@@ -211,6 +217,7 @@ export function AdminUsersPage() {
       </AlertDialog>
 
       <QuotaDialog user={quotaOf} onClose={() => setQuotaOf(null)} />
+      <MemoryDialog user={memoryOf} onClose={() => setMemoryOf(null)} />
     </div>
   );
 }
@@ -224,6 +231,54 @@ function moneyFormat(language: string): (usd: number) => string {
     minimumFractionDigits: 2,
   });
   return (usd) => (usd > 0 && usd < 0.01 ? `< ${format.format(0.01)}` : format.format(usd));
+}
+
+/** A person's rules, to understand a strange answer, and to forget one the assistant misunderstood. */
+function MemoryDialog({ user, onClose }: { user: AdminUserDto | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const queryKey = [API_ROUTES.adminUserMemory, user?.id];
+  const rules = useQuery({
+    queryKey,
+    queryFn: async () =>
+      (await apiOrThrow<ListMemoryRulesResponse>(apiPath(API_ROUTES.adminUserMemory, { userId: user!.id }))).rules,
+    enabled: user !== null,
+  });
+
+  async function forget(ruleId: number) {
+    await api(apiPath(API_ROUTES.adminUserMemoryRule, { userId: user!.id, ruleId }), { method: 'DELETE' });
+    await queryClient.invalidateQueries({ queryKey });
+  }
+
+  return (
+    <Dialog open={user !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className='sm:max-w-lg'>
+        <DialogHeader>
+          <DialogTitle>{t('admin.memoryTitle', { email: user?.email })}</DialogTitle>
+          <DialogDescription>{t('admin.memoryDescription')}</DialogDescription>
+        </DialogHeader>
+        {rules.data?.length === 0 && <p className='text-muted-foreground py-4 text-center'>{t('admin.memoryEmpty')}</p>}
+        <ul className='-mx-1 grid max-h-96 gap-1 overflow-y-auto'>
+          {rules.data?.map((rule) => (
+            <li key={rule.id} className='hover:bg-muted/60 flex items-start gap-3 rounded-lg px-2 py-2'>
+              <BookmarkCheck className='text-muted-foreground mt-0.5 size-4 shrink-0' />
+              <span className='flex-1 text-sm'>{rule.text}</span>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='size-7'
+                aria-label={t('admin.forgetRule', { rule: rule.text })}
+                title={t('memory.forget')}
+                onClick={() => void forget(rule.id)}
+              >
+                <Trash2 />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function QuotaDialog({ user, onClose }: { user: AdminUserDto | null; onClose: () => void }) {

@@ -7,6 +7,7 @@ import { createDatabase } from './infrastructure/database/connection.ts';
 import { DiskFileStore } from './infrastructure/files/disk-file-store.ts';
 import { PopplerMammothReader } from './infrastructure/files/document-reader.ts';
 import { OpenRouterModelCatalog } from './infrastructure/llm/openrouter-model-catalog.ts';
+import { OpenRouterModelDirectory } from './infrastructure/llm/openrouter-model-directory.ts';
 import { ConsoleMailer } from './infrastructure/mail/console-mailer.ts';
 import { PlunkMailer } from './infrastructure/mail/plunk-mailer.ts';
 import { SystemClock } from './infrastructure/system-clock.ts';
@@ -25,7 +26,7 @@ if (!config.plunkApiKey) console.log('PLUNK_API_KEY is not set: sign-in emails g
 if (!config.adminEmail) console.log('ADMIN_EMAIL is not set: no admin is created at boot.');
 if (!config.openRouterApiKey) console.log('OPENROUTER_API_KEY is not set: the chat cannot answer.');
 if (config.devSignInCode) console.log(`Development: the code ${config.devSignInCode} signs in any invited user.`);
-const models = new OpenRouterModelCatalog(config.openRouterApiKey, config.models);
+const models = new OpenRouterModelCatalog(config.openRouterApiKey);
 const clock = new SystemClock();
 const searchServices = [
   ...(config.tavilyApiKey ? [new TavilySearch(config.tavilyApiKey)] : []),
@@ -41,6 +42,7 @@ const routes = await createApp(
     clock,
     mailer,
     models,
+    modelDirectory: new OpenRouterModelDirectory(),
     webSearch,
     fileStore: new DiskFileStore(config.filesPath),
     documents: new PopplerMammothReader(),
@@ -51,6 +53,7 @@ const routes = await createApp(
     adminEmail: config.adminEmail,
     devSignInCode: config.devSignInCode,
     defaultMonthlyQuotaUsd: config.defaultMonthlyQuotaUsd,
+    defaultModels: config.models,
   },
 );
 const staticFiles = config.clientDistPath ? createStaticFiles(config.clientDistPath) : null;

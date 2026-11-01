@@ -90,7 +90,8 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   "this preference changed since".
 - **Control:** a "My memories" page (sidebar, for everyone) lists, adds, edits and forgets rules.
 - **Limits:** 50 rules of 300 characters per user. Every change is kept in `memory_rule_changes`, which powers Undo.
-- **Later, with the admin page:** the admin reads a user's rules.
+- **The admin** reads a person's rules on the people page and forgets one the assistant misunderstood (recorded with
+  the source `admin`).
 - **Tu or vous:** French answers and clarifying questions say « vous » by default; « tu peux me tutoyer » becomes a
   rule, and rules win over the default. The interface always says « vous ».
 
@@ -175,11 +176,20 @@ written by the model and edited by the user, with versions.
 
 ### Admin panel
 
-- Invitations: create and revoke access by email.
-- Cost per user for the month and their quota (done); change a user's quota (done).
-- Models per role (`fast`, `reasoning`, `background`), changed at runtime.
-- System prompts (base assistant, pre-pass, memory reconciler), changed at runtime.
-- Read any user's memory rules, to debug the memory.
+- Invitations: create and revoke access by email. Cost per person for the month and their quota.
+- **Models (Settings page):** the OpenRouter model of each role, changed at runtime, for the next message. The
+  picker lists OpenRouter's models (kept an hour by the server, `:batch` variants left out), cheapest first, with
+  their prices, and only those that can take the role: text and pictures in, tools, and thinking that can be turned
+  off (OpenRouter's `reasoning.mandatory` unset) for `fast`; text and pictures in, tools and reasoning for
+  `reasoning`; text in, structured JSON and thinking that can be turned off for `background`
+  (`missingCapabilities`). The server checks it again on save. Thinking per role stays in the code (off, `medium`,
+  off).
+- **Prompts (Settings page):** the assistant, the analysis of each message and the memory prompts, edited whole, used
+  from the next message, with "Bring back the original" (the text in `default-prompts.ts`). What depends on the
+  conversation is always added by the code after the text: the date and the app's language, a missing web search,
+  the canvas documents and the person's rules for the assistant; a question just asked for the analysis; a full
+  memory for the memory. Structured outputs keep the JSON fields even if a prompt forgets them.
+- **Memory:** a person's rules ("See their memory"), each one can be forgotten.
 
 ### Other
 
@@ -242,7 +252,7 @@ Same layout and tooling as `inscript-carte`.
 | `artifacts` | id (UUID, named by the model in `update_document`), conversation, user, kind (`document` / `html`), title, created/updated at |
 | `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), created at |
 | `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter |
-| `settings` | models per role, system prompts |
+| `settings` | key (`model.fast`, `prompt.assistant`…), value, updated at; a missing key means the default |
 
 ## Configuration
 
@@ -256,9 +266,9 @@ Same layout and tooling as `inscript-carte`.
 | `ADMIN_EMAIL` | First admin |
 | `DEFAULT_MONTHLY_QUOTA_USD` | Quota of users the admin did not set (default 5) |
 | `OPENROUTER_API_KEY` | App key (required in production) |
-| `FAST_MODEL` | Everyday answers; default `deepseek/deepseek-v4.1-flash-1017`, thinking off |
-| `REASONING_MODEL` | Answers that need thinking; default `deepseek/deepseek-v4.1-flash-1017`, thinking `medium` |
-| `BACKGROUND_MODEL` | Pre-pass, memory and titles; default `deepseek/deepseek-v4.1-flash-1017`, thinking off |
+| `FAST_MODEL` | Everyday answers until the admin page changes it; default `deepseek/deepseek-v4.1-flash-1017`, thinking off |
+| `REASONING_MODEL` | Answers that need thinking, same; thinking `medium` |
+| `BACKGROUND_MODEL` | Pre-pass, memory and titles, same; thinking off |
 | `TAVILY_API_KEY` | First web search service (optional) |
 | `SEARXNG_URL` | Our SearXNG, e.g. `http://open-agent-searxng:8080` (default `http://localhost:8888` in development) |
 | `PLUNK_API_KEY` | Sign-in emails (unset in development: links and codes go to the server log) |

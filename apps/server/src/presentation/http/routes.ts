@@ -7,9 +7,12 @@ import type { ChatTurns } from '../../application/chat-turns.ts';
 import type { Conversations } from '../../application/conversations.ts';
 import type { Library } from '../../application/library.ts';
 import type { Memory } from '../../application/memory.ts';
+import type { ModelDirectory } from '../../application/ports/model-catalog.ts';
 import type { Quotas } from '../../application/quotas.ts';
+import type { Settings } from '../../application/settings.ts';
 import type { UserAccess } from '../../application/user-access.ts';
 import { createAdminRoutes } from './admin-routes.ts';
+import { createAdminSettingsRoutes } from './admin-settings-routes.ts';
 import { createArtifactRoutes } from './artifact-routes.ts';
 import { createChatRoutes } from './chat-routes.ts';
 import { createFileRoutes } from './file-routes.ts';
@@ -29,6 +32,8 @@ export type HttpDependencies = {
   quotas: Quotas;
   library: Library;
   artifacts: Artifacts;
+  settings: Settings;
+  modelDirectory: ModelDirectory;
 };
 
 /** Answers a sign-in: the session cookie and the user, or why it failed. */
@@ -54,6 +59,8 @@ export function createRoutes({
   quotas,
   library,
   artifacts,
+  settings,
+  modelDirectory,
 }: HttpDependencies) {
   const signedInUser = (request: BunRequest) =>
     authentication.signedInUser(request.cookies.get(SESSION_COOKIE) ?? null);
@@ -106,6 +113,7 @@ export function createRoutes({
     },
 
     ...createAdminRoutes({ signedInUser, userAccess, quotas }),
+    ...createAdminSettingsRoutes({ signedInUser, settings, modelDirectory, userAccess, memory }),
     ...createChatRoutes({ signedInUser, conversations, chatTurns, quotas }),
     ...createMemoryRoutes({ signedInUser, memory }),
     ...createFileRoutes({ signedInUser, library }),

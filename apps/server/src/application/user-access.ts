@@ -48,6 +48,10 @@ export class UserAccess {
     return this.#users.list();
   }
 
+  find(id: number): Promise<User | null> {
+    return this.#users.findById(id);
+  }
+
   /** New address: creates the user. Revoked: restores the access. Either way, emails an invitation. */
   async invite(admin: User, rawEmail: string, locale: Locale): Promise<InviteResult> {
     const email = normalizeEmail(rawEmail);

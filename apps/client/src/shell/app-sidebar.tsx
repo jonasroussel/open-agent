@@ -1,6 +1,6 @@
 import type { SignedInUser } from '@open-agent/shared';
 import { Link, useMatchRoute } from '@tanstack/react-router';
-import { BookmarkCheck, FolderOpen, SquarePen, Users } from 'lucide-react';
+import { BookmarkCheck, FolderOpen, Settings2, SquarePen, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { BrandIcon } from '@/components/brand-icon.tsx';
@@ -75,6 +75,16 @@ export function AppSidebar({ user }: { user: SignedInUser }) {
                   <Link to='/admin/users' onClick={closeOnPhone}>
                     <Users />
                     {t('app.people')}
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
+            {user.role === 'admin' && (
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild className='h-9' isActive={Boolean(matchRoute({ to: '/admin/settings' }))}>
+                  <Link to='/admin/settings' onClick={closeOnPhone}>
+                    <Settings2 />
+                    {t('settings.title')}
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

@@ -57,12 +57,13 @@ export class Memory {
     return { ok: true, rule: { ...rule, text, updatedAt: now } };
   }
 
-  async forget(user: User, ruleId: number): Promise<boolean> {
+  /** By the user on their memory page, or by the admin repairing a rule the assistant misunderstood. */
+  async forget(user: User, ruleId: number, by: 'user' | 'admin' = 'user'): Promise<boolean> {
     const rule = await this.#active(user, ruleId);
     if (!rule) return false;
     const now = this.#clock.now();
     await this.#memory.forgetRule(rule.id, now);
-    await this.#record(user, rule.id, 'delete', rule.text, null, 'user', null, now);
+    await this.#record(user, rule.id, 'delete', rule.text, null, by, null, now);
     return true;
   }
 
