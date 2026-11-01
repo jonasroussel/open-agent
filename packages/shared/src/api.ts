@@ -1,0 +1,262 @@
+import type { UIMessage } from 'ai';
+
+import type { FileKind } from './files.ts';
+import type { Locale } from './locale.ts';
+
+/** Bun route patterns; the client fills the `:params` with `apiPath`. */
+export const API_ROUTES = {
+  health: '/api/health',
+  /** GET: the signed-in user. DELETE: signs out. */
+  session: '/api/session',
+  /** POST `SignInRequestBody`: emails a link and a code when the address is invited. Always 204, invited or not. */
+  signInRequests: '/api/sign-in/requests',
+  /** POST `SignInWithTokenBody`: the link's token; opens a session. */
+  signInWithToken: '/api/sign-in/token',
+  /** POST `SignInWithCodeBody`: the code typed in the app (the installed app on iOS cannot open the link). */
+  signInWithCode: '/api/sign-in/code',
+  /** GET: everyone with access. POST `InviteUserBody`: gives access (again) and emails an invitation. */
+  adminUsers: '/api/admin/users',
+  /** PATCH `UpdateAdminUserBody`: sets the monthly quota. DELETE: revokes the access and ends every session. */
+  adminUser: '/api/admin/users/:userId',
+  /** GET: how much of their monthly quota the signed-in user has used, as `QuotaResponse`. */
+  quota: '/api/quota',
+  /** GET: the signed-in user's conversations, last updated first. */
+  conversations: '/api/conversations',
+  /** GET: one conversation with its messages. PATCH `UpdateConversationBody`. DELETE. */
+  conversation: '/api/conversations/:conversationId',
+  /**
+   * POST, the AI SDK chat transport: `{ id, messages }` with the whole history; creates the conversation on its first
+   * message. Answers a UI message stream.
+   */
+  chat: '/api/chat',
+  /** GET: the signed-in user's rules, as `ListMemoryRulesResponse`. POST `MemoryRuleBody`: adds one. */
+  memoryRules: '/api/memory/rules',
+  /** PATCH `MemoryRuleBody`: rewrites the rule. DELETE: forgets it. */
+  memoryRule: '/api/memory/rules/:ruleId',
+  /** POST: undoes a change the assistant made from a remark; also marks its notice in the conversation as undone. */
+  memoryChangeUndo: '/api/memory/changes/:changeId/undo',
+  /** GET: the signed-in user's files, newest first. POST multipart, field `file`: uploads one, as `UploadFileResponse`. */
+  files: '/api/files',
+  /** GET: the file itself, only for its owner. DELETE: removes it from the library. */
+  file: '/api/files/:fileId',
+  /** GET: the picture that shows the file in "My files" (`LibraryFileDto.previewUrl`), only for its owner. */
+  filePreview: '/api/files/:fileId/preview',
+  /** GET: the conversation's canvas documents, as `ListArtifactsResponse`. */
+  conversationArtifacts: '/api/conversations/:conversationId/artifacts',
+  /** GET: one document with its latest content and its versions, as `ArtifactResponse`. */
+  artifact: '/api/artifacts/:artifactId',
+  /** POST `SaveArtifactBody`: the user's edit, or an old version brought back. */
+  artifactVersions: '/api/artifacts/:artifactId/versions',
+  /** GET: one version's content, as `ArtifactVersionResponse`. */
+  artifactVersion: '/api/artifacts/:artifactId/versions/:number',
+} as const;
+
+export function apiPath(route: string, params: Record<string, string | number>): string {
+  return route.replace(/:(\w+)/g, (_, name: string) => encodeURIComponent(String(params[name])));
+}
+
+/** Error bodies always have this shape; the client turns the code into a translated message. */
+export type ApiError = {
+  error:
+    | 'not_found'
+    | 'invalid_request'
+    | 'not_signed_in'
+    | 'not_admin'
+    | 'too_many_attempts'
+    /** The link or code is wrong, already used, or expired. */
+    | 'invalid_sign_in'
+    /** The email provider refused or could not be reached. */
+    | 'email_failed'
+    | 'cannot_revoke_self'
+    /** The model provider failed before the answer started. */
+    | 'model_unavailable'
+    /** A user has at most `MAX_MEMORY_RULES` rules. */
+    | 'memory_full'
+    /** The rule changed again since, or the change was already undone: undoing it would lose the newer state. */
+    | 'memory_changed'
+    /** The user spent their monthly quota; it comes back on the 1st, see `QuotaResponse.resetsAt`. */
+    | 'quota_exceeded'
+    /** Larger than `MAX_FILE_BYTES`. */
+    | 'file_too_large'
+    /** Not an image, PDF, Word or text file. */
+    | 'file_type_unsupported'
+    /** Broken, protected by a password, or without anything to read. */
+    | 'file_unreadable'
+    /** More than the model can read at once; it is refused rather than read in part. */
+    | 'file_too_long'
+    /** The document changed since the version the user edited (the model rewrote it meanwhile). */
+    | 'artifact_changed';
+};
+
+export type HealthResponse = { status: 'ok'; version: string };
+
+export type UserRole = 'user' | 'admin';
+
+export type SignedInUser = { id: number; email: string; role: UserRole };
+
+export type SessionResponse = { user: SignedInUser };
+
+export type SignInRequestBody = { email: string; locale: Locale };
+export type SignInWithTokenBody = { token: string };
+export type SignInWithCodeBody = { email: string; code: string };
+
+/** `invited`: never signed in yet. */
+export type UserStatus = 'invited' | 'active' | 'revoked';
+
+export type AdminUserDto = {
+  id: number;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  invitedAt: string;
+  lastSignInAt: string | null;
+  /** Spent this calendar month, in USD. */
+  monthCostUsd: number;
+  /** USD per month; `null` for admins, who have no limit. */
+  monthlyQuotaUsd: number | null;
+};
+
+/** The admin page refuses more: a typo should not open the budget. */
+export const MAX_MONTHLY_QUOTA_USD = 100;
+
+export type UpdateAdminUserBody = { monthlyQuotaUsd: number };
+
+/** Users see a share of their quota, never dollars. */
+export type QuotaResponse = {
+  /** Admins have no limit. */
+  unlimited: boolean;
+  /** Whole percents, capped at 100. */
+  percentUsed: number;
+  exhausted: boolean;
+  /** The 1st of next month, at midnight in Paris. */
+  resetsAt: string;
+};
+
+export type ListAdminUsersResponse = { users: AdminUserDto[] };
+
+export type InviteUserBody = { email: string; locale: Locale };
+export type InviteUserResponse = { user: AdminUserDto };
+
+/** How an answer was made: quick, after thinking, or a question back because the request was ambiguous. */
+export type AnswerRoute = 'fast' | 'reasoning' | 'clarify';
+
+/** Metadata of an assistant message. */
+export type ChatMessageMetadata = {
+  route?: AnswerRoute;
+  /** The clearer request the model answered instead of the user's own words; never shown, kept to check the rewrites. */
+  rewrittenRequest?: string;
+};
+
+/** What a memory change looks like in the conversation, under the answer to the remark that caused it. */
+export type MemoryNotice = {
+  changeId: number;
+  operation: MemoryOperation;
+  /** The rule before the change; `null` for an addition. */
+  before: string | null;
+  /** The rule after the change; `null` for a deletion. */
+  after: string | null;
+  undone: boolean;
+};
+
+/** Custom parts of a message: `data-memory` is a `MemoryNotice`. */
+export type ChatDataParts = { memory: MemoryNotice };
+
+/** A page found by the web search: the model reads its content, the user sees its title and link. */
+export type WebResult = { title: string; url: string; content: string; publishedAt: string | null };
+
+export type WebSearchInput = {
+  query: string;
+  /** Only pages from the last few days: news, prices, events. */
+  recent: boolean;
+};
+
+export type WebSearchOutput = { results: WebResult[] };
+
+/** A canvas document: Markdown text, or a whole HTML page with its CSS and JavaScript inline. */
+export type ArtifactKind = 'document' | 'html';
+
+export type ArtifactAuthor = 'model' | 'user';
+
+/** The model writes the whole content, a new document or a new version of one. */
+export type CreateDocumentInput = { kind: ArtifactKind; title: string; content: string };
+export type UpdateDocumentInput = { id: string; content: string };
+export type DocumentToolOutput = { id: string; kind: ArtifactKind; title: string; version: number };
+
+export type ChatTools = {
+  web_search: { input: WebSearchInput; output: WebSearchOutput };
+  create_document: { input: CreateDocumentInput; output: DocumentToolOutput };
+  update_document: { input: UpdateDocumentInput; output: DocumentToolOutput };
+};
+
+export type ChatMessage = UIMessage<ChatMessageMetadata, ChatDataParts, ChatTools>;
+
+export type ConversationDto = {
+  id: string;
+  /** `null` until it is named after the first answer. */
+  title: string | null;
+  /** A Lucide icon name (`fuel`), chosen with the title; the client shows a default one when it is `null` or unknown. */
+  icon: string | null;
+  pinned: boolean;
+  updatedAt: string;
+};
+
+export type ListConversationsResponse = { conversations: ConversationDto[] };
+
+export type ConversationResponse = { conversation: ConversationDto; messages: ChatMessage[] };
+
+export type UpdateConversationBody = { title?: string; pinned?: boolean };
+
+export const MAX_MEMORY_RULES = 50;
+export const MAX_MEMORY_RULE_LENGTH = 300;
+
+export type MemoryOperation = 'add' | 'update' | 'delete';
+
+export type MemoryRuleDto = { id: number; text: string; updatedAt: string };
+
+export type ListMemoryRulesResponse = { rules: MemoryRuleDto[] };
+
+export type MemoryRuleBody = { text: string };
+
+/** A file of the user's library. Messages point to it with a `file` part whose `url` is the file's `url`. */
+export type LibraryFileDto = {
+  id: string;
+  name: string;
+  kind: FileKind;
+  mediaType: string;
+  size: number;
+  createdAt: string;
+  url: string;
+  /** An image's own picture or a PDF's first page; `null` for Word and text files, shown by their icon. */
+  previewUrl: string | null;
+};
+
+export type ListLibraryFilesResponse = { files: LibraryFileDto[] };
+
+export type UploadFileResponse = { file: LibraryFileDto };
+
+/** Enough for a long report; more would make every answer of its conversation expensive. */
+export const MAX_ARTIFACT_LENGTH = 200_000;
+
+export type ArtifactDto = {
+  id: string;
+  conversationId: string;
+  kind: ArtifactKind;
+  title: string;
+  /** The latest version's number, from 1. */
+  version: number;
+  updatedAt: string;
+};
+
+export type ArtifactVersionDto = { number: number; author: ArtifactAuthor; createdAt: string };
+
+export type ListArtifactsResponse = { artifacts: ArtifactDto[] };
+
+/** The artifact with its latest content, and all its versions, newest first. */
+export type ArtifactResponse = { artifact: ArtifactDto; content: string; versions: ArtifactVersionDto[] };
+
+export type ArtifactVersionResponse = ArtifactVersionDto & { content: string };
+
+/** `baseVersion`: the version the user edited; another one since means someone else changed it. */
+export type SaveArtifactBody = { content: string; baseVersion: number };
+
+export type SaveArtifactResponse = { artifact: ArtifactDto };
