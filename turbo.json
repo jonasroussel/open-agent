@@ -31,7 +31,8 @@
         "TAVILY_API_KEY",
         "SEARXNG_URL",
         "DEFAULT_MONTHLY_QUOTA_USD",
-        "FILES_PATH"
+        "FILES_PATH",
+        "TRUST_PROXY"
       ]
     }
   }

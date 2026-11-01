@@ -11,6 +11,7 @@ import {
   createUIMessageStream,
   generateText,
   isStepCount,
+  NoObjectGeneratedError,
   Output,
   safeValidateUIMessages,
   streamText,
@@ -57,6 +58,8 @@ const CONVERSATION_ID = /^[\w-]{8,64}$/;
 
 /** Two searches, a document, then the answer: the last step may not use tools. */
 const MAX_STEPS = 4;
+/** Past two searches the model answers with what it has: a third one costs without helping. */
+const MAX_SEARCHES = 2;
 /** What the model reads of each page found: enough to answer, few tokens. */
 const RESULT_CHARACTERS = 1500;
 
@@ -164,10 +167,13 @@ export class ChatTurns {
 
           const choice = this.#models.choose(analysis.route, user);
           const documents = await this.#artifacts.latestOf(conversation.id);
+          // Searches spent this turn, counted here because one step may ask for several at once.
+          const searches = { count: 0 };
+          const documentToolNames = ['create_document', 'update_document'] as const;
           const tools = {
             ...this.#documentTools(user, conversation.id),
             ...(this.#webSearch
-              ? { web_search: this.#searchTool(user, conversation.id, this.#webSearch, abortSignal) }
+              ? { web_search: this.#searchTool(user, conversation.id, this.#webSearch, abortSignal, searches) }
               : {}),
           };
           const searchFirst = this.#webSearch !== null && analysis.webSearch;
@@ -190,9 +196,16 @@ export class ChatTurns {
             ),
             tools,
             stopWhen: isStepCount(MAX_STEPS),
-            prepareStep: ({ stepNumber }) => {
-              if (stepNumber === 0 && searchFirst) return { toolChoice: 'required', activeTools: ['web_search'] };
+            // "Two searches, a document, then the answer": the search tool is withheld once two are spent, and the
+            // last step writes.
+            prepareStep: ({ stepNumber, steps }) => {
+              const searched = steps.reduce(
+                (count, step) => count + step.toolCalls.filter((call) => call.toolName === 'web_search').length,
+                0,
+              );
               if (stepNumber === MAX_STEPS - 1) return { toolChoice: 'none' };
+              if (searched >= MAX_SEARCHES) return { activeTools: [...documentToolNames] };
+              if (stepNumber === 0 && searchFirst) return { toolChoice: 'required', activeTools: ['web_search'] };
               return undefined;
             },
             abortSignal,
@@ -246,7 +259,13 @@ export class ChatTurns {
   }
 
   /** A failed search reaches the model as an error: it answers without, and says so. */
-  #searchTool(user: User, conversationId: string, webSearch: WebSearch, abortSignal: AbortSignal) {
+  #searchTool(
+    user: User,
+    conversationId: string,
+    webSearch: WebSearch,
+    abortSignal: AbortSignal,
+    searches: { count: number },
+  ) {
     return tool({
       description:
         'Search the web. Returns the most relevant pages, each with its title, link, an extract and its date when known.',
@@ -259,6 +278,9 @@ export class ChatTurns {
         recent: z.boolean().describe('True to keep only pages from the last few days: news, prices, events.'),
       }),
       execute: async ({ query, recent }): Promise<WebSearchOutput> => {
+        // Asked for in parallel, past the limit: the refusal reaches the model, which answers with what it has.
+        if (searches.count >= MAX_SEARCHES) throw new Error('No more searches this turn: answer with those pages.');
+        searches.count += 1;
         const found = await webSearch.search({ query, recent, locale: user.locale }, abortSignal);
         await this.#usage.recordSearch(user, conversationId, found.provider);
         return {
@@ -305,8 +327,8 @@ export class ChatTurns {
     // A first message may be only a photo or a document: its name is enough to name the conversation.
     const text = textOf(first) || attachedNames(first);
     if (!text) return;
+    const choice = this.#models.choose('background', user);
     try {
-      const choice = this.#models.choose('background', user);
       const result = await generateText({
         model: choice.model,
         output: Output.object({ schema: z.object({ title: z.string(), icon: z.string() }) }),
@@ -320,6 +342,10 @@ export class ChatTurns {
       if (title && !conversation.title) await this.#conversations.rename(conversation.id, title);
       await this.#conversations.setIcon(conversation.id, icon);
     } catch (error) {
+      // A name that did not parse was billed all the same: the quota must see it.
+      if (NoObjectGeneratedError.isInstance(error)) {
+        await this.#usage.record(user, conversation.id, 'title', choice, error.usage, undefined, error.response?.body);
+      }
       console.error('Naming a conversation failed:', error);
     }
   }

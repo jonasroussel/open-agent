@@ -1,4 +1,4 @@
-import { generateText, Output } from 'ai';
+import { generateText, NoObjectGeneratedError, Output } from 'ai';
 import { z } from 'zod';
 
 import { mayAskToClarify, type ChatMessage } from '../domain/conversation.ts';
@@ -67,8 +67,8 @@ export class PreAnalysis {
     abortSignal: AbortSignal,
   ): Promise<Analysis> {
     const mayClarify = mayAskToClarify(history);
+    const choice = this.#models.choose('background', user);
     try {
-      const choice = this.#models.choose('background', user);
       const result = await generateText({
         model: choice.model,
         output: Output.object({ schema }),
@@ -92,6 +92,18 @@ export class PreAnalysis {
       };
     } catch (error) {
       if (abortSignal.aborted) throw error;
+      // An answer that did not parse was billed all the same: the quota must see it.
+      if (NoObjectGeneratedError.isInstance(error)) {
+        await this.#usage.record(
+          user,
+          conversationId,
+          'pre_pass',
+          choice,
+          error.usage,
+          undefined,
+          error.response?.body,
+        );
+      }
       console.error('Pre-analysis failed, answering plainly:', error);
       return PLAIN;
     }

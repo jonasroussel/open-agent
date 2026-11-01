@@ -25,7 +25,7 @@ import { QUOTA_WARNING_PERCENT, quotaQuery, resetMonth } from '@/quota/quota-que
 
 import { Composer } from './composer.tsx';
 import { conversationsQuery } from './conversations-query.ts';
-import { AssistantMessage, PendingAnswer, UserMessage } from './message-view.tsx';
+import { AssistantMessage, PendingAnswer, type UndoOutcome, UserMessage } from './message-view.tsx';
 
 /**
  * A conversation: its messages, kept scrolled to the newest while it streams, the composer under them, and the canvas
@@ -53,10 +53,13 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
     onSend?.();
   };
 
-  /** The server marks the notice in the saved conversation; the same is done here, without reloading it. */
-  const undoMemory = async (notice: MemoryNotice) => {
+  /**
+   * The server marks the notice in the saved conversation; the same is done here, without reloading it. A rule edited
+   * since cannot be undone, and the notice then says so.
+   */
+  const undoMemory = async (notice: MemoryNotice): Promise<UndoOutcome> => {
     const result = await api(apiPath(API_ROUTES.memoryChangeUndo, { changeId: notice.changeId }), { method: 'POST' });
-    if (!result.ok && result.error !== 'memory_changed') return;
+    if (!result.ok) return result.error === 'memory_changed' ? 'changed' : 'unchanged';
     setMessages((current) =>
       current.map((message) => ({
         ...message,
@@ -68,6 +71,7 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
       })),
     );
     void queryClient.invalidateQueries({ queryKey: memoryRulesQuery.queryKey });
+    return 'undone';
   };
 
   const navigate = useNavigate();

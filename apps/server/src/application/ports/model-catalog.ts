@@ -19,8 +19,11 @@ export interface ModelCatalog {
    * has no key and the user none either.
    */
   choose(role: ModelRole, modelId: string, ownKey: string | null): ModelChoice;
-  /** The billed cost of a call, from the provider's metadata; `null` when it did not say. */
-  costOf(metadata: ProviderMetadata | undefined): number | null;
+  /**
+   * The billed cost of a call: from the provider's metadata, or from the reply's body when the call ended without
+   * one (an answer that did not parse was billed all the same). `null` when the provider did not say.
+   */
+  costOf(metadata: ProviderMetadata | undefined, body?: unknown): number | null;
 }
 
 export interface KeyChecker {

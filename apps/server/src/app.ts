@@ -50,6 +50,8 @@ export type AppOptions = {
   defaultMonthlyQuotaUsd: number;
   /** The models of the environment, until the admin page changes them. */
   defaultModels: Record<ModelRole, string>;
+  /** Behind the reverse proxy: the client's address comes in `x-forwarded-for`. */
+  trustProxy: boolean;
 };
 
 /**
@@ -100,6 +102,7 @@ export async function createApp(
 
   return createRoutes({
     version: options.version,
+    trustProxy: options.trustProxy,
     authentication: new Authentication(
       users,
       sessions,

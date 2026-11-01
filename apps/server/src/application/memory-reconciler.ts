@@ -1,5 +1,5 @@
 import { MAX_MEMORY_RULES } from '@open-agent/shared';
-import { generateText, Output } from 'ai';
+import { generateText, NoObjectGeneratedError, Output } from 'ai';
 import { z } from 'zod';
 
 import type { MemoryRule } from '../domain/memory.ts';
@@ -39,30 +39,42 @@ export class MemoryReconciler {
     abortSignal: AbortSignal,
   ): Promise<MemoryEdit | null> {
     const choice = this.#models.choose('background', user);
-    const result = await generateText({
-      model: choice.model,
-      output: Output.object({ schema }),
-      // A full memory takes no new rule: said to the model, and enforced by `Memory.applyRemark`.
-      instructions:
-        rules.length >= MAX_MEMORY_RULES
-          ? `${this.#settings.prompt('memory')}\n\nThe list is full: "add" is not allowed; update the closest rule or answer "none".`
-          : this.#settings.prompt('memory'),
-      prompt: [
-        `Remark: ${remark}`,
-        '',
-        'Current rules:',
-        ...(rules.length > 0 ? rules.map((rule) => `${rule.id}: ${rule.text}`) : ['(none)']),
-      ].join('\n'),
-      maxOutputTokens: 300,
-      abortSignal,
-    });
-    await this.#usage.record(user, conversationId, 'memory', choice, result.usage, result.providerMetadata);
-
-    const { operation, ruleId, text } = result.output;
-    const known = rules.some((rule) => rule.id === ruleId);
-    if (operation === 'add' && text) return { operation, text };
-    if (operation === 'update' && known && text) return { operation, ruleId: ruleId!, text };
-    if (operation === 'delete' && known) return { operation, ruleId: ruleId! };
-    return null;
+    try {
+      const result = await generateText({
+        model: choice.model,
+        output: Output.object({ schema }),
+        // A full memory takes no new rule: said to the model, and enforced by `Memory.applyRemark`.
+        instructions:
+          rules.length >= MAX_MEMORY_RULES
+            ? `${this.#settings.prompt('memory')}\n\nThe list is full: "add" is not allowed; update the closest rule or answer "none".`
+            : this.#settings.prompt('memory'),
+        prompt: [
+          `Remark: ${remark}`,
+          '',
+          'Current rules:',
+          ...(rules.length > 0 ? rules.map((rule) => `${rule.id}: ${rule.text}`) : ['(none)']),
+        ].join('\n'),
+        maxOutputTokens: 300,
+        abortSignal,
+      });
+      await this.#usage.record(user, conversationId, 'memory', choice, result.usage, result.providerMetadata);
+      return editOf(result.output, rules);
+    } catch (error) {
+      // An answer that did not parse was billed all the same: the quota must see it.
+      if (NoObjectGeneratedError.isInstance(error)) {
+        await this.#usage.record(user, conversationId, 'memory', choice, error.usage, undefined, error.response?.body);
+      }
+      throw error;
+    }
   }
+}
+
+/** `null`: the answer does not hold (an unknown rule, a missing text). */
+function editOf(output: z.infer<typeof schema>, rules: readonly MemoryRule[]): MemoryEdit | null {
+  const { operation, ruleId, text } = output;
+  const known = rules.some((rule) => rule.id === ruleId);
+  if (operation === 'add' && text) return { operation, text };
+  if (operation === 'update' && known && text) return { operation, ruleId: ruleId!, text };
+  if (operation === 'delete' && known) return { operation, ruleId: ruleId! };
+  return null;
 }

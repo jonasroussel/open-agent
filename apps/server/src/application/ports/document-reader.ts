@@ -12,3 +12,6 @@ export interface DocumentReader {
 }
 
 export class UnreadableDocument extends Error {}
+
+/** A document bigger than the model can read whole: refused at upload, never read in part. */
+export class DocumentTooLong extends Error {}

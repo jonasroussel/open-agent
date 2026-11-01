@@ -281,6 +281,7 @@ beforeEach(async () => {
         devSignInCode: DEV_CODE,
         defaultMonthlyQuotaUsd: DEFAULT_QUOTA,
         defaultModels: { fast: 'fast-model', reasoning: 'reasoning-model', background: 'background-model' },
+        trustProxy: false,
       },
     ),
     fetch: () => new Response(null, { status: 404 }),

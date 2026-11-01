@@ -39,11 +39,15 @@ export class OpenRouterModelCatalog implements ModelCatalog {
     return { model, modelId, paidByUser: ownKey !== null };
   }
 
-  costOf(metadata: ProviderMetadata | undefined): number | null {
-    const usage = metadata?.openrouter?.usage;
-    const cost = typeof usage === 'object' && usage !== null && 'cost' in usage ? usage.cost : null;
-    return typeof cost === 'number' ? cost : null;
+  costOf(metadata: ProviderMetadata | undefined, body?: unknown): number | null {
+    return costIn(metadata?.openrouter?.usage) ?? costIn((body as { usage?: unknown } | undefined)?.usage);
   }
+}
+
+/** OpenRouter reports the billed cost as `usage.cost`: in the step's metadata, and in the reply's body. */
+function costIn(usage: unknown): number | null {
+  const cost = typeof usage === 'object' && usage !== null && 'cost' in usage ? usage.cost : null;
+  return typeof cost === 'number' ? cost : null;
 }
 
 /** OpenRouter describes the key that calls `/key`, and answers 401 to a key it does not know. */

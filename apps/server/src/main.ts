@@ -56,6 +56,7 @@ const routes = await createApp(
     adminEmail: config.adminEmail,
     devSignInCode: config.devSignInCode,
     defaultMonthlyQuotaUsd: config.defaultMonthlyQuotaUsd,
+    trustProxy: config.trustProxy,
     defaultModels: config.models,
   },
 );

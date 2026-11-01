@@ -17,23 +17,28 @@ export class UsageRecorder {
     this.#clock = clock;
   }
 
+  /**
+   * `usage` is missing when the provider's answer could not be parsed: the call was billed anyway, so it is counted
+   * all the same, its cost read from the reply's body when the step metadata is missing.
+   */
   async record(
     user: User,
     conversationId: string,
     purpose: UsagePurpose,
     choice: ModelChoice,
-    usage: LanguageModelUsage,
+    usage: LanguageModelUsage | undefined,
     metadata: ProviderMetadata | undefined,
+    body?: unknown,
   ): Promise<void> {
     await this.#ledger.record({
       userId: user.id,
       conversationId,
       purpose,
       model: choice.modelId,
-      inputTokens: usage.inputTokens ?? 0,
-      outputTokens: usage.outputTokens ?? 0,
-      reasoningTokens: usage.outputTokenDetails.reasoningTokens ?? 0,
-      costUsd: this.#models.costOf(metadata),
+      inputTokens: usage?.inputTokens ?? 0,
+      outputTokens: usage?.outputTokens ?? 0,
+      reasoningTokens: usage?.outputTokenDetails.reasoningTokens ?? 0,
+      costUsd: this.#models.costOf(metadata, body),
       paidByUser: choice.paidByUser,
       at: this.#clock.now(),
     });

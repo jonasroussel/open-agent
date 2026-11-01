@@ -49,3 +49,8 @@ export function forgetChat(id: string): void {
   void chats.get(id)?.stop();
   chats.delete(id);
 }
+
+/** Signing out: the previous person's conversations must not come back for the next one. */
+export function forgetAllChats(): void {
+  for (const id of chats.keys()) forgetChat(id);
+}

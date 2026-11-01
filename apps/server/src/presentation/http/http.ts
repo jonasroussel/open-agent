@@ -24,6 +24,11 @@ export function isHttps(request: Request): boolean {
   return new URL(request.url).protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
 }
 
-export function clientAddress(request: Request, server: ServerHandle): string {
-  return server.requestIP(request)?.address ?? 'unknown';
+/**
+ * The person's address, for the sign-in limits. Behind the reverse proxy every request comes from its own address, so
+ * the original one is read from the header it sets; otherwise everyone would share one bucket.
+ */
+export function clientAddress(request: Request, server: ServerHandle, trustProxy: boolean): string {
+  const forwarded = trustProxy ? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() : undefined;
+  return forwarded || server.requestIP(request)?.address || 'unknown';
 }

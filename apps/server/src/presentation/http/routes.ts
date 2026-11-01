@@ -37,6 +37,8 @@ export type HttpDependencies = {
   settings: Settings;
   modelDirectory: ModelDirectory;
   ownKeys: OwnKeys;
+  /** Behind the reverse proxy: `x-forwarded-for` names the client. */
+  trustProxy: boolean;
 };
 
 /** Answers a sign-in: the session cookie and the user, or why it failed. */
@@ -65,6 +67,7 @@ export function createRoutes({
   settings,
   modelDirectory,
   ownKeys,
+  trustProxy,
 }: HttpDependencies) {
   const signedInUser = (request: BunRequest) =>
     authentication.signedInUser(request.cookies.get(SESSION_COOKIE) ?? null);
@@ -92,7 +95,11 @@ export function createRoutes({
       POST: async (request: BunRequest, server: ServerHandle) => {
         const body = await readJson(request);
         if (typeof body?.email !== 'string' || !isLocale(body.locale)) return error('invalid_request', 400);
-        const result = await authentication.requestSignIn(body.email, body.locale, clientAddress(request, server));
+        const result = await authentication.requestSignIn(
+          body.email,
+          body.locale,
+          clientAddress(request, server, trustProxy),
+        );
         if (result.ok) return new Response(null, { status: 204 });
         const status = { invalid_request: 400, too_many_attempts: 429, email_failed: 502 }[result.reason];
         return error(result.reason, status);
@@ -111,7 +118,11 @@ export function createRoutes({
       POST: async (request: BunRequest, server: ServerHandle) => {
         const body = await readJson(request);
         if (typeof body?.email !== 'string' || typeof body.code !== 'string') return error('invalid_request', 400);
-        const result = await authentication.signInWithCode(body.email, body.code, clientAddress(request, server));
+        const result = await authentication.signInWithCode(
+          body.email,
+          body.code,
+          clientAddress(request, server, trustProxy),
+        );
         return openSession(request, result);
       },
     },

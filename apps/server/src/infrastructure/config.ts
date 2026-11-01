@@ -1,12 +1,14 @@
 const isProduction = Bun.env.NODE_ENV === 'production';
 
 export const config = {
-  port: Number(Bun.env.PORT ?? 3998),
+  port: Number(Bun.env.PORT ?? 3427),
   databasePath: Bun.env.DATABASE_PATH ?? 'data/open-agent.sqlite',
   /** The users' files, and the pictures read out of them. */
   filesPath: Bun.env.FILES_PATH ?? 'data/files',
   /** Built client (`apps/client/dist`) to serve next to the API, so one port is enough. Unset in development. */
   clientDistPath: Bun.env.CLIENT_DIST_PATH ?? null,
+  /** Behind the reverse proxy: the client's address comes in `x-forwarded-for`, not from the socket. */
+  trustProxy: Bun.env.TRUST_PROXY === '1',
   /** Where emailed links point: the Vite dev server in development. */
   publicUrl: Bun.env.PUBLIC_URL ?? (isProduction ? required('PUBLIC_URL') : 'http://localhost:5173'),
   /** Made admin at every boot: the first admin needs no invitation. */

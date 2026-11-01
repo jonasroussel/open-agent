@@ -117,7 +117,7 @@ export function AssistantMessage({
   message: ChatMessage;
   streaming: boolean;
   onRegenerate: (() => void) | null;
-  onUndoMemory: (notice: MemoryNotice) => Promise<void>;
+  onUndoMemory: (notice: MemoryNotice) => Promise<UndoOutcome>;
   onOpenDocument: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -205,17 +205,25 @@ function DocumentCard({ part, onOpen }: { part: DocumentPart; onOpen: (id: strin
   );
 }
 
+/** How an undo ended: done, refused because the rule moved since, or failed for another reason. */
+export type UndoOutcome = 'undone' | 'changed' | 'unchanged';
+
 /** "Remembered: …" under the answer to the remark: the rule on its own lines, then Undo and a link to the memory. */
-function MemoryNoticeLine({ notice, onUndo }: { notice: MemoryNotice; onUndo: () => Promise<void> }) {
+function MemoryNoticeLine({ notice, onUndo }: { notice: MemoryNotice; onUndo: () => Promise<UndoOutcome> }) {
   const { t } = useTranslation();
   const [pending, setPending] = useState(false);
+  // An undo the server refused is said as such: the rule is not back, so nothing may show it as undone.
+  const [changed, setChanged] = useState(false);
   const labels = {
     add: () => t('memory.added', { after: notice.after }),
     update: () => t('memory.updated', { before: notice.before, after: notice.after }),
     delete: () => t('memory.deleted', { before: notice.before }),
   };
   const label = labels[notice.operation]();
-
+  // Where the Undo button was once it is spent: undone, or refused because the rule moved since.
+  let conclusion: ReactNode = null;
+  if (notice.undone) conclusion = <span className='text-muted-foreground'>{t('memory.undone')}</span>;
+  else if (changed) conclusion = <span className='text-muted-foreground'>{t('errors.memory_changed')}</span>;
   return (
     <div
       className={cn(
@@ -227,15 +235,15 @@ function MemoryNoticeLine({ notice, onUndo }: { notice: MemoryNotice; onUndo: ()
       <div className='grid min-w-0 gap-2'>
         <p className={cn('text-secondary-foreground leading-relaxed', notice.undone && 'line-through')}>{label}</p>
         <div className='flex flex-wrap items-center gap-x-4 gap-y-1'>
-          {notice.undone ? (
-            <span className='text-muted-foreground'>{t('memory.undone')}</span>
-          ) : (
+          {conclusion ?? (
             <button
               type='button'
               disabled={pending}
               onClick={() => {
                 setPending(true);
-                void onUndo().finally(() => setPending(false));
+                void onUndo()
+                  .then((outcome) => setChanged(outcome === 'changed'))
+                  .finally(() => setPending(false));
               }}
               className='text-secondary-foreground font-medium underline underline-offset-2 hover:no-underline disabled:opacity-50'
             >

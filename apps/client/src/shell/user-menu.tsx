@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { sessionQuery } from '@/auth/session.ts';
+import { forgetAllChats } from '@/chat/chat-store.ts';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.tsx';
 import {
   DropdownMenu,
@@ -42,6 +43,9 @@ export function UserMenu({ user }: { user: SignedInUser }) {
 
   async function signOut() {
     await api(API_ROUTES.session, { method: 'DELETE' });
+    // Nothing of the person who left stays reachable: the next one on this device starts clean.
+    forgetAllChats();
+    queryClient.clear();
     queryClient.setQueryData(sessionQuery.queryKey, null);
     await navigate({ to: '/sign-in' });
   }

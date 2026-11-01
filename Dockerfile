@@ -31,10 +31,11 @@ RUN cd /git \
 FROM oven/bun:1.4.4-slim
 WORKDIR /app
 ENV NODE_ENV=production \
-    PORT=3998 \
+    PORT=3427 \
     DATABASE_PATH=/data/open-agent.sqlite \
     FILES_PATH=/data/files \
-    CLIENT_DIST_PATH=/app/apps/client/dist
+    CLIENT_DIST_PATH=/app/apps/client/dist \
+    TRUST_PROXY=1
 
 # Poppler reads PDFs: `pdftotext` for their text, `pdftoppm` for a picture of each page. `unzip` reads the headers
 # and footers of Word files, which mammoth skips.
@@ -62,7 +63,7 @@ RUN mkdir /data && chown bun:bun /data
 VOLUME /data
 USER bun
 
-EXPOSE 3998
+EXPOSE 3427
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD bun -e "fetch('http://localhost:' + process.env.PORT + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 CMD ["bun", "apps/server/src/main.ts"]

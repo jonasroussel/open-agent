@@ -15,7 +15,7 @@ import {
 import type { LibraryRepository } from '../domain/library-repository.ts';
 import type { User } from '../domain/user.ts';
 import type { Clock } from './ports/clock.ts';
-import { UnreadableDocument, type DocumentReader } from './ports/document-reader.ts';
+import { DocumentTooLong, UnreadableDocument, type DocumentReader } from './ports/document-reader.ts';
 import type { FileStore } from './ports/file-store.ts';
 
 export type Upload = { name: string; mediaType: string; bytes: Uint8Array };
@@ -57,6 +57,7 @@ export class Library {
     try {
       content = await this.#read(kind, mediaType, upload.bytes, pictures);
     } catch (error) {
+      if (error instanceof DocumentTooLong) return { ok: false, reason: 'file_too_long' };
       if (error instanceof UnreadableDocument) return { ok: false, reason: 'file_unreadable' };
       throw error;
     }
