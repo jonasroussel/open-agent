@@ -1,0 +1,37 @@
+# The production stack, e.g. as a Portainer stack. `bun run deploy` then pushes new images and recreates these
+# containers, which it finds by name. The variables are set in the stack: random secrets from `openssl rand -base64 32`.
+services:
+  open-agent:
+    image: registry.jonas.bzh/open-agent:latest
+    container_name: open-agent
+    restart: unless-stopped
+    depends_on:
+      - open-agent-searxng
+    # Or the reverse proxy's network and labels instead of a published port.
+    ports:
+      - 3427:3427
+    environment:
+      PUBLIC_URL: https://open-agent.jonas.bzh
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      PLUNK_API_KEY: ${PLUNK_API_KEY}
+      MAIL_FROM: ${MAIL_FROM:-hello@jonasroussel.com}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      # Never change it once set: the users' own OpenRouter keys would become unreadable.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      TAVILY_API_KEY: ${TAVILY_API_KEY}
+      SEARXNG_URL: http://open-agent-searxng:8080
+    # The database and the users' files: personal data, to back up.
+    volumes:
+      - open-agent-data:/data
+
+  open-agent-searxng:
+    image: registry.jonas.bzh/open-agent-searxng:latest
+    container_name: open-agent-searxng
+    restart: unless-stopped
+    # No port: only the app calls it, on the stack's network.
+    environment:
+      # SearXNG refuses to start with its default secret.
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+
+volumes:
+  open-agent-data:

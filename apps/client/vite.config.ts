@@ -13,7 +13,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': process.env.API_URL ?? 'http://localhost:3998',
+      '/api': process.env.API_URL ?? 'http://localhost:3427',
     },
   },
 });

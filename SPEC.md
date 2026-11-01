@@ -226,7 +226,7 @@ Same layout and tooling as `inscript-carte`.
 | Web search | Tavily, then self-hosted SearXNG |
 | Lint, format | oxlint, oxfmt |
 | Tests | `bun test`, co-located `*.test.ts` |
-| Deploy | Two Docker images pushed to `registry.jonas.bzh` and recreated through the Portainer API: the app (API + built client on one port) and `open-agent-searxng` (SearXNG with `searxng/settings.yml` inside) |
+| Deploy | `deploy/compose.yaml` creates the stack once (e.g. as a Portainer stack): the app (API + built client on one port, `/data` in a volume) and `open-agent-searxng` (SearXNG with `searxng/settings.yml` inside, reached only by the app). Then `bun run deploy` pushes both images to `registry.jonas.bzh` and recreates the two containers, by name, through the Portainer API |
 | Development | `bun run dev` starts `compose.yaml` (SearXNG on `localhost:8888`), then the server and Vite |
 
 ## Look and feel
@@ -267,7 +267,8 @@ Same layout and tooling as `inscript-carte`.
 
 | Env var | Purpose |
 | --- | --- |
-| `PORT` | HTTP port (default 3998) |
+| `PORT` | HTTP port (default 3427) |
+| `TRUST_PROXY` | Behind the reverse proxy: the sign-in limits read the client's address in `x-forwarded-for` (`1` in the image) |
 | `DATABASE_PATH` | SQLite file |
 | `FILES_PATH` | Uploaded files and the pictures read out of them (default `data/files`; `/data/files` in the image) |
 | `CLIENT_DIST_PATH` | Built client, served next to the API |
@@ -283,3 +284,4 @@ Same layout and tooling as `inscript-carte`.
 | `PLUNK_API_KEY` | Sign-in emails (unset in development: links and codes go to the server log) |
 | `MAIL_FROM` | Sender address; its domain must be verified in Plunk |
 | `ENCRYPTION_KEY` | Encrypts the users' own OpenRouter keys at rest (required in production; changing it means they enter their keys again) |
+| `SEARXNG_SECRET` | Secret of the SearXNG container (required: it refuses to start with its default one) |
