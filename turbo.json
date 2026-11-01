@@ -1,0 +1,37 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "tui",
+  "agentGuidance": false,
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "test": {
+      "dependsOn": ["^typecheck"]
+    },
+    "dev": {
+      "cache": false,
+      "passThroughEnv": [
+        "PORT",
+        "DATABASE_PATH",
+        "API_URL",
+        "PUBLIC_URL",
+        "ADMIN_EMAIL",
+        "PLUNK_API_KEY",
+        "MAIL_FROM",
+        "OPENROUTER_API_KEY",
+        "FAST_MODEL",
+        "REASONING_MODEL",
+        "BACKGROUND_MODEL",
+        "TAVILY_API_KEY",
+        "SEARXNG_URL",
+        "DEFAULT_MONTHLY_QUOTA_USD",
+        "FILES_PATH"
+      ]
+    }
+  }
+}

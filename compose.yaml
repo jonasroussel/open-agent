@@ -1,0 +1,9 @@
+# Services for development, started by `bun run dev`. The app itself runs on the host with Bun.
+services:
+  searxng:
+    build: ./searxng
+    ports:
+      - 127.0.0.1:8888:8080
+    environment:
+      SEARXNG_SECRET: development-only
+    restart: unless-stopped

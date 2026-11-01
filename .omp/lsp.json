@@ -1,0 +1,21 @@
+{
+  "servers": {
+    "oxlint": {
+      "command": "oxlint",
+      "args": ["--lsp"],
+      "fileTypes": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+      "rootMarkers": [".oxlintrc.json"],
+      "isLinter": true
+    },
+    "oxfmt": {
+      "command": "oxfmt",
+      "args": ["--lsp"],
+      "fileTypes": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".jsonc", ".css"],
+      "rootMarkers": [".oxfmtrc.json"],
+      "isLinter": true
+    },
+    "eslint": { "disabled": true },
+    "biome": { "disabled": true },
+    "typescript-language-server": { "disabled": true }
+  }
+}

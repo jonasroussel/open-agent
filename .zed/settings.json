@@ -1,0 +1,59 @@
+{
+  "languages": {
+    "TypeScript": {
+      "language_servers": [
+        "typescript-ls",
+        "oxlint",
+        "oxfmt",
+        "!vtsls",
+        "!typescript-language-server",
+        "!eslint",
+        "..."
+      ],
+      "formatter": { "language_server": { "name": "oxfmt" } }
+    },
+    "TSX": {
+      "language_servers": [
+        "typescript-ls",
+        "oxlint",
+        "oxfmt",
+        "!vtsls",
+        "!typescript-language-server",
+        "!eslint",
+        "..."
+      ],
+      "formatter": { "language_server": { "name": "oxfmt" } }
+    },
+    "JavaScript": {
+      "language_servers": [
+        "typescript-ls",
+        "oxlint",
+        "oxfmt",
+        "!vtsls",
+        "!typescript-language-server",
+        "!eslint",
+        "..."
+      ],
+      "formatter": { "language_server": { "name": "oxfmt" } }
+    },
+    "CSS": {
+      "language_servers": ["oxfmt", "..."],
+      "formatter": { "language_server": { "name": "oxfmt" } }
+    },
+    "JSON": {
+      "language_servers": ["oxfmt", "..."],
+      "formatter": { "language_server": { "name": "oxfmt" } }
+    },
+    "JSONC": {
+      "language_servers": ["oxfmt", "..."],
+      "formatter": { "language_server": { "name": "oxfmt" } }
+    }
+  },
+  "lsp": {
+    "typescript-ls": {
+      "settings": {
+        "package_version": "7.0.2"
+      }
+    }
+  }
+}

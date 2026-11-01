@@ -1,0 +1,17 @@
+# Our own SearXNG, reachable only by the app: JSON answers on, bot limiter off. Same file in development and
+# production; the secret comes from SEARXNG_SECRET.
+use_default_settings: true
+
+general:
+  instance_name: Open Agent search
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+server:
+  limiter: false
+  public_instance: false
+  image_proxy: false

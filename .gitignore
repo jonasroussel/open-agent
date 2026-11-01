@@ -1,0 +1,14 @@
+node_modules
+dist
+.turbo
+*.tsbuildinfo
+*.log
+*.local
+.env
+.env.*
+!.env.example
+# Local database and uploaded files: personal data, never committed.
+apps/server/data/
+*.sqlite
+*.sqlite-*
+.DS_Store

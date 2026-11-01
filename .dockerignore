@@ -1,0 +1,31 @@
+# Allow list: everything stays out of the build except what the image needs. A new file (backup, .env, database)
+# can never reach the image by mistake: it would have to be added here on purpose.
+*
+
+!package.json
+!bun.lock
+!tsconfig.base.json
+
+!packages/shared/package.json
+!packages/shared/src
+
+!apps/server/package.json
+!apps/server/src
+
+!apps/client/package.json
+!apps/client/index.html
+!apps/client/vite.config.ts
+!apps/client/tsconfig*.json
+!apps/client/src
+!apps/client/public
+
+# Only to read the commit being built (shown at startup): the current branch and commit hashes, no history.
+!.git/HEAD
+!.git/refs/heads
+!.git/packed-refs
+
+# Excluded again inside the allowed folders.
+**/*.test.ts
+**/*.sqlite
+**/*.sqlite-*
+**/.DS_Store
