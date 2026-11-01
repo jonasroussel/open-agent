@@ -102,7 +102,11 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
 - Streaming answers (Vercel AI SDK UI message stream).
 - Regenerate an answer; edit a sent message and resend (the later messages are replaced, no branches).
 - Automatic conversation titles (background model); pin conversations.
-- Full-text search in the history (SQLite FTS5).
+- **Search in the history** ("Search" in the sidebar, ⌘K / Ctrl+K): SQLite FTS5 on the text of every message,
+  accents aside (`remove_diacritics`), every word required and open-ended (« resil » finds « résiliation »). One row
+  per conversation, last updated first, with the passage of its best message and the words found highlighted;
+  Markdown marks are removed from the passage. Enter opens the first one. Triggers keep the index in step with every
+  write, edits and deletions included. Titles are not searched: they repeat the first message.
 
 ### Web search
 
@@ -245,7 +249,8 @@ Same layout and tooling as `inscript-carte`.
 | `sign_in_requests` | user, token hash, code hash (none for invitations), expiry, used at |
 | `sessions` | token hash, user, expiry |
 | `conversations` | id chosen by the client (UUID), user, title, pinned, created/updated at |
-| `messages` | conversation, id (unique per conversation: the client chooses it), position, role, the whole AI SDK UI message as JSON; later an FTS5 index on its text |
+| `messages` | conversation, id (unique per conversation: the client chooses it), position, role, the whole AI SDK UI message as JSON |
+| `message_search` | FTS5 over the text parts of each message, sharing its `rowid`; filled by triggers on `messages` |
 | `memory_rules` | user, rule text, created/updated at, deleted at (kept so an Undo restores the same rule) |
 | `memory_rule_changes` | user, rule, operation, before, after, source (`remark` / `user`), conversation and message of the notice, undone at |
 | `library_files` | id (UUID, in its address), user, name, kind (`image` / `pdf` / `word` / `text`), media type, size, content (JSON: whole text and names of the pictures on disk), created at |

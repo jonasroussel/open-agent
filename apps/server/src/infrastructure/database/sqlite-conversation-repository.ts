@@ -1,7 +1,7 @@
 import type { Knex } from 'knex';
 
 import type { ConversationRepository } from '../../domain/conversation-repository.ts';
-import type { ChatMessage, Conversation } from '../../domain/conversation.ts';
+import type { ChatMessage, Conversation, SearchHit, SnippetPart } from '../../domain/conversation.ts';
 
 type ConversationRow = {
   id: string;
@@ -95,6 +95,43 @@ export class SqliteConversationRepository implements ConversationRepository {
   async delete(id: string): Promise<void> {
     await this.#database('conversations').where({ id }).delete();
   }
+
+  async search(userId: number, terms: readonly string[], limit: number): Promise<SearchHit[]> {
+    if (terms.length === 0) return [];
+    // Each term quoted (FTS5 syntax stays literal) and open-ended: « resil » finds « résiliation ».
+    const match = terms.map((term) => `"${term.replaceAll('"', '""')}"*`).join(' ');
+    // Best messages first; FTS5 refuses `snippet` beside a window function, so the best one per conversation is kept
+    // here rather than in SQL.
+    const rows: (ConversationRow & { snippet: string })[] = await this.#database.raw(
+      `SELECT ${COLUMNS.map((column) => `c.${column}`).join(', ')},
+          snippet(message_search, 0, char(2), char(3), '…', 16) AS snippet
+        FROM message_search
+        JOIN messages m ON m.rowid = message_search.rowid
+        JOIN conversations c ON c.id = m.conversation_id
+        WHERE message_search MATCH ? AND c.user_id = ?
+        ORDER BY bm25(message_search)
+        LIMIT 500`,
+      [match, userId],
+    );
+    const best: Record<string, SearchHit> = {};
+    for (const row of rows) best[row.id] ??= { conversation: toConversation(row), snippet: snippetParts(row.snippet) };
+    return Object.values(best)
+      .toSorted((a, b) => b.conversation.updatedAt.getTime() - a.conversation.updatedAt.getTime())
+      .slice(0, limit);
+  }
+}
+
+/** `snippet` wraps each found word in \x02 … \x03. */
+function snippetParts(snippet: string): SnippetPart[] {
+  return snippet.split('\x03').flatMap((piece) => {
+    const [before = '', found] = piece.split('\x02');
+    return found === undefined
+      ? [{ text: before, match: false }]
+      : [
+          { text: before, match: false },
+          { text: found, match: true },
+        ];
+  });
 }
 
 function toConversation(row: ConversationRow): Conversation {

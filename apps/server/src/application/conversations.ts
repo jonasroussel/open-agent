@@ -1,8 +1,15 @@
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
-import type { ChatMessage, Conversation } from '../domain/conversation.ts';
+import {
+  cleanSnippet,
+  searchTerms,
+  type ChatMessage,
+  type Conversation,
+  type SearchHit,
+} from '../domain/conversation.ts';
 import type { User } from '../domain/user.ts';
 
 const MAX_TITLE_LENGTH = 80;
+const SEARCH_RESULTS = 20;
 
 export type ConversationUpdate = { title?: unknown; pinned?: unknown };
 
@@ -21,6 +28,12 @@ export class Conversations {
   async open(user: User, id: string): Promise<{ conversation: Conversation; messages: ChatMessage[] } | null> {
     const conversation = await this.#owned(user, id);
     return conversation ? { conversation, messages: await this.#conversations.messages(id) } : null;
+  }
+
+  /** Full-text search in the user's own history; an empty search finds nothing. */
+  async search(user: User, text: string): Promise<SearchHit[]> {
+    const hits = await this.#conversations.search(user.id, searchTerms(text), SEARCH_RESULTS);
+    return hits.map((hit) => ({ ...hit, snippet: cleanSnippet(hit.snippet) }));
   }
 
   async update(

@@ -159,6 +159,11 @@ export const fr: Translation = {
     nearLimit: 'Vous avez utilisé {{percent}} % de votre quota de ce mois-ci.',
     exhausted: 'Vous avez utilisé tout votre quota de ce mois-ci. Il revient le 1er {{month}}.',
   },
+  search: {
+    open: 'Rechercher',
+    placeholder: 'Chercher dans vos conversations',
+    empty: 'Aucune conversation ne contient ces mots.',
+  },
   conversations: {
     pinned: 'Épinglées',
     untitled: 'Nouvelle conversation',

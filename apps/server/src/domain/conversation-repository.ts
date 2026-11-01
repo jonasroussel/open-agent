@@ -1,4 +1,4 @@
-import type { ChatMessage, Conversation } from './conversation.ts';
+import type { ChatMessage, Conversation, SearchHit } from './conversation.ts';
 
 export interface ConversationRepository {
   /** The user's conversations, last updated first. */
@@ -16,4 +16,6 @@ export interface ConversationRepository {
   setIcon(id: string, icon: string): Promise<void>;
   setPinned(id: string, pinned: boolean): Promise<void>;
   delete(id: string): Promise<void>;
+  /** The user's conversations whose messages hold every term (or a word starting with it), last updated first. */
+  search(userId: number, terms: readonly string[], limit: number): Promise<SearchHit[]>;
 }

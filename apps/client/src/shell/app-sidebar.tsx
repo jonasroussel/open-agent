@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/sidebar.tsx';
 
 import { ConversationList } from './conversation-list.tsx';
+import { SearchMenuItem } from './search-dialog.tsx';
 import { UserMenu } from './user-menu.tsx';
 
 export function AppSidebar({ user }: { user: SignedInUser }) {
@@ -53,6 +54,7 @@ export function AppSidebar({ user }: { user: SignedInUser }) {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            <SearchMenuItem onNavigate={closeOnPhone} />
             <SidebarMenuItem>
               <SidebarMenuButton asChild className='h-9' isActive={Boolean(matchRoute({ to: '/memory' }))}>
                 <Link to='/memory' onClick={closeOnPhone}>

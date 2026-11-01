@@ -25,6 +25,8 @@ export const API_ROUTES = {
   conversations: '/api/conversations',
   /** GET: one conversation with its messages. PATCH `UpdateConversationBody`. DELETE. */
   conversation: '/api/conversations/:conversationId',
+  /** GET `?q=`: full-text search in the signed-in user's history, as `SearchResponse`. */
+  search: '/api/search',
   /**
    * POST, the AI SDK chat transport: `{ id, messages }` with the whole history; creates the conversation on its first
    * message. Answers a UI message stream.
@@ -222,6 +224,14 @@ export type ListConversationsResponse = { conversations: ConversationDto[] };
 export type ConversationResponse = { conversation: ConversationDto; messages: ChatMessage[] };
 
 export type UpdateConversationBody = { title?: string; pinned?: boolean };
+
+/** A search longer than this is refused; a real one is a few words. */
+export const MAX_SEARCH_LENGTH = 200;
+
+/** A conversation the search found, with the passage of its best message; `match` parts are the searched words. */
+export type SearchResultDto = { conversation: ConversationDto; snippet: { text: string; match: boolean }[] };
+
+export type SearchResponse = { results: SearchResultDto[] };
 
 export const MAX_MEMORY_RULES = 50;
 export const MAX_MEMORY_RULE_LENGTH = 300;

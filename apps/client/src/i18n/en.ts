@@ -153,6 +153,11 @@ export const en = {
     nearLimit: 'You have used {{percent}}% of your quota this month.',
     exhausted: 'You have used all of your quota this month. It comes back on {{month}} 1.',
   },
+  search: {
+    open: 'Search',
+    placeholder: 'Search your conversations',
+    empty: 'No conversation holds these words.',
+  },
   conversations: {
     pinned: 'Pinned',
     untitled: 'New conversation',

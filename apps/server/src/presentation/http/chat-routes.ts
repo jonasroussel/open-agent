@@ -1,8 +1,10 @@
 import {
   API_ROUTES,
+  MAX_SEARCH_LENGTH,
   type ConversationResponse,
   type ListConversationsResponse,
   type QuotaResponse,
+  type SearchResponse,
 } from '@open-agent/shared';
 import { consumeStream, createUIMessageStreamResponse } from 'ai';
 import type { BunRequest } from 'bun';
@@ -62,6 +64,18 @@ export function createChatRoutes({ signedInUser, conversations, chatTurns, quota
             ? new Response(null, { status: 204 })
             : error('not_found', 404),
         ),
+    },
+
+    [API_ROUTES.search]: {
+      GET: (request: BunRequest) =>
+        withUser(request, async (user) => {
+          const text = new URL(request.url).searchParams.get('q') ?? '';
+          if (text.length > MAX_SEARCH_LENGTH) return error('invalid_request', 400);
+          const hits = await conversations.search(user, text);
+          return Response.json({
+            results: hits.map((hit) => ({ conversation: toConversationDto(hit.conversation), snippet: hit.snippet })),
+          } satisfies SearchResponse);
+        }),
     },
 
     [API_ROUTES.chat]: {

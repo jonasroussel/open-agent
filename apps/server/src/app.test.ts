@@ -15,6 +15,7 @@ import type {
   ListAdminUsersResponse,
   AdminUserDto,
   QuotaResponse,
+  SearchResponse,
   AdminSettingsResponse,
   ModelCapability,
   UploadFileResponse,
@@ -537,6 +538,29 @@ describe('chat', () => {
 
 const textOfMessage = (message: UIMessage) =>
   message.parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('');
+
+describe('search', () => {
+  test("finds the user's own conversations by the start of words, accents aside, and follows edits", async () => {
+    const cookie = await signIn(ADMIN);
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Ma Freebox ne capte plus, été comme hiver.')]);
+    const search = async (who: string, text: string) =>
+      ((await (await call(`/api/search?q=${encodeURIComponent(text)}`, { cookie: who })).json()) as SearchResponse)
+        .results;
+
+    const [found] = await search(cookie, 'freeb ete');
+    expect(found?.conversation.id).toBe(CONVERSATION);
+    expect(found?.snippet.filter((part) => part.match).map((part) => part.text)).toEqual(['Freebox', 'été']);
+    expect(await search(cookie, 'freebox télé')).toEqual([]);
+    expect(await search(cookie, '   ')).toEqual([]);
+
+    await invite(cookie, 'ana@example.com');
+    expect(await search(await signIn('ana@example.com'), 'freebox')).toEqual([]);
+
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Bonjour')]);
+    expect(await search(cookie, 'freebox')).toEqual([]);
+    expect((await call(`/api/search?q=${'a'.repeat(201)}`, { cookie })).status).toBe(400);
+  });
+});
 
 describe('pre-analysis', () => {
   test('a request that needs thinking is answered by the reasoning model, and the answer says so', async () => {

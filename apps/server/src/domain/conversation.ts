@@ -14,6 +14,32 @@ export type Conversation = {
   updatedAt: Date;
 };
 
+/** A piece of the text around what the search found; `match`: one of the searched words. */
+export type SnippetPart = { text: string; match: boolean };
+
+/** A conversation the search found, with the passage of its best matching message. */
+export type SearchHit = { conversation: Conversation; snippet: SnippetPart[] };
+
+/** Words of a search: at most 10, the rest is noise. */
+export function searchTerms(text: string): string[] {
+  return text.trim().split(/\s+/).filter(Boolean).slice(0, 10);
+}
+
+/**
+ * A passage as the person reads it: Markdown marks (`**`, `#`, table pipes and rules, backticks) and line breaks
+ * become plain spaces; the space between two found words stays.
+ */
+export function cleanSnippet(parts: readonly SnippetPart[]): SnippetPart[] {
+  const cleaned = parts
+    .map((part) => ({ text: part.text.replace(/[*_`#|>]+|-{3,}/g, ' ').replace(/\s+/g, ' '), match: part.match }))
+    .filter((part) => part.text);
+  const first = cleaned[0];
+  const last = cleaned.at(-1);
+  if (first) first.text = first.text.trimStart();
+  if (last) last.text = last.text.trimEnd();
+  return cleaned.filter((part) => part.text);
+}
+
 /** A title the model gave: one line, without the quotes models like to add, and never longer than a sidebar row. */
 export function cleanTitle(raw: string): string | null {
   const title = raw

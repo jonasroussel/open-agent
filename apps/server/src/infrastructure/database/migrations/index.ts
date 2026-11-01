@@ -9,6 +9,7 @@ import * as conversationIcon from './0006-conversation-icon.ts';
 import * as libraryFiles from './0007-library-files.ts';
 import * as artifacts from './0008-artifacts.ts';
 import * as settings from './0009-settings.ts';
+import * as messageSearch from './0010-message-search.ts';
 
 /** Listed explicitly so migrations survive `bun build`. Append new ones at the end; never rename. */
 const migrations: Record<string, Knex.Migration> = {
@@ -21,6 +22,7 @@ const migrations: Record<string, Knex.Migration> = {
   '0007-library-files': libraryFiles,
   '0008-artifacts': artifacts,
   '0009-settings': settings,
+  '0010-message-search': messageSearch,
 };
 
 export const migrationSource: Knex.MigrationSource<string> = {
