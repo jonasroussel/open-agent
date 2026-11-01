@@ -1,7 +1,8 @@
 import { API_ROUTES, LOCALES, type Locale, type SignedInUser } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronsUpDown, Languages, LogOut, Monitor, Moon, Sun } from 'lucide-react';
+import { ChevronsUpDown, KeyRound, Languages, LogOut, Monitor, Moon, Sun } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { sessionQuery } from '@/auth/session.ts';
@@ -22,6 +23,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui
 import { currentLocale } from '@/i18n/i18n.ts';
 import { api } from '@/lib/api.ts';
 import { cn } from '@/lib/utils.ts';
+import { OwnKeyDialog } from '@/own-key/own-key-dialog.tsx';
 import { quotaQuery } from '@/quota/quota-query.ts';
 import { setTheme, THEMES, useTheme, type Theme } from '@/theme/theme.ts';
 
@@ -36,6 +38,7 @@ export function UserMenu({ user }: { user: SignedInUser }) {
   const ThemeIcon = THEME_ICONS[theme];
   const name = user.email.split('@')[0]!;
   const { data: quota } = useQuery(quotaQuery);
+  const [ownKeyOpen, setOwnKeyOpen] = useState(false);
 
   async function signOut() {
     await api(API_ROUTES.session, { method: 'DELETE' });
@@ -82,6 +85,12 @@ export function UserMenu({ user }: { user: SignedInUser }) {
                 <DropdownMenuSeparator />
               </>
             )}
+            {quota?.ownKey && (
+              <>
+                <p className='text-muted-foreground px-2 py-1.5 text-sm'>{t('ownKey.paying')}</p>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <ThemeIcon />
@@ -119,6 +128,10 @@ export function UserMenu({ user }: { user: SignedInUser }) {
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuItem onSelect={() => setOwnKeyOpen(true)}>
+              <KeyRound />
+              {t('ownKey.title')}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => void signOut()}>
               <LogOut />
@@ -127,6 +140,7 @@ export function UserMenu({ user }: { user: SignedInUser }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
+      <OwnKeyDialog open={ownKeyOpen} onClose={() => setOwnKeyOpen(false)} />
     </SidebarMenu>
   );
 }

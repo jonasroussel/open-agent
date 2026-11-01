@@ -28,6 +28,7 @@ export class Quotas {
       limitUsd: quotaLimit(user, this.#defaultUsd),
       usedUsd: await this.#ledger.spentSince(user.id, month.start),
       resetsAt: month.end,
+      ownKey: user.ownKey !== null,
     };
   }
 
@@ -38,7 +39,12 @@ export class Quotas {
     return new Map(
       users.map((user) => [
         user.id,
-        { limitUsd: quotaLimit(user, this.#defaultUsd), usedUsd: spent.get(user.id) ?? 0, resetsAt: month.end },
+        {
+          limitUsd: quotaLimit(user, this.#defaultUsd),
+          usedUsd: spent.get(user.id) ?? 0,
+          resetsAt: month.end,
+          ownKey: user.ownKey !== null,
+        },
       ]),
     );
   }

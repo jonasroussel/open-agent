@@ -1,5 +1,12 @@
 import { useChat, type Chat } from '@ai-sdk/react';
-import { API_ROUTES, apiPath, type ChatMessage, type LibraryFileDto, type MemoryNotice } from '@open-agent/shared';
+import {
+  API_ROUTES,
+  apiPath,
+  OWN_KEY_REFUSED,
+  type ChatMessage,
+  type LibraryFileDto,
+  type MemoryNotice,
+} from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { ArrowDown, RotateCcw } from 'lucide-react';
@@ -139,7 +146,9 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
               {busy && messages.at(-1)?.role === 'user' && <PendingAnswer />}
               {error && !exhausted && (
                 <div className='flex items-center gap-3 pl-10'>
-                  <p className='text-destructive text-sm'>{t('chat.failed')}</p>
+                  <p className='text-destructive text-sm'>
+                    {error.message === OWN_KEY_REFUSED ? t('chat.ownKeyRefused') : t('chat.failed')}
+                  </p>
                   <Button variant='outline' size='sm' onClick={() => void regenerate()}>
                     <RotateCcw />
                     {t('app.retry')}

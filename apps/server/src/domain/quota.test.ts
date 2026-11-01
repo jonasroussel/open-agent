@@ -25,16 +25,22 @@ describe('monthAround', () => {
 
 describe('quota', () => {
   const resetsAt = new Date('2026-11-30T23:00:00Z');
+  const quota = (limitUsd: number | null, usedUsd: number, ownKey = false) => ({ limitUsd, usedUsd, resetsAt, ownKey });
 
   test('is used up once the spending reaches the limit, never without a limit', () => {
-    expect(isExhausted({ limitUsd: 5, usedUsd: 4.99, resetsAt })).toBe(false);
-    expect(isExhausted({ limitUsd: 5, usedUsd: 5, resetsAt })).toBe(true);
-    expect(isExhausted({ limitUsd: null, usedUsd: 1000, resetsAt })).toBe(false);
+    expect(isExhausted(quota(5, 4.99))).toBe(false);
+    expect(isExhausted(quota(5, 5))).toBe(true);
+    expect(isExhausted(quota(null, 1000))).toBe(false);
   });
 
   test('shows whole percents, capped at 100; a zero limit is full', () => {
-    expect(percentUsed({ limitUsd: 5, usedUsd: 3.27, resetsAt })).toBe(65);
-    expect(percentUsed({ limitUsd: 5, usedUsd: 6, resetsAt })).toBe(100);
-    expect(percentUsed({ limitUsd: 0, usedUsd: 0, resetsAt })).toBe(100);
+    expect(percentUsed(quota(5, 3.27))).toBe(65);
+    expect(percentUsed(quota(5, 6))).toBe(100);
+    expect(percentUsed(quota(0, 0))).toBe(100);
+  });
+
+  test("an own key lifts the limit, even when the app's spending already reached it", () => {
+    expect(isExhausted(quota(5, 7, true))).toBe(false);
+    expect(percentUsed(quota(5, 7, true))).toBe(0);
   });
 });

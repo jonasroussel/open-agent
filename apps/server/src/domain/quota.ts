@@ -5,13 +5,15 @@ const TIME_ZONE = 'Europe/Paris';
 const offsetFormat = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, timeZoneName: 'longOffset' });
 const monthFormat = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, year: 'numeric', month: 'numeric' });
 
-/** What a user spent this month against their limit. */
+/** What a user spent this month on the app's key, against their limit. */
 export type Quota = {
   /** `null`: no limit, for admins. */
   limitUsd: number | null;
   usedUsd: number;
   /** When the month ends and the spending starts again from zero. */
   resetsAt: Date;
+  /** Their own OpenRouter key pays: the limit, kept for the day they remove it, does not apply meanwhile. */
+  ownKey: boolean;
 };
 
 /** The calendar month, in Paris time, that `now` belongs to. */
@@ -28,12 +30,12 @@ export function quotaLimit(user: User, defaultUsd: number): number | null {
 
 /** Checked before each message: the message that crosses the limit is still answered, the next one is not. */
 export function isExhausted(quota: Quota): boolean {
-  return quota.limitUsd !== null && quota.usedUsd >= quota.limitUsd;
+  return !quota.ownKey && quota.limitUsd !== null && quota.usedUsd >= quota.limitUsd;
 }
 
-/** Whole percents, capped at 100; `0` without a limit. */
+/** Whole percents, capped at 100; `0` without a limit, or while their own key pays. */
 export function percentUsed(quota: Quota): number {
-  if (quota.limitUsd === null) return 0;
+  if (quota.limitUsd === null || quota.ownKey) return 0;
   if (quota.limitUsd <= 0) return 100;
   return Math.min(100, Math.floor((quota.usedUsd / quota.limitUsd) * 100));
 }

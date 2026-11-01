@@ -31,6 +31,8 @@ export const en = {
     cancel: 'Cancel',
     resend: 'Send',
     failed: 'The answer failed.',
+    ownKeyRefused:
+      'OpenRouter refused your key: it may be out of credit or deleted. Check it in the menu under your name, “Your OpenRouter key”.',
     disclaimer: 'Open Agent can make mistakes. Check important information.',
     thinking: 'Thinking…',
     thought: 'Deep thinking',
@@ -207,6 +209,7 @@ export const en = {
       revoked: 'Revoked',
     },
     adminBadge: 'Admin',
+    ownKeyBadge: 'Own key',
     you: 'You',
     lastSignIn: 'Last sign-in: {{date}}',
     neverSignedIn: 'Never signed in',
@@ -249,7 +252,21 @@ export const en = {
     artifact_changed: 'The document changed meanwhile.',
     model_not_found: 'OpenRouter has no model with this id.',
     model_unsuitable: 'This model cannot do what this role needs.',
+    invalid_key: 'OpenRouter does not accept this key. Copy it again from openrouter.ai.',
+    key_check_failed: 'OpenRouter cannot be reached to check the key. Try again in a moment.',
     network: 'The server cannot be reached. Check your connection.',
+  },
+  ownKey: {
+    title: 'Your OpenRouter key',
+    description:
+      'With your own key, your OpenRouter account pays for your messages and they no longer count in your monthly quota. The key is kept encrypted.',
+    current: 'Key ending in {{hint}}, added on {{date}}',
+    remove: 'Remove',
+    label: 'OpenRouter key',
+    create: 'Create a key on openrouter.ai',
+    save: 'Save',
+    replace: 'Replace',
+    paying: 'Your own OpenRouter key pays for your messages.',
   },
 };
 

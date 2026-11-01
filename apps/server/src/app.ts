@@ -9,11 +9,13 @@ import { Library } from './application/library.ts';
 import { MemoryReconciler } from './application/memory-reconciler.ts';
 import { Memory } from './application/memory.ts';
 import { Models } from './application/models.ts';
+import { OwnKeys } from './application/own-keys.ts';
 import type { Clock } from './application/ports/clock.ts';
 import type { DocumentReader } from './application/ports/document-reader.ts';
 import type { FileStore } from './application/ports/file-store.ts';
 import type { Mailer } from './application/ports/mailer.ts';
-import type { ModelCatalog, ModelDirectory } from './application/ports/model-catalog.ts';
+import type { KeyChecker, ModelCatalog, ModelDirectory } from './application/ports/model-catalog.ts';
+import type { SecretBox } from './application/ports/secret-box.ts';
 import type { WebSearch } from './application/ports/web-search.ts';
 import { PreAnalysis } from './application/pre-analysis.ts';
 import { Quotas } from './application/quotas.ts';
@@ -61,6 +63,10 @@ export type AppAdapters = {
   models: ModelCatalog;
   /** The provider's models, to check the admin's choice. */
   modelDirectory: ModelDirectory;
+  /** Checks a user's own key before it is kept. */
+  keyChecker: KeyChecker;
+  /** Encrypts the users' own keys. */
+  secrets: SecretBox;
   webSearch: WebSearch | null;
   fileStore: FileStore;
   documents: DocumentReader;
@@ -69,7 +75,7 @@ export type AppAdapters = {
 /** Wires the application; the composition root for `main.ts` and the HTTP tests. */
 export async function createApp(
   database: Knex,
-  { clock, mailer, models, modelDirectory, webSearch, fileStore, documents }: AppAdapters,
+  { clock, mailer, models, modelDirectory, keyChecker, secrets, webSearch, fileStore, documents }: AppAdapters,
   options: AppOptions,
 ) {
   const users = new SqliteUserRepository(database);
@@ -89,7 +95,7 @@ export async function createApp(
     clock,
     options.defaultModels,
   );
-  const roleModels = new Models(models, settings);
+  const roleModels = new Models(models, settings, secrets);
   if (options.adminEmail) await userAccess.ensureAdmin(options.adminEmail);
 
   return createRoutes({
@@ -127,5 +133,6 @@ export async function createApp(
     artifacts,
     settings,
     modelDirectory,
+    ownKeys: new OwnKeys(users, secrets, keyChecker, clock),
   });
 }

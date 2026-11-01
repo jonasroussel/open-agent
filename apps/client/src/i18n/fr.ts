@@ -33,6 +33,8 @@ export const fr: Translation = {
     cancel: 'Annuler',
     resend: 'Envoyer',
     failed: 'La réponse a échoué.',
+    ownKeyRefused:
+      'OpenRouter a refusé votre clé : elle n’a peut-être plus de crédit, ou a été supprimée. Vérifiez-la dans le menu à votre nom, « Votre clé OpenRouter ».',
     disclaimer: 'Open Agent peut se tromper. Vérifiez les informations importantes.',
     thinking: 'Réflexion en cours…',
     thought: 'Réflexion approfondie',
@@ -213,6 +215,7 @@ export const fr: Translation = {
       revoked: 'Révoqué',
     },
     adminBadge: 'Admin',
+    ownKeyBadge: 'Sa propre clé',
     you: 'Vous',
     lastSignIn: 'Dernière connexion : {{date}}',
     neverSignedIn: 'Jamais connecté',
@@ -256,6 +259,20 @@ export const fr: Translation = {
     artifact_changed: 'Le document a été modifié entre-temps.',
     model_not_found: 'OpenRouter n’a pas de modèle avec cet identifiant.',
     model_unsuitable: 'Ce modèle ne sait pas faire ce que demande ce rôle.',
+    invalid_key: 'OpenRouter n’accepte pas cette clé. Copiez-la à nouveau depuis openrouter.ai.',
+    key_check_failed: 'OpenRouter est injoignable pour vérifier la clé. Réessayez dans un instant.',
     network: 'Le serveur est injoignable. Vérifiez votre connexion.',
+  },
+  ownKey: {
+    title: 'Votre clé OpenRouter',
+    description:
+      'Avec votre propre clé, vos messages sont payés par votre compte OpenRouter et ne comptent plus dans votre quota du mois. La clé est gardée chiffrée.',
+    current: 'Clé se terminant par {{hint}}, ajoutée le {{date}}',
+    remove: 'Retirer',
+    label: 'Clé OpenRouter',
+    create: 'Créer une clé sur openrouter.ai',
+    save: 'Enregistrer',
+    replace: 'Remplacer',
+    paying: 'Votre propre clé OpenRouter paie vos messages.',
   },
 };

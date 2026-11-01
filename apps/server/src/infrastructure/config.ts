@@ -21,6 +21,11 @@ export const config = {
   defaultMonthlyQuotaUsd: Number(Bun.env.DEFAULT_MONTHLY_QUOTA_USD ?? 5),
   /** Never logged. Without it the chat answers that no model is available. */
   openRouterApiKey: Bun.env.OPENROUTER_API_KEY || (isProduction ? required('OPENROUTER_API_KEY') : null),
+  /**
+   * Never logged. Encrypts the users' own OpenRouter keys: changing it makes the kept keys unreadable, so they must be
+   * entered again. Development data needs no secret.
+   */
+  encryptionKey: Bun.env.ENCRYPTION_KEY || (isProduction ? required('ENCRYPTION_KEY') : 'development'),
   /** OpenRouter model ids per role; the admin page will set them later. The user chose these on 2026-11-01. */
   models: {
     fast: Bun.env.FAST_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',

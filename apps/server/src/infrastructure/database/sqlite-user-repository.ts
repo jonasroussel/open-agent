@@ -2,7 +2,7 @@ import type { Locale, UserRole } from '@open-agent/shared';
 import type { Knex } from 'knex';
 
 import type { NewUser, UserRepository } from '../../domain/user-repository.ts';
-import type { User } from '../../domain/user.ts';
+import type { OwnKey, User } from '../../domain/user.ts';
 
 type UserRow = {
   id: number;
@@ -13,6 +13,8 @@ type UserRow = {
   last_sign_in_at: string | null;
   revoked_at: string | null;
   monthly_quota_usd: number | null;
+  own_key_sealed: string | null;
+  own_key_added_at: string | null;
 };
 
 const COLUMNS = [
@@ -24,6 +26,8 @@ const COLUMNS = [
   'last_sign_in_at',
   'revoked_at',
   'monthly_quota_usd',
+  'own_key_sealed',
+  'own_key_added_at',
 ] as const;
 
 export class SqliteUserRepository implements UserRepository {
@@ -56,7 +60,7 @@ export class SqliteUserRepository implements UserRepository {
       invited_by: user.invitedBy,
       invited_at: user.invitedAt.toISOString(),
     });
-    return { ...user, id: id!, lastSignInAt: null, revokedAt: null, monthlyQuotaUsd: null };
+    return { ...user, id: id!, lastSignInAt: null, revokedAt: null, monthlyQuotaUsd: null, ownKey: null };
   }
 
   async setRole(id: number, role: UserRole): Promise<void> {
@@ -82,6 +86,12 @@ export class SqliteUserRepository implements UserRepository {
   async setMonthlyQuota(id: number, usd: number): Promise<void> {
     await this.#database('users').where({ id }).update({ monthly_quota_usd: usd });
   }
+
+  async setOwnKey(id: number, ownKey: OwnKey | null): Promise<void> {
+    await this.#database('users')
+      .where({ id })
+      .update({ own_key_sealed: ownKey?.sealed ?? null, own_key_added_at: ownKey?.addedAt.toISOString() ?? null });
+  }
 }
 
 function toUser(row: UserRow): User {
@@ -94,5 +104,9 @@ function toUser(row: UserRow): User {
     lastSignInAt: row.last_sign_in_at ? new Date(row.last_sign_in_at) : null,
     revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
     monthlyQuotaUsd: row.monthly_quota_usd,
+    ownKey:
+      row.own_key_sealed && row.own_key_added_at
+        ? { sealed: row.own_key_sealed, addedAt: new Date(row.own_key_added_at) }
+        : null,
   };
 }

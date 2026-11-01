@@ -1,6 +1,6 @@
 import type { Locale, UserRole } from '@open-agent/shared';
 
-import type { User } from './user.ts';
+import type { OwnKey, User } from './user.ts';
 
 export type NewUser = { email: string; role: UserRole; locale: Locale; invitedBy: number | null; invitedAt: Date };
 
@@ -18,4 +18,6 @@ export interface UserRepository {
   /** Clears a revocation. */
   restore(id: number): Promise<void>;
   setMonthlyQuota(id: number, usd: number): Promise<void>;
+  /** `null` forgets it. */
+  setOwnKey(id: number, ownKey: OwnKey | null): Promise<void>;
 }

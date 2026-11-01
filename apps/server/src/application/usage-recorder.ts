@@ -34,6 +34,7 @@ export class UsageRecorder {
       outputTokens: usage.outputTokens ?? 0,
       reasoningTokens: usage.outputTokenDetails.reasoningTokens ?? 0,
       costUsd: this.#models.costOf(metadata),
+      paidByUser: choice.paidByUser,
       at: this.#clock.now(),
     });
   }
@@ -49,6 +50,7 @@ export class UsageRecorder {
       outputTokens: 0,
       reasoningTokens: 0,
       costUsd: 0,
+      paidByUser: false,
       at: this.#clock.now(),
     });
   }

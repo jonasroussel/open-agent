@@ -32,12 +32,14 @@ export function toAdminUserDto(user: User, quota: Quota): AdminUserDto {
     lastSignInAt: user.lastSignInAt?.toISOString() ?? null,
     monthCostUsd: quota.usedUsd,
     monthlyQuotaUsd: quota.limitUsd,
+    ownKey: quota.ownKey,
   };
 }
 
 export function toQuotaResponse(quota: Quota): QuotaResponse {
   return {
-    unlimited: quota.limitUsd === null,
+    unlimited: quota.limitUsd === null || quota.ownKey,
+    ownKey: quota.ownKey,
     percentUsed: percentUsed(quota),
     exhausted: isExhausted(quota),
     resetsAt: quota.resetsAt.toISOString(),

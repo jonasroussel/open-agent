@@ -1,5 +1,12 @@
-import type { ChatMessageMetadata, DocumentToolOutput, MemoryNotice, WebSearchOutput } from '@open-agent/shared';
 import {
+  OWN_KEY_REFUSED,
+  type ChatMessageMetadata,
+  type DocumentToolOutput,
+  type MemoryNotice,
+  type WebSearchOutput,
+} from '@open-agent/shared';
+import {
+  APICallError,
   convertToModelMessages,
   createUIMessageStream,
   generateText,
@@ -52,6 +59,9 @@ const CONVERSATION_ID = /^[\w-]{8,64}$/;
 const MAX_STEPS = 4;
 /** What the model reads of each page found: enough to answer, few tokens. */
 const RESULT_CHARACTERS = 1500;
+
+/** OpenRouter's answers to a key it does not know (401), without credit (402) or disabled (403). */
+const KEY_REFUSED: Record<number, true> = { 401: true, 402: true, 403: true };
 
 export type ChatTurnResult =
   | { ok: true; stream: ReadableStream<UIMessageChunk<ChatMessageMetadata>> }
@@ -113,7 +123,7 @@ export class ChatTurns {
     if (!attachmentsAreValid(messages)) return { ok: false, reason: 'invalid_request' };
 
     try {
-      this.#models.choose('fast');
+      this.#models.choose('fast', user);
     } catch (error) {
       if (error instanceof ModelUnavailableError) return { ok: false, reason: 'model_unavailable' };
       throw error;
@@ -132,10 +142,7 @@ export class ChatTurns {
       onEnd: async ({ messages: history }) => {
         await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
       },
-      onError: (error) => {
-        console.error('Answer failed:', error);
-        return 'The answer failed.';
-      },
+      onError: (error) => this.#failure(user, error),
       execute: async ({ writer }) => {
         const rules = await this.#memory.rules(user);
         const analysis = await this.#preAnalysis.analyze(user, conversation.id, messages, rules, abortSignal);
@@ -155,7 +162,7 @@ export class ChatTurns {
           // Sent first: the badge "Deep thinking" shows while the model thinks.
           writer.write({ type: 'start', messageId, messageMetadata: metadata });
 
-          const choice = this.#models.choose(analysis.route);
+          const choice = this.#models.choose(analysis.route, user);
           const documents = await this.#artifacts.latestOf(conversation.id);
           const tools = {
             ...this.#documentTools(user, conversation.id),
@@ -198,6 +205,7 @@ export class ChatTurns {
             stream: result.stream,
             sendStart: false,
             sendFinish: false,
+            onError: (error) => this.#failure(user, error),
           })) {
             // The model's stream has text, reasoning and our tools' parts, never data parts: it fits our message type.
             writer.write(chunk as InferUIMessageChunk<ChatMessage>);
@@ -210,6 +218,14 @@ export class ChatTurns {
       },
     });
     return { ok: true, stream };
+  }
+
+  /** The text of a failed answer, read by the client: a refused own key gets its own, the person can fix it. */
+  #failure(user: User, error: unknown): string {
+    console.error('Answer failed:', error);
+    return user.ownKey && APICallError.isInstance(error) && KEY_REFUSED[error.statusCode ?? 0]
+      ? OWN_KEY_REFUSED
+      : 'The answer failed.';
   }
 
   /** Never fails the turn: a remark that could not be remembered still gets its answer. */
@@ -290,7 +306,7 @@ export class ChatTurns {
     const text = textOf(first) || attachedNames(first);
     if (!text) return;
     try {
-      const choice = this.#models.choose('background');
+      const choice = this.#models.choose('background', user);
       const result = await generateText({
         model: choice.model,
         output: Output.object({ schema: z.object({ title: z.string(), icon: z.string() }) }),

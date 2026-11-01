@@ -68,7 +68,7 @@ export class PreAnalysis {
   ): Promise<Analysis> {
     const mayClarify = mayAskToClarify(history);
     try {
-      const choice = this.#models.choose('background');
+      const choice = this.#models.choose('background', user);
       const result = await generateText({
         model: choice.model,
         output: Output.object({ schema }),

@@ -15,6 +15,7 @@ import type {
   ListAdminUsersResponse,
   AdminUserDto,
   QuotaResponse,
+  OwnKeyResponse,
   SearchResponse,
   AdminSettingsResponse,
   ModelCapability,
@@ -23,7 +24,7 @@ import type {
   ListMemoryRulesResponse,
   SessionResponse,
 } from '@open-agent/shared';
-import { simulateReadableStream, type UIMessage } from 'ai';
+import { APICallError, simulateReadableStream, type UIMessage } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import type { Knex } from 'knex';
 
@@ -32,6 +33,7 @@ import { UnreadableDocument, type PdfPage } from './application/ports/document-r
 import type { SignInEmail } from './application/ports/mailer.ts';
 import type { ModelCatalog, ModelInfo } from './application/ports/model-catalog.ts';
 import type { WebSearchRequest } from './application/ports/web-search.ts';
+import { AesSecretBox } from './infrastructure/crypto/aes-secret-box.ts';
 import { createDatabase } from './infrastructure/database/connection.ts';
 import { DiskFileStore } from './infrastructure/files/disk-file-store.ts';
 import { OpenRouterModelCatalog } from './infrastructure/llm/openrouter-model-catalog.ts';
@@ -79,6 +81,11 @@ let models: { fast: MockLanguageModelV4; reasoning: MockLanguageModelV4; backgro
 /** The searches the model made in the current test; `searchDown`: the search service fails. */
 let searches: WebSearchRequest[];
 let searchDown: boolean;
+/** The own key each model call used, `null` for the app's; `keyAccepted`: what OpenRouter says of a key, `null`: down. */
+let keysUsed: (string | null)[];
+let keyAccepted: boolean | null;
+/** OpenRouter refuses the users' own keys during the answer. */
+let ownKeyRefused: boolean;
 const FOUND = {
   title: 'Prix des carburants',
   url: 'https://www.prix-carburants.gouv.fr/',
@@ -156,9 +163,32 @@ function fakeModels(): ModelCatalog {
   };
   const openRouter = new OpenRouterModelCatalog(null);
   return {
-    choose: (role, modelId) => ({ model: models[role], modelId }),
+    choose: (role, modelId, ownKey) => {
+      keysUsed.push(ownKey);
+      const model = ownKey && ownKeyRefused ? refusingModel() : models[role];
+      return { model, modelId, paidByUser: ownKey !== null };
+    },
     costOf: (metadata) => openRouter.costOf(metadata),
   };
+}
+
+/** OpenRouter's answer to a key without credit. */
+function refuseKey(): never {
+  throw new APICallError({
+    message: 'Insufficient credits',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    requestBodyValues: {},
+    statusCode: 402,
+    isRetryable: false,
+  });
+}
+
+function refusingModel() {
+  return new MockLanguageModelV4({ doStream: async () => refuseKey(), doGenerate: async () => refuseKey() });
+}
+
+function setKey(cookie: string, key: string) {
+  return call('/api/own-key', { method: 'PUT', body: { key }, cookie });
 }
 
 /** The models OpenRouter offers in the tests: those of the environment, a newer one, and one blind to pictures. */
@@ -197,6 +227,9 @@ beforeEach(async () => {
   searches = [];
   searchDown = false;
   scriptedCalls = [];
+  keysUsed = [];
+  keyAccepted = true;
+  ownKeyRefused = false;
   sent = [];
   mailerDown = false;
   pdfPages = [];
@@ -218,6 +251,13 @@ beforeEach(async () => {
         mailer,
         models: fakeModels(),
         modelDirectory: { list: async () => MODEL_LIST },
+        keyChecker: {
+          accepts: async () => {
+            if (keyAccepted === null) throw new Error('OpenRouter answered 503');
+            return keyAccepted;
+          },
+        },
+        secrets: new AesSecretBox('test secret'),
         webSearch: {
           search: async (request) => {
             searches.push(request);
@@ -904,6 +944,7 @@ describe('quota', () => {
     const refused = await chat(anaCookie, CONVERSATION, third);
     expect(refused.status).toBe(429);
     expect(await quotaOf(anaCookie)).toEqual({
+      ownKey: false,
       unlimited: false,
       percentUsed: 100,
       exhausted: true,
@@ -936,6 +977,68 @@ describe('quota', () => {
     expect(await errorOf(await update({ monthlyQuotaUsd: -1 }))).toBe('invalid_request');
     expect(await errorOf(await update({ monthlyQuotaUsd: 1000 }))).toBe('invalid_request');
     expect(await errorOf(await update({ monthlyQuotaUsd: 1000 }, anaCookie))).toBe('not_admin');
+  });
+});
+
+describe('own key', () => {
+  const ANA_KEY = 'sk-or-v1-ana-secret-1234';
+
+  test("a person's own key pays for all their calls: no limit for them, nothing counted for the app", async () => {
+    const adminCookie = await signIn(ADMIN);
+    const { user: ana } = await invite(adminCookie, 'ana@example.com');
+    await call(`/api/admin/users/${ana.id}`, { method: 'PATCH', body: { monthlyQuotaUsd: 0 }, cookie: adminCookie });
+    const anaCookie = await signIn('ana@example.com');
+    expect((await chat(anaCookie, CONVERSATION, [userMessage('m1', 'Bonjour')])).status).toBe(429);
+
+    const saved = (await (await setKey(anaCookie, `  ${ANA_KEY} `)).json()) as OwnKeyResponse;
+    expect(saved.key?.hint).toBe('1234');
+    const row = await database('users').where({ id: ana.id }).first('own_key_sealed');
+    expect(row.own_key_sealed).not.toContain('ana-secret');
+
+    keysUsed = [];
+    expect((await chat(anaCookie, CONVERSATION, [userMessage('m1', 'Bonjour')])).status).toBe(200);
+    expect(keysUsed.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(keysUsed)).toEqual(new Set([ANA_KEY]));
+    const events = await database('usage_events').where({ user_id: ana.id }).select('purpose', 'paid_by_user');
+    expect(events.every((event) => event.paid_by_user === 1)).toBe(true);
+    expect(await quotaOf(anaCookie)).toMatchObject({ ownKey: true, unlimited: true, exhausted: false });
+    const { users } = (await (
+      await call('/api/admin/users', { cookie: adminCookie })
+    ).json()) as ListAdminUsersResponse;
+    expect(users.find((user) => user.id === ana.id)).toMatchObject({
+      ownKey: true,
+      monthCostUsd: 0,
+      monthlyQuotaUsd: 0,
+    });
+
+    keysUsed = [];
+    await chat(adminCookie, 'admin-conversation', [userMessage('m1', 'Bonjour')]);
+    expect(new Set(keysUsed)).toEqual(new Set([null]));
+
+    expect((await call('/api/own-key', { method: 'DELETE', cookie: anaCookie })).status).toBe(204);
+    expect(await (await call('/api/own-key', { cookie: anaCookie })).json()).toEqual({ key: null });
+    const history = [...(await open(anaCookie, CONVERSATION)).messages, userMessage('m3', 'Encore ?')];
+    expect((await chat(anaCookie, CONVERSATION, history)).status).toBe(429);
+  });
+
+  test('a key OpenRouter refuses is not kept, and one it refuses later says so in the conversation', async () => {
+    const cookie = await signIn(ADMIN);
+    keyAccepted = false;
+    expect(await errorOf(await setKey(cookie, 'sk-or-v1-wrong'))).toBe('invalid_key');
+    keyAccepted = null;
+    expect(await errorOf(await setKey(cookie, 'sk-or-v1-wrong'))).toBe('key_check_failed');
+    expect(await errorOf(await setKey(cookie, 'two words'))).toBe('invalid_request');
+    expect(await (await call('/api/own-key', { cookie })).json()).toEqual({ key: null });
+
+    keyAccepted = true;
+    await setKey(cookie, ANA_KEY);
+    ownKeyRefused = true;
+    const response = await call('/api/chat', {
+      method: 'POST',
+      body: { id: CONVERSATION, messages: [userMessage('m1', 'Bonjour')] },
+      cookie,
+    });
+    expect(await response.text()).toContain('"errorText":"own_key_refused"');
   });
 });
 describe('web search', () => {

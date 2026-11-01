@@ -27,8 +27,12 @@ short vague prompts. Open Agent fixes what a harness can fix:
 
 ## Cost model
 
-- **Hybrid keys.** The app's OpenRouter key by default. An advanced user may add their own OpenRouter key (BYOK,
-  OpenRouter only); their calls then use it and do not count against their quota.
+- **Hybrid keys.** The app's OpenRouter key by default. Anyone may add their own OpenRouter key (BYOK, OpenRouter
+  only, in the user menu): OpenRouter checks it (`GET /api/v1/key`) before it is kept, encrypted with AES-256-GCM
+  (`ENCRYPTION_KEY`); the person sees only its last 4 characters. Every call of theirs (answer, pre-pass, memory,
+  title) then uses it; the ledger keeps them with `paid_by_user`, outside the quota and the admin's monthly cost, and
+  their limit does not apply while the key is there (the admin's setting is kept for the day they remove it). A key
+  OpenRouter refuses during an answer (401, 402, 403) shows "OpenRouter refused your key" instead of a plain failure.
 - **Quota per user, per calendar month, in real cost.** Every paid call (answers, pre-pass, memory, titles) records the
   cost returned by OpenRouter; searches count at 0 $. The month starts at midnight on the 1st in Paris. Default quota
   5 $ (`DEFAULT_MONTHLY_QUOTA_USD`; the user expects 3 to 5 regular users), changed per person by the admin
@@ -50,7 +54,7 @@ flowchart TD
   Q -- yes --> P["Pre-pass: 1 call, background model"]
   P --> C{Truly ambiguous?}
   C -- yes --> D[One short clarifying question]
-  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, later canvas"]
+  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, canvas"]
   P -- feedback detected --> R["Memory reconciler<br/>ADD / UPDATE / DELETE / NOOP"]
   R --> T["Notice under the answer: 'Remembered: …' + Undo"]
   M --> U[Usage ledger]
@@ -69,7 +73,7 @@ One structured-output call on the background model (thinking off, about 0.6 s an
   the model sees it; the conversation keeps the user's words, and the answer's metadata keeps the rewrite;
 - `feedback`: a lasting preference about how the assistant works ("your answers are always too long"), or null for a
   remark about the current task only ("shorter", about the letter being written);
-- later `webSearch` (boolean).
+- `webSearch`: whether the answer needs facts from the web; when true, the first step must search.
 
 The rules and examples sit in the instructions: OpenRouter does not show the schema's field descriptions to the model.
 When the pre-pass fails, the user gets the `fast` answer to their own words. The user never picks a model; the answer
@@ -245,18 +249,18 @@ Same layout and tooling as `inscript-carte`.
 
 | Table | Holds |
 | --- | --- |
-| `users` | email, role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default); later: encrypted BYOK key |
+| `users` | email, role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default), own OpenRouter key (sealed) and when it was added |
 | `sign_in_requests` | user, token hash, code hash (none for invitations), expiry, used at |
 | `sessions` | token hash, user, expiry |
 | `conversations` | id chosen by the client (UUID), user, title, pinned, created/updated at |
 | `messages` | conversation, id (unique per conversation: the client chooses it), position, role, the whole AI SDK UI message as JSON |
 | `message_search` | FTS5 over the text parts of each message, sharing its `rowid`; filled by triggers on `messages` |
 | `memory_rules` | user, rule text, created/updated at, deleted at (kept so an Undo restores the same rule) |
-| `memory_rule_changes` | user, rule, operation, before, after, source (`remark` / `user`), conversation and message of the notice, undone at |
+| `memory_rule_changes` | user, rule, operation, before, after, source (`remark` / `user` / `admin`), conversation and message of the notice, undone at |
 | `library_files` | id (UUID, in its address), user, name, kind (`image` / `pdf` / `word` / `text`), media type, size, content (JSON: whole text and names of the pictures on disk), created at |
 | `artifacts` | id (UUID, named by the model in `update_document`), conversation, user, kind (`document` / `html`), title, created/updated at |
 | `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), created at |
-| `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter |
+| `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter, paid by the user's own key |
 | `settings` | key (`model.fast`, `prompt.assistant`…), value, updated at; a missing key means the default |
 
 ## Configuration
@@ -278,4 +282,4 @@ Same layout and tooling as `inscript-carte`.
 | `SEARXNG_URL` | Our SearXNG, e.g. `http://open-agent-searxng:8080` (default `http://localhost:8888` in development) |
 | `PLUNK_API_KEY` | Sign-in emails (unset in development: links and codes go to the server log) |
 | `MAIL_FROM` | Sender address; its domain must be verified in Plunk |
-| `ENCRYPTION_KEY` | Encrypts BYOK keys at rest |
+| `ENCRYPTION_KEY` | Encrypts the users' own OpenRouter keys at rest (required in production; changing it means they enter their keys again) |

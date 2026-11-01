@@ -12,7 +12,12 @@ export type User = {
   revokedAt: Date | null;
   /** In USD per calendar month; `null`: the default quota. Admins have none, whatever this says. */
   monthlyQuotaUsd: number | null;
+  /** Their own OpenRouter key: it pays for their calls, which then no longer count against the quota. */
+  ownKey: OwnKey | null;
 };
+
+/** Encrypted at rest; only `SecretBox` reads it back. */
+export type OwnKey = { sealed: string; addedAt: Date };
 
 export function userStatus(user: User): UserStatus {
   if (user.revokedAt) return 'revoked';

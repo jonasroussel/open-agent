@@ -38,7 +38,7 @@ export class MemoryReconciler {
     rules: readonly MemoryRule[],
     abortSignal: AbortSignal,
   ): Promise<MemoryEdit | null> {
-    const choice = this.#models.choose('background');
+    const choice = this.#models.choose('background', user);
     const result = await generateText({
       model: choice.model,
       output: Output.object({ schema }),

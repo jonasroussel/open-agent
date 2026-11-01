@@ -21,6 +21,11 @@ export const API_ROUTES = {
   adminUser: '/api/admin/users/:userId',
   /** GET: how much of their monthly quota the signed-in user has used, as `QuotaResponse`. */
   quota: '/api/quota',
+  /**
+   * GET: the signed-in user's own OpenRouter key, as `OwnKeyResponse`. PUT `SetOwnKeyBody`: checks it with OpenRouter
+   * and keeps it encrypted. DELETE: forgets it.
+   */
+  ownKey: '/api/own-key',
   /** GET: the signed-in user's conversations, last updated first. */
   conversations: '/api/conversations',
   /** GET: one conversation with its messages. PATCH `UpdateConversationBody`. DELETE. */
@@ -104,8 +109,15 @@ export type ApiError = {
     /** OpenRouter has no model with this id. */
     | 'model_not_found'
     /** The model lacks what its role needs (pictures, tools, thinking or JSON). */
-    | 'model_unsuitable';
+    | 'model_unsuitable'
+    /** OpenRouter refused the key. */
+    | 'invalid_key'
+    /** OpenRouter could not be reached to check the key. */
+    | 'key_check_failed';
 };
+
+/** The text of a failed answer when OpenRouter refused the user's own key: the client explains what to fix. */
+export const OWN_KEY_REFUSED = 'own_key_refused';
 
 export type HealthResponse = { status: 'ok'; version: string };
 
@@ -129,10 +141,12 @@ export type AdminUserDto = {
   status: UserStatus;
   invitedAt: string;
   lastSignInAt: string | null;
-  /** Spent this calendar month, in USD. */
+  /** Spent this calendar month on the app's key, in USD. */
   monthCostUsd: number;
   /** USD per month; `null` for admins, who have no limit. */
   monthlyQuotaUsd: number | null;
+  /** Pays with their own OpenRouter key: their calls no longer count in `monthCostUsd`, nor against the quota. */
+  ownKey: boolean;
 };
 
 /** The admin page refuses more: a typo should not open the budget. */
@@ -142,14 +156,21 @@ export type UpdateAdminUserBody = { monthlyQuotaUsd: number };
 
 /** Users see a share of their quota, never dollars. */
 export type QuotaResponse = {
-  /** Admins have no limit. */
+  /** Admins, and anyone paying with their own OpenRouter key, have no limit. */
   unlimited: boolean;
+  /** The user pays with their own OpenRouter key. */
+  ownKey: boolean;
   /** Whole percents, capped at 100. */
   percentUsed: number;
   exhausted: boolean;
   /** The 1st of next month, at midnight in Paris. */
   resetsAt: string;
 };
+
+/** `hint`: the key's last characters, so the person recognizes it; the key itself never leaves the server. */
+export type OwnKeyResponse = { key: { hint: string; addedAt: string } | null };
+
+export type SetOwnKeyBody = { key: string };
 
 export type ListAdminUsersResponse = { users: AdminUserDto[] };
 

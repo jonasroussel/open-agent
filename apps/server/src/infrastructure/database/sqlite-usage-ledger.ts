@@ -19,13 +19,14 @@ export class SqliteUsageLedger implements UsageLedger {
       output_tokens: event.outputTokens,
       reasoning_tokens: event.reasoningTokens,
       cost_usd: event.costUsd,
+      paid_by_user: event.paidByUser,
       created_at: event.at.toISOString(),
     });
   }
 
   async spentSince(userId: number, since: Date): Promise<number> {
     const row = await this.#database('usage_events')
-      .where({ user_id: userId })
+      .where({ user_id: userId, paid_by_user: false })
       .andWhere('created_at', '>=', since.toISOString())
       .sum({ spent: 'cost_usd' })
       .first();
@@ -34,7 +35,8 @@ export class SqliteUsageLedger implements UsageLedger {
 
   async spentByUserSince(since: Date): Promise<Map<number, number>> {
     const rows: { user_id: number; spent: number | null }[] = await this.#database('usage_events')
-      .where('created_at', '>=', since.toISOString())
+      .where({ paid_by_user: false })
+      .andWhere('created_at', '>=', since.toISOString())
       .groupBy('user_id')
       .select('user_id')
       .sum({ spent: 'cost_usd' });

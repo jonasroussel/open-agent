@@ -3,10 +3,11 @@ import type { ApiError } from '@open-agent/shared';
 import { createApp } from './app.ts';
 import { appVersion } from './infrastructure/app-version.ts';
 import { config } from './infrastructure/config.ts';
+import { AesSecretBox } from './infrastructure/crypto/aes-secret-box.ts';
 import { createDatabase } from './infrastructure/database/connection.ts';
 import { DiskFileStore } from './infrastructure/files/disk-file-store.ts';
 import { PopplerMammothReader } from './infrastructure/files/document-reader.ts';
-import { OpenRouterModelCatalog } from './infrastructure/llm/openrouter-model-catalog.ts';
+import { OpenRouterKeyChecker, OpenRouterModelCatalog } from './infrastructure/llm/openrouter-model-catalog.ts';
 import { OpenRouterModelDirectory } from './infrastructure/llm/openrouter-model-directory.ts';
 import { ConsoleMailer } from './infrastructure/mail/console-mailer.ts';
 import { PlunkMailer } from './infrastructure/mail/plunk-mailer.ts';
@@ -43,6 +44,8 @@ const routes = await createApp(
     mailer,
     models,
     modelDirectory: new OpenRouterModelDirectory(),
+    keyChecker: new OpenRouterKeyChecker(),
+    secrets: new AesSecretBox(config.encryptionKey),
     webSearch,
     fileStore: new DiskFileStore(config.filesPath),
     documents: new PopplerMammothReader(),

@@ -7,6 +7,7 @@ import type { ChatTurns } from '../../application/chat-turns.ts';
 import type { Conversations } from '../../application/conversations.ts';
 import type { Library } from '../../application/library.ts';
 import type { Memory } from '../../application/memory.ts';
+import type { OwnKeys } from '../../application/own-keys.ts';
 import type { ModelDirectory } from '../../application/ports/model-catalog.ts';
 import type { Quotas } from '../../application/quotas.ts';
 import type { Settings } from '../../application/settings.ts';
@@ -18,6 +19,7 @@ import { createChatRoutes } from './chat-routes.ts';
 import { createFileRoutes } from './file-routes.ts';
 import { clientAddress, error, isHttps, readJson, type ServerHandle } from './http.ts';
 import { createMemoryRoutes } from './memory-routes.ts';
+import { createOwnKeyRoutes } from './own-key-routes.ts';
 import { toSignedInUser } from './presenters.ts';
 
 const SESSION_COOKIE = 'session';
@@ -34,6 +36,7 @@ export type HttpDependencies = {
   artifacts: Artifacts;
   settings: Settings;
   modelDirectory: ModelDirectory;
+  ownKeys: OwnKeys;
 };
 
 /** Answers a sign-in: the session cookie and the user, or why it failed. */
@@ -61,6 +64,7 @@ export function createRoutes({
   artifacts,
   settings,
   modelDirectory,
+  ownKeys,
 }: HttpDependencies) {
   const signedInUser = (request: BunRequest) =>
     authentication.signedInUser(request.cookies.get(SESSION_COOKIE) ?? null);
@@ -116,6 +120,7 @@ export function createRoutes({
     ...createAdminSettingsRoutes({ signedInUser, settings, modelDirectory, userAccess, memory }),
     ...createChatRoutes({ signedInUser, conversations, chatTurns, quotas }),
     ...createMemoryRoutes({ signedInUser, memory }),
+    ...createOwnKeyRoutes({ signedInUser, ownKeys }),
     ...createFileRoutes({ signedInUser, library }),
     ...createArtifactRoutes({ signedInUser, artifacts }),
   };

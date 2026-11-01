@@ -8,14 +8,24 @@ export type ModelChoice = {
   model: LanguageModel;
   /** As billed, for the usage ledger. */
   modelId: string;
+  /** Billed to the user's own OpenRouter key rather than the app's. */
+  paidByUser: boolean;
 };
 
 /** The provider: a model set up for a role. Which model each role uses is a setting (`Models`). */
 export interface ModelCatalog {
-  /** Throws `ModelUnavailableError` when no provider is configured. */
-  choose(role: ModelRole, modelId: string): ModelChoice;
+  /**
+   * `ownKey`: the user's own key, which then pays; `null`: the app's key. Throws `ModelUnavailableError` when the app
+   * has no key and the user none either.
+   */
+  choose(role: ModelRole, modelId: string, ownKey: string | null): ModelChoice;
   /** The billed cost of a call, from the provider's metadata; `null` when it did not say. */
   costOf(metadata: ProviderMetadata | undefined): number | null;
+}
+
+export interface KeyChecker {
+  /** Whether the provider accepts the key. Throws when it cannot be reached. */
+  accepts(apiKey: string): Promise<boolean>;
 }
 
 export class ModelUnavailableError extends Error {

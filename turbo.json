@@ -24,6 +24,7 @@
         "PLUNK_API_KEY",
         "MAIL_FROM",
         "OPENROUTER_API_KEY",
+        "ENCRYPTION_KEY",
         "FAST_MODEL",
         "REASONING_MODEL",
         "BACKGROUND_MODEL",

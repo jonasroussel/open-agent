@@ -148,6 +148,7 @@ export function AdminUsersPage() {
                   <span className='min-w-0 truncate font-medium'>{user.email}</span>
                   {isMe && <span className='text-muted-foreground text-sm'>({t('admin.you')})</span>}
                   {user.role === 'admin' && <Badge>{t('admin.adminBadge')}</Badge>}
+                  {user.ownKey && <Badge variant='outline'>{t('admin.ownKeyBadge')}</Badge>}
                   <Badge variant={STATUS_VARIANT[user.status]}>{t(`admin.status.${user.status}`)}</Badge>
                 </div>
                 <span className='text-muted-foreground text-sm'>
