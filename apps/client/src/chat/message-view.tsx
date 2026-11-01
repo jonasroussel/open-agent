@@ -1,0 +1,380 @@
+import { fileKindOf, type ChatMessage, type MemoryNotice, type WebResult } from '@open-agent/shared';
+import { Link } from '@tanstack/react-router';
+import {
+  AppWindow,
+  BookmarkCheck,
+  Check,
+  ChevronRight,
+  Copy,
+  FileText,
+  Globe,
+  Lightbulb,
+  Pencil,
+  RotateCcw,
+} from 'lucide-react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { BrandIcon } from '@/components/brand-icon.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
+import { FileChip } from '@/files/file-chip.tsx';
+import { cn } from '@/lib/utils.ts';
+
+const Markdown = lazy(() => import('./markdown.tsx'));
+
+function partsText(message: ChatMessage, type: 'text' | 'reasoning'): string {
+  return message.parts
+    .flatMap((part) => (part.type === type ? [part.text] : []))
+    .join('\n\n')
+    .trim();
+}
+
+/**
+ * The user's message: its files, then an indigo bubble on the right, which can be copied or edited (the answers after
+ * it are redone).
+ */
+export function UserMessage({
+  message,
+  canEdit,
+  onEdit,
+}: {
+  message: ChatMessage;
+  canEdit: boolean;
+  onEdit: (text: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = partsText(message, 'text');
+  const files = message.parts.flatMap((part) => (part.type === 'file' ? [part] : []));
+
+  if (draft !== null) {
+    return (
+      <div className='ml-auto grid w-full max-w-[85%] gap-2'>
+        <Textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          className='field-sizing-content max-h-72 min-h-20 text-base'
+          autoFocus
+        />
+        <div className='flex justify-end gap-2'>
+          <Button variant='ghost' onClick={() => setDraft(null)}>
+            {t('chat.cancel')}
+          </Button>
+          <Button
+            disabled={!draft.trim() && files.length === 0}
+            onClick={() => {
+              onEdit(draft.trim());
+              setDraft(null);
+            }}
+          >
+            {t('chat.resend')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className='group flex flex-col items-end gap-1'>
+      {files.length > 0 && (
+        <div className='flex max-w-[85%] flex-wrap justify-end gap-2'>
+          {files.map((file) => (
+            <FileChip
+              key={file.url}
+              name={file.filename ?? ''}
+              kind={fileKindOf(file.filename ?? '', file.mediaType)}
+              url={file.url}
+            />
+          ))}
+        </div>
+      )}
+      {text && (
+        <div className='bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 whitespace-pre-wrap'>
+          {text}
+        </div>
+      )}
+      <MessageActions>
+        {text && <CopyButton text={text} />}
+        {canEdit && (
+          <ActionButton label={t('chat.edit')} onClick={() => setDraft(text)}>
+            <Pencil />
+          </ActionButton>
+        )}
+      </MessageActions>
+    </div>
+  );
+}
+
+/** The assistant's answer: Markdown in a grey bubble, next to the app's icon, and what it remembered under it. */
+export function AssistantMessage({
+  message,
+  streaming,
+  onRegenerate,
+  onUndoMemory,
+  onOpenDocument,
+}: {
+  message: ChatMessage;
+  streaming: boolean;
+  onRegenerate: (() => void) | null;
+  onUndoMemory: (notice: MemoryNotice) => Promise<void>;
+  onOpenDocument: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const text = partsText(message, 'text');
+  const deepThinking = message.metadata?.route === 'reasoning';
+  const notices = message.parts.flatMap((part) => (part.type === 'data-memory' ? [part.data] : []));
+  const searches = message.parts.flatMap((part) => (part.type === 'tool-web_search' ? [part] : []));
+  const documents = message.parts.flatMap((part) =>
+    part.type === 'tool-create_document' || part.type === 'tool-update_document' ? [part] : [],
+  );
+  return (
+    <div className='group flex gap-3'>
+      <BrandIcon className='mt-1 size-7' />
+      <div className='flex min-w-0 flex-1 flex-col items-start gap-2'>
+        {/* `grid-cols-1` is `minmax(0, 1fr)`: a long code line scrolls in its block instead of widening the bubble. */}
+        <div className='bg-muted grid max-w-full min-w-0 grid-cols-1 gap-2 rounded-2xl rounded-tl-md px-4 py-3'>
+          {deepThinking && <Reasoning text={partsText(message, 'reasoning')} thinking={streaming && !text} />}
+          {searches.map((search) => (
+            <WebSearchLine
+              key={search.toolCallId}
+              query={search.input?.query ?? ''}
+              results={search.state === 'output-available' ? search.output.results : null}
+              failed={search.state === 'output-error'}
+            />
+          ))}
+          {documents.map((part) => (
+            <DocumentCard key={part.toolCallId} part={part} onOpen={onOpenDocument} />
+          ))}
+          {text ? (
+            <Suspense fallback={<p className='text-[15px] leading-relaxed whitespace-pre-wrap'>{text}</p>}>
+              <Markdown text={text} streaming={streaming} />
+            </Suspense>
+          ) : (
+            !deepThinking && streaming && documents.length === 0 && <Dots />
+          )}
+        </div>
+        {notices.map((notice) => (
+          <MemoryNoticeLine key={notice.changeId} notice={notice} onUndo={() => onUndoMemory(notice)} />
+        ))}
+        {!streaming && (
+          <MessageActions>
+            <CopyButton text={text} />
+            {onRegenerate && (
+              <ActionButton label={t('chat.regenerate')} onClick={onRegenerate}>
+                <RotateCcw />
+              </ActionButton>
+            )}
+          </MessageActions>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type DocumentPart = Extract<ChatMessage['parts'][number], { type: 'tool-create_document' | 'tool-update_document' }>;
+
+/** A document the answer wrote in the canvas: its title and version; it opens the canvas. */
+function DocumentCard({ part, onOpen }: { part: DocumentPart; onOpen: (id: string) => void }) {
+  const { t } = useTranslation();
+  const input = part.input as Partial<{ id: string; kind: 'document' | 'html'; title: string }> | undefined;
+  const output = part.state === 'output-available' ? part.output : null;
+  const id = output?.id ?? input?.id ?? null;
+  const kind = output?.kind ?? input?.kind ?? 'document';
+  const writing = part.state === 'input-streaming' || part.state === 'input-available';
+  const Icon = kind === 'html' ? AppWindow : FileText;
+  let status = t('canvas.version', { version: output?.version });
+  if (writing) status = part.type === 'tool-create_document' ? t('canvas.writing') : t('canvas.updating');
+  if (part.state === 'output-error') status = t('canvas.writeFailed');
+
+  return (
+    <button
+      type='button'
+      disabled={!id}
+      onClick={() => id && onOpen(id)}
+      className='bg-background hover:border-ring/50 flex max-w-full min-w-0 items-center gap-3 justify-self-start rounded-xl border px-3 py-2.5 text-left transition-colors'
+    >
+      <span className='bg-secondary text-secondary-foreground flex size-9 shrink-0 items-center justify-center rounded-lg'>
+        <Icon className='size-4' />
+      </span>
+      <span className='grid min-w-0'>
+        <span className='truncate text-sm font-medium'>{output?.title ?? input?.title ?? t('canvas.untitled')}</span>
+        <span className={cn('text-muted-foreground text-xs', writing && 'animate-pulse')}>{status}</span>
+      </span>
+    </button>
+  );
+}
+
+/** "Remembered: …" under the answer to the remark: the rule on its own lines, then Undo and a link to the memory. */
+function MemoryNoticeLine({ notice, onUndo }: { notice: MemoryNotice; onUndo: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const [pending, setPending] = useState(false);
+  const labels = {
+    add: () => t('memory.added', { after: notice.after }),
+    update: () => t('memory.updated', { before: notice.before, after: notice.after }),
+    delete: () => t('memory.deleted', { before: notice.before }),
+  };
+  const label = labels[notice.operation]();
+
+  return (
+    <div
+      className={cn(
+        'border-primary/20 bg-secondary/40 flex max-w-full items-start gap-3 rounded-xl border px-4 py-3 text-sm',
+        notice.undone && 'opacity-60',
+      )}
+    >
+      <BookmarkCheck className='text-secondary-foreground mt-0.5 size-4 shrink-0' />
+      <div className='grid min-w-0 gap-2'>
+        <p className={cn('text-secondary-foreground leading-relaxed', notice.undone && 'line-through')}>{label}</p>
+        <div className='flex flex-wrap items-center gap-x-4 gap-y-1'>
+          {notice.undone ? (
+            <span className='text-muted-foreground'>{t('memory.undone')}</span>
+          ) : (
+            <button
+              type='button'
+              disabled={pending}
+              onClick={() => {
+                setPending(true);
+                void onUndo().finally(() => setPending(false));
+              }}
+              className='text-secondary-foreground font-medium underline underline-offset-2 hover:no-underline disabled:opacity-50'
+            >
+              {t('memory.undo')}
+            </button>
+          )}
+          <Link to='/memory' className='text-muted-foreground hover:text-foreground'>
+            {t('memory.seeAll')}
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The "Deep thinking" line of an answer that needed it: pulsing while the model thinks, and its thoughts folded
+ * underneath for the curious.
+ */
+function Reasoning({ text, thinking }: { text: string; thinking: boolean }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className='text-muted-foreground text-sm'>
+      <button
+        type='button'
+        onClick={() => setOpen(!open)}
+        disabled={!text}
+        aria-expanded={open}
+        className='hover:text-foreground flex items-center gap-1.5 disabled:hover:text-inherit'
+      >
+        <Lightbulb className={cn('size-4', thinking && 'animate-pulse')} />
+        <span className={cn(thinking && 'animate-pulse')}>{thinking ? t('chat.thinking') : t('chat.thought')}</span>
+        {text && <ChevronRight className={cn('size-4 transition-transform', open && 'rotate-90')} />}
+      </button>
+      {open && <p className='mt-2 border-l-2 pl-3 whitespace-pre-wrap'>{text}</p>}
+    </div>
+  );
+}
+
+/** A search the model made: pulsing while it runs, then the sites it read, as links (one per site). */
+function WebSearchLine({ query, results, failed }: { query: string; results: WebResult[] | null; failed: boolean }) {
+  const { t } = useTranslation();
+  const searching = !results && !failed;
+  const sites = new Map<string, WebResult>();
+  for (const result of results ?? []) {
+    const site = new URL(result.url).hostname.replace(/^www\./, '');
+    if (!sites.has(site)) sites.set(site, result);
+  }
+  let label = t('chat.searched', { query });
+  if (searching) label = t('chat.searching', { query });
+  if (failed) label = t('chat.searchFailed');
+
+  return (
+    <div className='text-muted-foreground grid gap-2 text-sm'>
+      <div className={cn('flex items-center gap-1.5', searching && 'animate-pulse')}>
+        <Globe className='size-4 shrink-0' />
+        <span className='min-w-0'>{label}</span>
+      </div>
+      {sites.size > 0 && (
+        <ul className='flex flex-wrap gap-1.5'>
+          {[...sites].map(([site, result]) => (
+            <li key={site}>
+              <a
+                href={result.url}
+                target='_blank'
+                rel='noreferrer'
+                title={result.title}
+                className='bg-background hover:text-foreground block max-w-48 truncate rounded-full border px-2.5 py-0.5 text-xs'
+              >
+                {site}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Dots() {
+  return (
+    <div className='flex items-center gap-1 py-1.5' aria-busy='true'>
+      {[0, 150, 300].map((delay) => (
+        <span
+          key={delay}
+          className='bg-muted-foreground/60 size-1.5 animate-bounce rounded-full'
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** While the answer has not started (the pre-analysis runs): three dots in an empty bubble. */
+export function PendingAnswer() {
+  return (
+    <div className='flex gap-3'>
+      <BrandIcon className='mt-1 size-7' />
+      <div className='bg-muted rounded-2xl rounded-tl-md px-4 py-2.5'>
+        <Dots />
+      </div>
+    </div>
+  );
+}
+
+/** Shown on hover with a mouse; always visible on a touch screen, which has no hover. */
+function MessageActions({ children }: { children: ReactNode }) {
+  return (
+    <div className='text-muted-foreground flex gap-0.5 opacity-100 transition-opacity group-hover:opacity-100 pointer-fine:opacity-0'>
+      {children}
+    </div>
+  );
+}
+
+function ActionButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <Button variant='ghost' size='icon-sm' aria-label={label} title={label} onClick={onClick}>
+      {children}
+    </Button>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <ActionButton
+      label={copied ? t('chat.copied') : t('chat.copy')}
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+    >
+      {copied ? <Check /> : <Copy />}
+    </ActionButton>
+  );
+}
