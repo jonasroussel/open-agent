@@ -15,10 +15,11 @@ portainer() {
   curl -sS -m 300 -H "X-API-Key: $PORTAINER_API_KEY" -H 'content-type: application/json' -w '\n%{http_code}' "$@"
 }
 
-# deploy <container> <build context>: the container runs the image of the same name.
+# deploy <container> <image> <build context>: Portainer finds the container by its name, which may differ from the
+# image's (`deploy/compose.yaml` names SearXNG's with an underscore).
 deploy() {
-  local container=$1 context=$2
-  local image="$REGISTRY/$container:latest"
+  local container=$1 context=$3
+  local image="$REGISTRY/$2:latest"
   docker build --pull --platform=linux/amd64 -t "$image" "$context"
   docker push "$image"
 
@@ -42,5 +43,5 @@ deploy() {
   echo "Done: $container runs the new image."
 }
 
-deploy open-agent-searxng searxng
-deploy open-agent .
+deploy open-agent_searxng open-agent-searxng searxng
+deploy open-agent open-agent .

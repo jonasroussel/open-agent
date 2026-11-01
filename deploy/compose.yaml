@@ -29,7 +29,7 @@ services:
 
   open-agent-searxng:
     image: registry.jonas.bzh/open-agent-searxng:latest
-    container_name: open-agent-searxng
+    container_name: open-agent_searxng
     restart: unless-stopped
     # No port: only the app calls it, on the stack's network.
     environment:
