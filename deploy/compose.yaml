@@ -1,5 +1,8 @@
 # The production stack, e.g. as a Portainer stack. `bun run deploy` then pushes new images and recreates these
 # containers, which it finds by name. The variables are set in the stack: random secrets from `openssl rand -base64 32`.
+# Keep the stack and volume names: the volume is `open-agent_data`, and another name would start from an empty one.
+name: open-agent
+
 services:
   open-agent:
     image: registry.jonas.bzh/open-agent:latest
@@ -22,7 +25,7 @@ services:
       SEARXNG_URL: http://open-agent-searxng:8080
     # The database and the users' files: personal data, to back up.
     volumes:
-      - open-agent-data:/data
+      - data:/data
 
   open-agent-searxng:
     image: registry.jonas.bzh/open-agent-searxng:latest
@@ -34,4 +37,4 @@ services:
       SEARXNG_SECRET: ${SEARXNG_SECRET}
 
 volumes:
-  open-agent-data:
+  data:
