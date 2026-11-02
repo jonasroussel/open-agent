@@ -124,15 +124,16 @@ export function SignInPage() {
             inputMode='numeric'
             autoComplete='one-time-code'
             disabled={pending}
-            containerClassName='justify-center gap-3'
+            // Slots shrink on a narrow phone instead of pushing the card wider than the screen.
+            containerClassName='w-full justify-center gap-3'
             autoFocus
           >
             {CODE_GROUPS.map((slots, group) => (
               <Fragment key={slots[0]}>
                 {group > 0 && <InputOTPSeparator />}
-                <InputOTPGroup>
+                <InputOTPGroup className='max-w-36 min-w-0 flex-1'>
                   {slots.map((index) => (
-                    <InputOTPSlot key={index} index={index} className='size-12 text-xl font-semibold' />
+                    <InputOTPSlot key={index} index={index} className='h-12 min-w-0 flex-1 text-xl font-semibold' />
                   ))}
                 </InputOTPGroup>
               </Fragment>
