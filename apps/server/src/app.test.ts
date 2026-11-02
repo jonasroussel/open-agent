@@ -150,7 +150,9 @@ function fakeModels(): ModelCatalog {
         if (!forMemory && !forTitle && !analysis) throw new Error('provider down');
         let text = JSON.stringify(analysis);
         if (forMemory) text = JSON.stringify(reconciliation);
-        if (forTitle) text = JSON.stringify({ title: '« Résiliation box internet. »', icon: 'File-Text ' });
+        if (forTitle) {
+          text = JSON.stringify({ language: 'French', title: '« Résiliation box internet. »', icon: 'File-Text ' });
+        }
         return {
           content: [{ type: 'text', text }],
           finishReason: { unified: 'stop', raw: undefined },

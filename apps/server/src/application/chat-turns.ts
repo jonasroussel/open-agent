@@ -331,9 +331,9 @@ export class ChatTurns {
     try {
       const result = await generateText({
         model: choice.model,
-        output: Output.object({ schema: z.object({ title: z.string(), icon: z.string() }) }),
-        prompt: `Name a conversation that starts with the message below. Answer with JSON only: {"title", "icon"}.\n- title: a short title (at most 6 words), in the message's language, without quotes.\n- icon: the name of one Lucide icon (lucide.dev, kebab-case, e.g. "fuel", "utensils", "file-text") that best shows the topic.\n\nMessage:\n${text.slice(0, 2000)}`,
-        maxOutputTokens: 60,
+        output: Output.object({ schema: z.object({ language: z.string(), title: z.string(), icon: z.string() }) }),
+        prompt: `Name a conversation that starts with the message below. Answer with JSON only: {"language", "title", "icon"}.\n- language: the language the user writes the message in. A language they ask about, quote or want a translation into is only the topic. When the message is too short to tell, ${user.locale === 'fr' ? 'French' : 'English'}.\n- title: a short title (at most 6 words), in that language, without quotes.\n- icon: the name of one Lucide icon (lucide.dev, kebab-case, e.g. "fuel", "utensils", "file-text") that best shows the topic.\n\nMessage:\n${text.slice(0, 2000)}`,
+        maxOutputTokens: 80,
       });
       await this.#usage.record(user, conversation.id, 'title', choice, result.usage, result.providerMetadata);
       const title = cleanTitle(result.output.title);
