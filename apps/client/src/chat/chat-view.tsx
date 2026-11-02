@@ -34,11 +34,14 @@ import { AssistantMessage, PendingAnswer, type UndoOutcome, UserMessage } from '
 export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: () => void }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
-  const { messages, status, error, sendMessage, regenerate, stop, clearError, setMessages } = useChat({ chat });
+  const { messages, status, error, sendMessage, regenerate, stop, clearError, setMessages, addToolOutput } = useChat({
+    chat,
+  });
   const busy = status === 'submitted' || status === 'streaming';
   const lastIndex = messages.length - 1;
   const { data: quota } = useQuery(quotaQuery);
   const exhausted = quota?.exhausted === true;
+  const pendingQuestion = pendingQuestionOf(messages.at(-1));
 
   // The server creates the conversation when the answer starts: show it in the sidebar then. The `Chat` refreshes the
   // list again when the answer ends (`chat-store.ts`).
@@ -46,7 +49,15 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
     if (status === 'streaming') void queryClient.invalidateQueries({ queryKey: conversationsQuery.queryKey });
   }, [status, queryClient]);
 
+  /** The `Chat` sends the answers once every question of the message has one (`chat-store.ts`). */
+  const answer = (toolCallId: string, text: string) => {
+    clearError();
+    void addToolOutput({ tool: 'ask_user', toolCallId, output: { answer: text } });
+  };
+
+  // While a question waits, what the user types answers it; files make it a new message, the question then unanswered.
   const send = (text: string, files: LibraryFileDto[]) => {
+    if (pendingQuestion && text && files.length === 0) return answer(pendingQuestion, text);
     clearError();
     const parts = files.map(toFilePart);
     void (text ? sendMessage({ text, files: parts }) : sendMessage({ files: parts }));
@@ -143,6 +154,7 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
                     onRegenerate={!busy && index === lastIndex ? () => void regenerate() : null}
                     onUndoMemory={undoMemory}
                     onOpenDocument={openDocument}
+                    onAnswer={!busy && index === lastIndex ? answer : null}
                   />
                 ),
               )}
@@ -174,7 +186,12 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
               {t('quota.exhausted', { month: resetMonth(quota, i18n.language) })}
             </p>
           ) : (
-            <Composer busy={busy} onSend={send} onStop={() => void stop()} />
+            <Composer
+              busy={busy}
+              onSend={send}
+              onStop={() => void stop()}
+              placeholder={pendingQuestion ? t('chat.answerPlaceholder') : t('chat.placeholder')}
+            />
           )}
           <p className='text-muted-foreground mt-2 text-center text-xs'>{t('chat.disclaimer')}</p>
         </div>
@@ -191,6 +208,15 @@ function lastWrittenDocument(message: ChatMessage | undefined): string | null {
     (candidate) => candidate.type === 'tool-create_document' || candidate.type === 'tool-update_document',
   );
   return part?.state === 'output-available' ? part.output.id : null;
+}
+
+/** The first question of the last answer still waiting for the user's answer. */
+function pendingQuestionOf(message: ChatMessage | undefined): string | null {
+  if (message?.role !== 'assistant') return null;
+  const part = message.parts.find(
+    (candidate) => candidate.type === 'tool-ask_user' && candidate.state === 'input-available',
+  );
+  return part?.type === 'tool-ask_user' ? part.toolCallId : null;
 }
 
 function ScrollToBottom() {

@@ -1,10 +1,11 @@
-import { fileKindOf, type ChatMessage, type MemoryNotice, type WebResult } from '@open-agent/shared';
+import { fileKindOf, MAX_ASK_OPTIONS, type ChatMessage, type MemoryNotice, type WebResult } from '@open-agent/shared';
 import { Link } from '@tanstack/react-router';
 import {
   AppWindow,
   BookmarkCheck,
   Check,
   ChevronRight,
+  CornerDownRight,
   Copy,
   FileText,
   Globe,
@@ -113,12 +114,15 @@ export function AssistantMessage({
   onRegenerate,
   onUndoMemory,
   onOpenDocument,
+  onAnswer,
 }: {
   message: ChatMessage;
   streaming: boolean;
   onRegenerate: (() => void) | null;
   onUndoMemory: (notice: MemoryNotice) => Promise<UndoOutcome>;
   onOpenDocument: (id: string) => void;
+  /** Only for the last answer, while nothing streams: the user may still answer its questions. */
+  onAnswer: ((toolCallId: string, answer: string) => void) | null;
 }) {
   const { t } = useTranslation();
   const text = partsText(message, 'text');
@@ -128,12 +132,18 @@ export function AssistantMessage({
   const documents = message.parts.flatMap((part) =>
     part.type === 'tool-create_document' || part.type === 'tool-update_document' ? [part] : [],
   );
+  const questions = message.parts.flatMap((part) => (part.type === 'tool-ask_user' ? [part] : []));
+  const asking = questions.some((part) => part.state !== 'output-available');
   return (
     <div className='group flex gap-3'>
       <BrandIcon className='mt-1 size-7' />
       <div className='flex min-w-0 flex-1 flex-col items-start gap-2'>
         {/* `grid-cols-1` is `minmax(0, 1fr)`: a long code line scrolls in its block instead of widening the bubble. */}
         <div className='bg-muted grid max-w-full min-w-0 grid-cols-1 gap-2 rounded-2xl rounded-tl-md px-4 py-3'>
+          {/* A question comes before the work its answer led to. */}
+          {questions.map((part) => (
+            <Question key={part.toolCallId} part={part} onAnswer={onAnswer} />
+          ))}
           {deepThinking && <Reasoning text={partsText(message, 'reasoning')} thinking={streaming && !text} />}
           {searches.map((search) => (
             <WebSearchLine
@@ -151,7 +161,7 @@ export function AssistantMessage({
               <Markdown text={text} streaming={streaming} />
             </Suspense>
           ) : (
-            !deepThinking && streaming && documents.length === 0 && <Dots />
+            !deepThinking && streaming && documents.length === 0 && !asking && <Dots />
           )}
         </div>
         {notices.map((notice) => (
@@ -168,6 +178,53 @@ export function AssistantMessage({
           </MessageActions>
         )}
       </div>
+    </div>
+  );
+}
+
+type QuestionPart = Extract<ChatMessage['parts'][number], { type: 'tool-ask_user' }>;
+
+/**
+ * A question to the user, from the pre-analysis or from the model: answers to tap while it waits, then the one given.
+ * A question the model was not allowed to ask (a second one in the same answer) does not show.
+ */
+function Question({
+  part,
+  onAnswer,
+}: {
+  part: QuestionPart;
+  onAnswer: ((toolCallId: string, answer: string) => void) | null;
+}) {
+  const { t } = useTranslation();
+  if (part.state === 'input-streaming' || !part.input) return null;
+  const answer = part.state === 'output-available' ? part.output.answer : undefined;
+  if (answer === null) return null;
+  const waiting = answer === undefined && onAnswer !== null;
+  return (
+    <div className='grid gap-2.5'>
+      <p className='text-[15px] leading-relaxed whitespace-pre-wrap'>{part.input.question}</p>
+      {waiting && (part.input.options?.length ?? 0) > 0 && (
+        <div className='flex flex-wrap gap-2'>
+          {part.input.options!.slice(0, MAX_ASK_OPTIONS).map((option) => (
+            <Button
+              key={option}
+              variant='outline'
+              size='sm'
+              className='bg-background h-auto min-h-8 rounded-full py-1.5 text-left whitespace-normal'
+              onClick={() => onAnswer(part.toolCallId, option)}
+            >
+              {option}
+            </Button>
+          ))}
+        </div>
+      )}
+      {waiting && <p className='text-muted-foreground text-xs'>{t('chat.answerHint')}</p>}
+      {answer !== undefined && (
+        <p className='text-primary flex items-start gap-1.5 text-sm font-medium'>
+          <CornerDownRight className='mt-0.5 size-4 shrink-0' />
+          <span className='whitespace-pre-wrap'>{answer}</span>
+        </p>
+      )}
     </div>
   );
 }

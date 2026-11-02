@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@open-agent/shared';
+import { MAX_ASK_ANSWER_LENGTH, type ChatMessage } from '@open-agent/shared';
 
 export type { ChatMessage };
 
@@ -62,4 +62,58 @@ export function cleanIcon(raw: string): string | null {
 export function mayAskToClarify(history: readonly ChatMessage[]): boolean {
   const lastAnswer = history.findLast((message) => message.role === 'assistant');
   return lastAnswer?.metadata?.route !== 'clarify';
+}
+
+type Part = ChatMessage['parts'][number];
+type QuestionPart = Extract<Part, { type: 'tool-ask_user' }>;
+
+function isQuestion(part: Part): part is QuestionPart {
+  return part.type === 'tool-ask_user';
+}
+
+/** Whether the message already asked the user something: one round of questions per answer, never more. */
+export function hasAsked(message: ChatMessage): boolean {
+  return message.parts.some(isQuestion);
+}
+
+/**
+ * The history ends with the user's answers to every question of the assistant's last message: the answer goes on in
+ * that message. An answer is a short text, or `null` for none.
+ */
+export function answersQuestions(history: readonly ChatMessage[]): boolean {
+  const last = history.at(-1);
+  if (last?.role !== 'assistant') return false;
+  const questions = last.parts.filter(isQuestion);
+  return (
+    questions.length > 0 &&
+    questions.every(
+      (part) =>
+        part.state === 'output-available' &&
+        (part.output.answer === null ||
+          (typeof part.output.answer === 'string' &&
+            part.output.answer.trim() !== '' &&
+            part.output.answer.length <= MAX_ASK_ANSWER_LENGTH)),
+    )
+  );
+}
+
+/**
+ * A question the user left unanswered (they wrote something else instead) gets `null`: the model must see an answer
+ * to every question it asked.
+ */
+export function withAnsweredQuestions(history: readonly ChatMessage[]): ChatMessage[] {
+  return history.map((message) => ({
+    ...message,
+    parts: message.parts.map((part): Part =>
+      isQuestion(part) && part.state === 'input-available'
+        ? {
+            type: part.type,
+            toolCallId: part.toolCallId,
+            state: 'output-available',
+            input: part.input,
+            output: { answer: null },
+          }
+        : part,
+    ),
+  }));
 }

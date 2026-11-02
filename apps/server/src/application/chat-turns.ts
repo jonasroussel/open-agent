@@ -1,5 +1,6 @@
 import {
   OWN_KEY_REFUSED,
+  type AskUserOutput,
   type ChatMessageMetadata,
   type DocumentToolOutput,
   type MemoryNotice,
@@ -24,7 +25,15 @@ import { z } from 'zod';
 
 import type { Artifact } from '../domain/artifact.ts';
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
-import { cleanIcon, cleanTitle, type ChatMessage, type Conversation } from '../domain/conversation.ts';
+import {
+  answersQuestions,
+  cleanIcon,
+  cleanTitle,
+  hasAsked,
+  withAnsweredQuestions,
+  type ChatMessage,
+  type Conversation,
+} from '../domain/conversation.ts';
 import { attachedNames, attachmentsAreValid } from '../domain/library-file.ts';
 import type { MemoryRule } from '../domain/memory.ts';
 import { isExhausted } from '../domain/quota.ts';
@@ -37,7 +46,7 @@ import type { Models } from './models.ts';
 import type { Clock } from './ports/clock.ts';
 import { ModelUnavailableError } from './ports/model-catalog.ts';
 import type { WebSearch } from './ports/web-search.ts';
-import { textOf, type PreAnalysis } from './pre-analysis.ts';
+import { textOf, type Analysis, type PreAnalysis } from './pre-analysis.ts';
 import type { Quotas } from './quotas.ts';
 import type { Settings } from './settings.ts';
 import type { UsageRecorder } from './usage-recorder.ts';
@@ -118,11 +127,17 @@ export class ChatTurns {
     this.#webSearch = webSearch;
   }
 
+  /**
+   * A new message from the user, or their answers to the questions ending the assistant's last message: that message
+   * then goes on.
+   */
   async start(user: User, id: unknown, rawMessages: unknown, abortSignal: AbortSignal): Promise<ChatTurnResult> {
     if (typeof id !== 'string' || !CONVERSATION_ID.test(id)) return { ok: false, reason: 'invalid_request' };
     const validated = await safeValidateUIMessages<ChatMessage>({ messages: rawMessages, dataSchemas });
-    if (!validated.success || validated.data.at(-1)?.role !== 'user') return { ok: false, reason: 'invalid_request' };
+    if (!validated.success) return { ok: false, reason: 'invalid_request' };
     const messages = validated.data;
+    const resumed = answersQuestions(messages) ? messages.at(-1)! : null;
+    if (!resumed && messages.at(-1)?.role !== 'user') return { ok: false, reason: 'invalid_request' };
     if (!attachmentsAreValid(messages)) return { ok: false, reason: 'invalid_request' };
 
     try {
@@ -148,21 +163,35 @@ export class ChatTurns {
       onError: (error) => this.#failure(user, error),
       execute: async ({ writer }) => {
         const rules = await this.#memory.rules(user);
-        const analysis = await this.#preAnalysis.analyze(user, conversation.id, messages, rules, abortSignal);
-        const messageId = crypto.randomUUID();
-        const remembering = analysis.feedback
-          ? this.#remember(user, analysis.feedback, rules, { conversationId: conversation.id, messageId }, abortSignal)
-          : Promise.resolve(null);
+        const analysis = await this.#analysis(user, conversation.id, messages, resumed, rules, abortSignal);
+        const messageId = resumed?.id ?? crypto.randomUUID();
+        // An answer to a question is a choice, not a remark about how the assistant works.
+        const remembering =
+          analysis.feedback && !resumed
+            ? this.#remember(
+                user,
+                analysis.feedback,
+                rules,
+                { conversationId: conversation.id, messageId },
+                abortSignal,
+              )
+            : Promise.resolve(null);
 
         if (analysis.clarifyingQuestion) {
+          // The same question the model would ask with `ask_user`: the user taps an option or types an answer.
           writer.write({ type: 'start', messageId, messageMetadata: { route: 'clarify' } });
-          writer.write({ type: 'text-start', id: messageId });
-          writer.write({ type: 'text-delta', id: messageId, delta: analysis.clarifyingQuestion });
-          writer.write({ type: 'text-end', id: messageId });
+          writer.write({ type: 'start-step' });
+          writer.write({
+            type: 'tool-input-available',
+            toolCallId: `ask-${messageId}`,
+            toolName: 'ask_user',
+            input: { question: analysis.clarifyingQuestion, options: analysis.clarifyingOptions },
+          });
+          writer.write({ type: 'finish-step' });
         } else {
           const metadata: ChatMessageMetadata = { route: analysis.route };
           if (analysis.rewrittenRequest) metadata.rewrittenRequest = analysis.rewrittenRequest;
-          // Sent first: the badge "Deep thinking" shows while the model thinks.
+          // Sent first: the badge "Deep thinking" shows while the model thinks. A resumed question gets its route.
           writer.write({ type: 'start', messageId, messageMetadata: metadata });
 
           const choice = this.#models.choose(analysis.route, user);
@@ -175,6 +204,7 @@ export class ChatTurns {
             ...(this.#webSearch
               ? { web_search: this.#searchTool(user, conversation.id, this.#webSearch, abortSignal, searches) }
               : {}),
+            ask_user: askTool(resumed !== null && hasAsked(resumed)),
           };
           const searchFirst = this.#webSearch !== null && analysis.webSearch;
           const result = streamText({
@@ -191,7 +221,7 @@ export class ChatTurns {
             messages: await convertToModelMessages(
               await this.#library.expandFiles(
                 user,
-                withoutDocumentBodies(withLatestRequest(messages, analysis.rewrittenRequest)),
+                withoutDocumentBodies(withLatestRequest(withAnsweredQuestions(messages), analysis.rewrittenRequest)),
               ),
             ),
             tools,
@@ -204,7 +234,7 @@ export class ChatTurns {
                 0,
               );
               if (stepNumber === MAX_STEPS - 1) return { toolChoice: 'none' };
-              if (searched >= MAX_SEARCHES) return { activeTools: [...documentToolNames] };
+              if (searched >= MAX_SEARCHES) return { activeTools: [...documentToolNames, 'ask_user'] };
               if (stepNumber === 0 && searchFirst) return { toolChoice: 'required', activeTools: ['web_search'] };
               return undefined;
             },
@@ -231,6 +261,31 @@ export class ChatTurns {
       },
     });
     return { ok: true, stream };
+  }
+
+  /**
+   * A new message is analyzed. After a question of the pre-analysis, it runs again, seeing the answer, and cannot ask
+   * twice; after the model's own question, its answer goes on as it started.
+   */
+  async #analysis(
+    user: User,
+    conversationId: string,
+    messages: ChatMessage[],
+    resumed: ChatMessage | null,
+    rules: readonly MemoryRule[],
+    abortSignal: AbortSignal,
+  ): Promise<Analysis> {
+    if (!resumed || resumed.metadata?.route === 'clarify') {
+      return this.#preAnalysis.analyze(user, conversationId, messages, rules, abortSignal);
+    }
+    return {
+      route: resumed.metadata?.route === 'reasoning' ? 'reasoning' : 'fast',
+      clarifyingQuestion: null,
+      clarifyingOptions: [],
+      rewrittenRequest: null,
+      feedback: null,
+      webSearch: false,
+    };
   }
 
   /** The text of a failed answer, read by the client: a refused own key gets its own, the person can fix it. */
@@ -356,15 +411,41 @@ function toolOutput(artifact: Artifact): DocumentToolOutput {
   return { id: artifact.id, kind: artifact.kind, title: artifact.title, version: artifact.version };
 }
 
-/** The model answers the clearer request; the conversation keeps the user's own words. Files stay attached. */
+/**
+ * The model answers the clearer request; the conversation keeps the user's own words. Files stay attached. After an
+ * answered question, the request is the user message before it.
+ */
 function withLatestRequest(messages: ChatMessage[], rewrittenRequest: string | null): ChatMessage[] {
   if (!rewrittenRequest) return messages;
-  const latest = messages.at(-1)!;
-  const parts = [
-    { type: 'text' as const, text: rewrittenRequest },
-    ...latest.parts.filter((part) => part.type !== 'text'),
-  ];
-  return [...messages.slice(0, -1), { ...latest, parts }];
+  const latestIndex = messages.findLastIndex((message) => message.role === 'user');
+  return messages.map((message, index) =>
+    index === latestIndex
+      ? {
+          ...message,
+          parts: [
+            { type: 'text' as const, text: rewrittenRequest },
+            ...message.parts.filter((part) => part.type !== 'text'),
+          ],
+        }
+      : message,
+  );
+}
+
+const askInput = z.object({ question: z.string(), options: z.array(z.string()) });
+const ASK_DESCRIPTION =
+  'Ask the user one question when you cannot go on without a choice only they can make. Offer 2 to 4 short answers they can tap, or [] when none can be guessed; they may also type their own. Your answer stops until they reply, then goes on. An answer null means you may not ask again in this answer: decide yourself and say what you assumed.';
+
+/**
+ * Without `execute`, a call ends the answer until the user replies. Once a question was asked in this answer, the
+ * tool answers `null` itself: one round of questions per answer, the model then decides alone.
+ */
+function askTool(alreadyAsked: boolean) {
+  if (!alreadyAsked) return tool({ description: ASK_DESCRIPTION, inputSchema: askInput });
+  return tool({
+    description: ASK_DESCRIPTION,
+    inputSchema: askInput,
+    execute: async (): Promise<AskUserOutput> => ({ answer: null }),
+  });
 }
 
 /**

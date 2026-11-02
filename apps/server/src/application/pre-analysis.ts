@@ -1,3 +1,4 @@
+import { MAX_ASK_OPTIONS } from '@open-agent/shared';
 import { generateText, NoObjectGeneratedError, Output } from 'ai';
 import { z } from 'zod';
 
@@ -13,6 +14,8 @@ export type Analysis = {
   route: 'fast' | 'reasoning';
   /** One short question back, instead of an answer; only when a guess would waste the user's time. */
   clarifyingQuestion: string | null;
+  /** Likely answers to tap; empty when none can be guessed (a name, an address) and without a question. */
+  clarifyingOptions: string[];
   /** The same request, clearer, for the model; the user's own words stay in the conversation. */
   rewrittenRequest: string | null;
   /** A lasting preference about how the assistant works, from the latest message; the memory records it. */
@@ -25,6 +28,7 @@ export type Analysis = {
 const PLAIN: Analysis = {
   route: 'fast',
   clarifyingQuestion: null,
+  clarifyingOptions: [],
   rewrittenRequest: null,
   feedback: null,
   webSearch: false,
@@ -34,6 +38,7 @@ const PLAIN: Analysis = {
 const schema = z.object({
   route: z.enum(['fast', 'reasoning']),
   clarifyingQuestion: z.string().nullable(),
+  clarifyingOptions: z.array(z.string()),
   rewrittenRequest: z.string().nullable(),
   feedback: z.string().nullable(),
   webSearch: z.boolean(),
@@ -81,11 +86,12 @@ export class PreAnalysis {
         abortSignal,
       });
       await this.#usage.record(user, conversationId, 'pre_pass', choice, result.usage, result.providerMetadata);
-      const { route, clarifyingQuestion, rewrittenRequest, feedback, webSearch } = result.output;
+      const { route, clarifyingQuestion, clarifyingOptions, rewrittenRequest, feedback, webSearch } = result.output;
       const question = mayClarify ? clarifyingQuestion?.trim() || null : null;
       return {
         route,
         clarifyingQuestion: question,
+        clarifyingOptions: question ? cleanOptions(clarifyingOptions) : [],
         rewrittenRequest: question ? null : rewrittenRequest?.trim() || null,
         feedback: feedback?.trim() || null,
         webSearch: !question && webSearch,
@@ -110,9 +116,15 @@ export class PreAnalysis {
   }
 }
 
+/**
+ * The latest user message, with what came before; after an answered question, the question and its answer follow it,
+ * so the analysis sees what the user chose.
+ */
 function transcript(history: readonly ChatMessage[], rules: readonly MemoryRule[]): string {
-  const latest = history.at(-1)!;
-  const earlier = history.slice(0, -1).slice(-CONTEXT_MESSAGES);
+  const latestIndex = history.findLastIndex((message) => message.role === 'user');
+  const latest = history[latestIndex]!;
+  const earlier = history.slice(0, latestIndex).slice(-CONTEXT_MESSAGES);
+  const since = history.slice(latestIndex + 1);
   const lines = earlier.map(
     (message) =>
       `${message.role === 'user' ? 'User' : 'Assistant'}: ${cut(textOf(message), CONTEXT_CHARACTERS)}${attachments(message)}`,
@@ -122,7 +134,16 @@ function transcript(history: readonly ChatMessage[], rules: readonly MemoryRule[
     ...(lines.length > 0 ? ['Conversation so far:', ...lines, ''] : []),
     'Latest user message:',
     `${cut(textOf(latest), LATEST_CHARACTERS)}${attachments(latest)}`,
+    ...(since.length > 0
+      ? ['', 'Then the assistant asked, and the user answered:', ...since.map((message) => textOf(message))]
+      : []),
   ].join('\n');
+}
+
+/** At most `MAX_ASK_OPTIONS`, each a few words, none twice. */
+function cleanOptions(options: readonly string[]): string[] {
+  const cleaned = options.map((option) => option.trim()).filter((option) => option && option.length <= 80);
+  return [...new Set(cleaned)].slice(0, MAX_ASK_OPTIONS);
 }
 
 function attachments(message: ChatMessage): string {
@@ -130,9 +151,15 @@ function attachments(message: ChatMessage): string {
   return names ? ` [Attached: ${names}]` : '';
 }
 
+/** What the message says: its text, and the questions it asked with their answers. */
 export function textOf(message: ChatMessage): string {
   return message.parts
-    .flatMap((part) => (part.type === 'text' ? [part.text] : []))
+    .flatMap((part) => {
+      if (part.type === 'text') return [part.text];
+      if (part.type !== 'tool-ask_user' || !part.input) return [];
+      const answer = part.state === 'output-available' ? part.output.answer : null;
+      return [answer ? `[Asked: ${part.input.question}] [Answer: ${answer}]` : `[Asked: ${part.input.question}]`];
+    })
     .join('\n')
     .trim();
 }

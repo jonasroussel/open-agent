@@ -24,6 +24,8 @@ export const fr: Translation = {
   },
   chat: {
     placeholder: 'Posez votre question…',
+    answerPlaceholder: 'Votre réponse…',
+    answerHint: 'Ou écrivez votre propre réponse ci-dessous.',
     send: 'Envoyer',
     stop: 'Arrêter',
     copy: 'Copier',

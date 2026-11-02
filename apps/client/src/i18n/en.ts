@@ -22,6 +22,8 @@ export const en = {
   },
   chat: {
     placeholder: 'Ask anything…',
+    answerPlaceholder: 'Your answer…',
+    answerHint: 'Or type your own answer below.',
     send: 'Send',
     stop: 'Stop',
     copy: 'Copy',

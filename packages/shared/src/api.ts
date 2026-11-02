@@ -222,10 +222,23 @@ export type CreateDocumentInput = { kind: ArtifactKind; title: string; content: 
 export type UpdateDocumentInput = { id: string; content: string };
 export type DocumentToolOutput = { id: string; kind: ArtifactKind; title: string; version: number };
 
+/** A question to the user, with up to `MAX_ASK_OPTIONS` short answers to tap; they may also type their own. */
+export type AskUserInput = { question: string; options: string[] };
+/**
+ * The user's answer. `null`: never answered, either because the user wrote something else, or because a question was
+ * already asked in this answer and the model must decide alone.
+ */
+export type AskUserOutput = { answer: string | null };
+
+export const MAX_ASK_OPTIONS = 4;
+/** The longest answer the server accepts: a typed answer is a few sentences, not a document to attach. */
+export const MAX_ASK_ANSWER_LENGTH = 4000;
+
 export type ChatTools = {
   web_search: { input: WebSearchInput; output: WebSearchOutput };
   create_document: { input: CreateDocumentInput; output: DocumentToolOutput };
   update_document: { input: UpdateDocumentInput; output: DocumentToolOutput };
+  ask_user: { input: AskUserInput; output: AskUserOutput };
 };
 
 export type ChatMessage = UIMessage<ChatMessageMetadata, ChatDataParts, ChatTools>;

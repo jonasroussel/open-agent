@@ -11,6 +11,18 @@ import { conversationsQuery } from './conversations-query.ts';
 const transport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat });
 
 /**
+ * The user answered every question that ended the last answer: the server goes on from there. Only the last step
+ * counts, so an answer that went on after its question is never sent again.
+ */
+function questionsAnswered({ messages }: { messages: ChatMessage[] }): boolean {
+  const last = messages.at(-1);
+  if (last?.role !== 'assistant') return false;
+  const lastStep = last.parts.slice(last.parts.findLastIndex((part) => part.type === 'step-start') + 1);
+  const questions = lastStep.filter((part) => part.type === 'tool-ask_user');
+  return questions.length > 0 && questions.every((part) => part.state === 'output-available');
+}
+
+/**
  * One `Chat` per conversation, kept across page changes: the first message is sent from the empty page and keeps
  * streaming after the address changes to the conversation's own, and going back to a conversation shows it at once.
  */
@@ -24,6 +36,7 @@ export function chatFor(id: string, messages: ChatMessage[] = []): Chat<ChatMess
       messages,
       transport,
       generateId: () => crypto.randomUUID(),
+      sendAutomaticallyWhen: questionsAnswered,
       // A new conversation got its title meanwhile, every answer moves its conversation to the top, may have changed
       // the memory, and spent some of the quota.
       onFinish: () => {

@@ -33,10 +33,12 @@ export function Composer({
   busy,
   onSend,
   onStop,
+  placeholder,
 }: {
   busy: boolean;
   onSend: (text: string, files: LibraryFileDto[]) => void;
   onStop: () => void;
+  placeholder: string;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -162,8 +164,8 @@ export function Composer({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
-        placeholder={t('chat.placeholder')}
-        aria-label={t('chat.placeholder')}
+        placeholder={placeholder}
+        aria-label={placeholder}
         rows={1}
         autoFocus={!touchScreen}
         className='placeholder:text-muted-foreground field-sizing-content max-h-52 min-h-10 w-full resize-none bg-transparent px-1 text-base outline-none'

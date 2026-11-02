@@ -53,7 +53,7 @@ flowchart TD
   Q -- no --> B[Blocked + reset date]
   Q -- yes --> P["Pre-pass: 1 call, background model"]
   P --> C{Truly ambiguous?}
-  C -- yes --> D[One short clarifying question]
+  C -- yes --> D["One short question (ask_user) with answers to tap;<br/>the answer resumes the message, analyzed again"]
   C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, canvas"]
   P -- feedback detected --> R["Memory reconciler<br/>ADD / UPDATE / DELETE / NOOP"]
   R --> T["Notice under the answer: 'Remembered: …' + Undo"]
@@ -67,8 +67,9 @@ One structured-output call on the background model (thinking off, about 0.6 s an
 
 - `route`: `fast` (thinking off) | `reasoning` (same model, thinking `medium`). No `vision` route: the same DeepSeek
   model reads pictures (measured on a screenshot: 1.1 s, 0.0002 $);
-- `clarifyingQuestion`: one short question instead of an answer, or null. Never twice in a row: right after a
-  question, the next turn always answers;
+- `clarifyingQuestion`: one short question instead of an answer, or null, with `clarifyingOptions`, up to 4 likely
+  answers to tap (none when they cannot be guessed). It is sent as an `ask_user` call, the same as the model's own
+  questions. Never twice in a row: after a question, answered or not, the next analysis cannot ask;
 - `rewrittenRequest`: the same request, clear and in the first person, when it was written in a hurry, or null. Only
   the model sees it; the conversation keeps the user's words, and the answer's metadata keeps the rewrite;
 - `feedback`: a lasting preference about how the assistant works ("your answers are always too long"), or null for a
@@ -111,6 +112,15 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   per conversation, last updated first, with the passage of its best message and the words found highlighted;
   Markdown marks are removed from the passage. Enter opens the first one. Triggers keep the index in step with every
   write, edits and deletions included. Titles are not searched: they repeat the first message.
+- **Questions to the user** (`ask_user`, like in Claude Code): the pre-pass or the model asks one question, with up to
+  4 answers to tap; the user may also type their own in the composer, which then says "Your answer…". The model's
+  tool has no `execute`: its call ends the stream, and the question waits, saved, even across a reload. The answer is
+  the tool's output; once every question of the message has one, the client sends the history again
+  (`sendAutomaticallyWhen`) and the same message goes on: after the pre-pass's question, the pre-pass runs again with
+  the answer (and may not ask again); after the model's, its answer goes on with the same route. One round of
+  questions per answer: asked again in the same message, the tool answers `null` itself, and the model decides alone
+  and says what it assumed. A question left unanswered (the user wrote something else) reaches the model as `null`.
+  The question and its answer show first in the bubble.
 
 ### Web search
 

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import type {
   ApiError,
+  ChatMessage,
   ArtifactDto,
   ArtifactResponse,
   ArtifactVersionResponse,
@@ -60,6 +61,7 @@ const ANSWER = 'Voici une lettre de résiliation.';
 type Analysis = {
   route: string;
   clarifyingQuestion: string | null;
+  clarifyingOptions: string[];
   rewrittenRequest: string | null;
   feedback: string | null;
   webSearch: boolean;
@@ -67,6 +69,7 @@ type Analysis = {
 const plainAnalysis = (overrides: Partial<Analysis> = {}): Analysis => ({
   route: 'fast',
   clarifyingQuestion: null,
+  clarifyingOptions: [],
   rewrittenRequest: null,
   feedback: null,
   webSearch: false,
@@ -582,6 +585,97 @@ describe('chat', () => {
 const textOfMessage = (message: UIMessage) =>
   message.parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('');
 
+type QuestionPart = Extract<ChatMessage['parts'][number], { type: 'tool-ask_user' }>;
+const questionsOf = (message: ChatMessage) =>
+  message.parts.filter((part): part is QuestionPart => part.type === 'tool-ask_user');
+
+/** The history the client sends back once the user answered the questions of the last message. */
+function answered(history: ChatMessage[], answer: string | null): ChatMessage[] {
+  const last = history.at(-1)!;
+  const parts = last.parts.map((part) =>
+    part.type === 'tool-ask_user' && part.state === 'input-available'
+      ? { ...part, state: 'output-available' as const, output: { answer } }
+      : part,
+  );
+  return [...history.slice(0, -1), { ...last, parts }];
+}
+
+/** The pre-analyses made so far: the background model also names conversations. */
+const prePasses = () =>
+  models.background.doGenerateCalls
+    .map((generation) => JSON.stringify(generation.prompt))
+    .filter((prompt) => prompt.includes('Latest user message'));
+
+describe('questions to the user', () => {
+  test('an ambiguous request gets one question with answers to tap; the answer resumes the same message, with no second question', async () => {
+    const cookie = await signIn(ADMIN);
+    analysis = plainAnalysis({
+      clarifyingQuestion: 'Chez quel opérateur êtes-vous ?',
+      clarifyingOptions: ['Orange', ' SFR ', 'SFR', 'Free', 'Bouygues', 'Autre'],
+    });
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Résilie mon abonnement.')]);
+
+    const asked = (await open(cookie, CONVERSATION)).messages;
+    expect(models.fast.doStreamCalls).toHaveLength(0);
+    expect(asked[1]!.metadata).toEqual({ route: 'clarify' });
+    expect(questionsOf(asked[1]!)).toMatchObject([
+      {
+        state: 'input-available',
+        input: { question: 'Chez quel opérateur êtes-vous ?', options: ['Orange', 'SFR', 'Free', 'Bouygues'] },
+      },
+    ]);
+
+    analysis = plainAnalysis({ clarifyingQuestion: 'Et depuis quand ?' });
+    await chat(cookie, CONVERSATION, answered(asked, 'SFR'));
+    const done = (await open(cookie, CONVERSATION)).messages;
+    expect(done).toHaveLength(2);
+    expect(done[1]!.id).toBe(asked[1]!.id);
+    expect(done[1]!.metadata).toEqual({ route: 'fast' });
+    expect(textOfMessage(done[1]!)).toBe(ANSWER);
+    expect(prePasses().at(-1)).toContain('[Answer: SFR]');
+    expect(prePasses().at(-1)).toContain('clarifyingQuestion must be null now');
+    expect(JSON.stringify(models.fast.doStreamCalls[0]!.prompt)).toContain('SFR');
+  });
+
+  test('the model may stop to ask once; the answer goes on in the same message, and a second question is answered for it', async () => {
+    const cookie = await signIn(ADMIN);
+    scriptedCalls = [{ toolName: 'ask_user', input: { question: 'Mer ou montagne ?', options: ['Mer', 'Montagne'] } }];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Propose-moi un week-end.')]);
+
+    const asked = (await open(cookie, CONVERSATION)).messages;
+    expect(models.fast.doStreamCalls).toHaveLength(1);
+    expect(questionsOf(asked[1]!)).toMatchObject([
+      { state: 'input-available', input: { question: 'Mer ou montagne ?' } },
+    ]);
+    expect(textOfMessage(asked[1]!)).toBe('');
+
+    scriptedCalls = [{ toolName: 'ask_user', input: { question: 'Hôtel ou gîte ?', options: [] } }];
+    await chat(cookie, CONVERSATION, answered(asked, 'Mer'));
+    const done = (await open(cookie, CONVERSATION)).messages;
+    expect(done).toHaveLength(2);
+    expect(questionsOf(done[1]!).map((part) => part.output)).toEqual([{ answer: 'Mer' }, { answer: null }]);
+    expect(textOfMessage(done[1]!)).toBe(ANSWER);
+    expect(models.fast.doStreamCalls).toHaveLength(3);
+    expect(JSON.stringify(models.fast.doStreamCalls[1]!.prompt)).toContain('"answer":"Mer"');
+    expect(prePasses()).toHaveLength(1);
+  });
+
+  test('a question left unanswered never blocks the conversation, and only answered questions resume a message', async () => {
+    const cookie = await signIn(ADMIN);
+    scriptedCalls = [{ toolName: 'ask_user', input: { question: 'Mer ou montagne ?', options: ['Mer', 'Montagne'] } }];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Propose-moi un week-end.')]);
+    const asked = (await open(cookie, CONVERSATION)).messages;
+
+    expect((await chat(cookie, CONVERSATION, asked)).status).toBe(400);
+    expect((await chat(cookie, CONVERSATION, answered(asked, 'x'.repeat(4001)))).status).toBe(400);
+
+    const moved = [...asked, userMessage('m3', 'Finalement, une sortie au cinéma.')];
+    expect((await chat(cookie, CONVERSATION, moved)).status).toBe(200);
+    expect(JSON.stringify(models.fast.doStreamCalls[1]!.prompt)).toContain('"answer":null');
+    expect(textOfMessage((await open(cookie, CONVERSATION)).messages[3]!)).toBe(ANSWER);
+  });
+});
+
 describe('search', () => {
   test("finds the user's own conversations by the start of words, accents aside, and follows edits", async () => {
     const cookie = await signIn(ADMIN);
@@ -617,20 +711,16 @@ describe('pre-analysis', () => {
     expect(messages[1]!.metadata).toEqual({ route: 'reasoning' });
   });
 
-  test('an ambiguous request gets one short question instead of an answer, and never two in a row', async () => {
+  test('a pending question counts as asked: the next message is answered, never questioned again', async () => {
     const cookie = await signIn(ADMIN);
     analysis = plainAnalysis({ clarifyingQuestion: 'Chez quel opérateur êtes-vous ?' });
     await chat(cookie, CONVERSATION, [userMessage('m1', 'Résilie mon abonnement.')]);
-
     const asked = (await open(cookie, CONVERSATION)).messages;
-    expect(models.fast.doStreamCalls).toHaveLength(0);
-    expect(textOfMessage(asked[1]!)).toBe('Chez quel opérateur êtes-vous ?');
-    expect(asked[1]!.metadata).toEqual({ route: 'clarify' });
 
     await chat(cookie, CONVERSATION, [...asked, userMessage('m2', 'Je ne sais plus, une box.')]);
-    const answered = (await open(cookie, CONVERSATION)).messages;
+    const answeredMessages = (await open(cookie, CONVERSATION)).messages;
     expect(models.fast.doStreamCalls).toHaveLength(1);
-    expect(textOfMessage(answered[3]!)).toBe(ANSWER);
+    expect(textOfMessage(answeredMessages[3]!)).toBe(ANSWER);
   });
 
   test("a vague request is answered as rewritten, while the conversation keeps the user's own words", async () => {
