@@ -43,6 +43,7 @@ import type { Library } from './library.ts';
 import type { MemoryReconciler } from './memory-reconciler.ts';
 import type { Memory } from './memory.ts';
 import type { Models } from './models.ts';
+import type { ChangeFeed } from './ports/change-feed.ts';
 import type { Clock } from './ports/clock.ts';
 import { ModelUnavailableError } from './ports/model-catalog.ts';
 import type { WebSearch } from './ports/web-search.ts';
@@ -98,6 +99,7 @@ export class ChatTurns {
   readonly #settings: Settings;
   readonly #clock: Clock;
   readonly #webSearch: WebSearch | null;
+  readonly #changes: ChangeFeed;
 
   constructor(
     conversations: ConversationRepository,
@@ -112,6 +114,7 @@ export class ChatTurns {
     settings: Settings,
     clock: Clock,
     webSearch: WebSearch | null,
+    changes: ChangeFeed,
   ) {
     this.#conversations = conversations;
     this.#preAnalysis = preAnalysis;
@@ -125,6 +128,7 @@ export class ChatTurns {
     this.#settings = settings;
     this.#clock = clock;
     this.#webSearch = webSearch;
+    this.#changes = changes;
   }
 
   /**
@@ -159,6 +163,7 @@ export class ChatTurns {
       originalMessages: messages,
       onEnd: async ({ messages: history }) => {
         await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
+        this.#changes.publish(user.id, { type: 'conversation', id: conversation.id });
       },
       onError: (error) => this.#failure(user, error),
       execute: async ({ writer }) => {
@@ -396,6 +401,7 @@ export class ChatTurns {
       const icon = cleanIcon(result.output.icon) ?? 'message-square';
       if (title && !conversation.title) await this.#conversations.rename(conversation.id, title);
       await this.#conversations.setIcon(conversation.id, icon);
+      this.#changes.publish(user.id, { type: 'conversations' });
     } catch (error) {
       // A name that did not parse was billed all the same: the quota must see it.
       if (NoObjectGeneratedError.isInstance(error)) {

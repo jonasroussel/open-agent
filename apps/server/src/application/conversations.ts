@@ -7,6 +7,7 @@ import {
   type SearchHit,
 } from '../domain/conversation.ts';
 import type { User } from '../domain/user.ts';
+import type { ChangeFeed } from './ports/change-feed.ts';
 
 const MAX_TITLE_LENGTH = 80;
 const SEARCH_RESULTS = 20;
@@ -16,9 +17,11 @@ export type ConversationUpdate = { title?: unknown; pinned?: unknown };
 /** A user's own conversations: anyone else's answer `null`, as if they did not exist. */
 export class Conversations {
   readonly #conversations: ConversationRepository;
+  readonly #changes: ChangeFeed;
 
-  constructor(conversations: ConversationRepository) {
+  constructor(conversations: ConversationRepository, changes: ChangeFeed) {
     this.#conversations = conversations;
+    this.#changes = changes;
   }
 
   list(user: User): Promise<Conversation[]> {
@@ -52,6 +55,7 @@ export class Conversations {
     if (!conversation) return { ok: false, reason: 'not_found' };
     if (title) await this.#conversations.rename(id, title);
     if (typeof update.pinned === 'boolean') await this.#conversations.setPinned(id, update.pinned);
+    this.#changes.publish(user.id, { type: 'conversations' });
     return {
       ok: true,
       conversation: {
@@ -65,6 +69,7 @@ export class Conversations {
   async delete(user: User, id: string): Promise<boolean> {
     if (!(await this.#owned(user, id))) return false;
     await this.#conversations.delete(id);
+    this.#changes.publish(user.id, { type: 'conversation', id });
     return true;
   }
 

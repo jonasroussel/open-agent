@@ -1,7 +1,8 @@
 import { Chat } from '@ai-sdk/react';
-import { API_ROUTES, type ChatMessage } from '@open-agent/shared';
+import { API_ROUTES, apiPath, type ChatMessage, type ConversationResponse } from '@open-agent/shared';
 import { DefaultChatTransport } from 'ai';
 
+import { api } from '@/lib/api.ts';
 import { queryClient } from '@/lib/query-client.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
 import { quotaQuery } from '@/quota/quota-query.ts';
@@ -66,4 +67,29 @@ export function forgetChat(id: string): void {
 /** Signing out: the previous person's conversations must not come back for the next one. */
 export function forgetAllChats(): void {
   for (const id of chats.keys()) forgetChat(id);
+}
+
+/** Waiting for nothing: an answer on its way would arrive by itself, and must not be cut short. */
+function idle(chat: Chat<ChatMessage>): boolean {
+  return chat.status === 'ready' || chat.status === 'error';
+}
+
+/**
+ * The saved copy replaces a conversation kept here, after it changed on another device. A conversation deleted there
+ * is forgotten; its page then finds it gone and leaves.
+ */
+export async function refreshChat(id: string): Promise<void> {
+  const chat = chats.get(id);
+  if (!chat || !idle(chat)) return;
+  const result = await api<ConversationResponse>(apiPath(API_ROUTES.conversation, { conversationId: id }));
+  if (!result.ok) {
+    if (result.error === 'not_found') forgetChat(id);
+    return;
+  }
+  // A message sent here meanwhile wins: its answer brings the saved copy.
+  if (idle(chat)) chat.messages = result.data.messages;
+}
+
+export async function refreshAllChats(): Promise<void> {
+  await Promise.all([...chats.keys()].map((id) => refreshChat(id)));
 }

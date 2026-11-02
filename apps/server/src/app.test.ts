@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type {
   ApiError,
   ChatMessage,
+  ChangeEvent,
   ArtifactDto,
   ArtifactResponse,
   ArtifactVersionResponse,
@@ -674,6 +675,57 @@ describe('questions to the user', () => {
     expect((await chat(cookie, CONVERSATION, moved)).status).toBe(200);
     expect(JSON.stringify(models.fast.doStreamCalls[1]!.prompt)).toContain('"answer":null');
     expect(textOfMessage((await open(cookie, CONVERSATION)).messages[3]!)).toBe(ANSWER);
+  });
+});
+
+/** A device listening to `/api/events`: what it heard so far, and a way to hang up. */
+async function listen(cookie: string) {
+  const hangUp = new AbortController();
+  const response = await fetch(new URL('/api/events', server.url), { headers: { cookie }, signal: hangUp.signal });
+  const heard: ChangeEvent[] = [];
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const reading = (async () => {
+    try {
+      for await (const chunk of response.body!) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const blocks = buffer.split('\n\n');
+        buffer = blocks.pop()!;
+        for (const block of blocks) if (block.startsWith('data: ')) heard.push(JSON.parse(block.slice(6)));
+      }
+    } catch {
+      // Hung up.
+    }
+  })();
+  return {
+    heard,
+    hangUp: async () => {
+      hangUp.abort();
+      await reading;
+    },
+  };
+}
+
+describe('changes between devices', () => {
+  test("a user's other devices hear of every change to their data, and nobody else does", async () => {
+    const phone = await signIn(ADMIN);
+    const computer = await listen(await signIn(ADMIN));
+    await invite(phone, 'ana@example.com');
+    const ana = await listen(await signIn('ana@example.com'));
+
+    await chat(phone, CONVERSATION, [userMessage('m1', 'Bonjour')]);
+    await call('/api/memory/rules', { method: 'POST', body: { text: 'Réponses courtes.' }, cookie: phone });
+    await call(`/api/conversations/${CONVERSATION}`, { method: 'PATCH', body: { pinned: true }, cookie: phone });
+    await call(`/api/conversations/${CONVERSATION}`, { method: 'DELETE', cookie: phone });
+    await computer.hangUp();
+    await ana.hangUp();
+
+    expect(computer.heard).toContainEqual({ type: 'conversation', id: CONVERSATION });
+    expect(computer.heard).toContainEqual({ type: 'memory' });
+    expect(computer.heard).toContainEqual({ type: 'conversations' });
+    expect(computer.heard.at(-1)).toEqual({ type: 'conversation', id: CONVERSATION });
+    expect(ana.heard).toEqual([]);
+    expect((await call('/api/events')).status).toBe(401);
   });
 });
 

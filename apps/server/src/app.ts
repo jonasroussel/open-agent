@@ -32,6 +32,7 @@ import { SqliteSettingsRepository } from './infrastructure/database/sqlite-setti
 import { SqliteSignInRequestStore } from './infrastructure/database/sqlite-sign-in-request-store.ts';
 import { SqliteUsageLedger } from './infrastructure/database/sqlite-usage-ledger.ts';
 import { SqliteUserRepository } from './infrastructure/database/sqlite-user-repository.ts';
+import { InMemoryChangeFeed } from './infrastructure/in-memory-change-feed.ts';
 import { InMemoryLoginAttemptLimiter } from './infrastructure/in-memory-login-attempt-limiter.ts';
 import { createRoutes } from './presentation/http/routes.ts';
 
@@ -89,9 +90,11 @@ export async function createApp(
   const ledger = new SqliteUsageLedger(database);
   const usage = new UsageRecorder(ledger, models, clock);
   const quotas = new Quotas(ledger, users, clock, options.defaultMonthlyQuotaUsd);
-  const memory = new Memory(new SqliteMemoryRepository(database), conversations, clock);
-  const library = new Library(new SqliteLibraryRepository(database), fileStore, documents, clock);
-  const artifacts = new Artifacts(new SqliteArtifactRepository(database), clock);
+  // The user's other devices learn of every change through `/api/events`.
+  const changes = new InMemoryChangeFeed();
+  const memory = new Memory(new SqliteMemoryRepository(database), conversations, clock, changes);
+  const library = new Library(new SqliteLibraryRepository(database), fileStore, documents, clock, changes);
+  const artifacts = new Artifacts(new SqliteArtifactRepository(database), clock, changes);
   const settings = await Settings.load(
     new SqliteSettingsRepository(database),
     modelDirectory,
@@ -117,7 +120,7 @@ export async function createApp(
       options.devSignInCode,
     ),
     userAccess,
-    conversations: new Conversations(conversations),
+    conversations: new Conversations(conversations, changes),
     memory,
     messageMemory: new MessageMemory(conversations, memory, reconciler, quotas),
     chatTurns: new ChatTurns(
@@ -133,12 +136,14 @@ export async function createApp(
       settings,
       clock,
       webSearch,
+      changes,
     ),
     quotas,
     library,
     artifacts,
     settings,
     modelDirectory,
+    changes,
     ownKeys: new OwnKeys(users, secrets, keyChecker, clock),
   });
 }

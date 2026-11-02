@@ -7,6 +7,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/com
 import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 
 import { AppSidebar } from './app-sidebar.tsx';
+import { useChangeFeed } from './change-feed.ts';
 import { PageTitleContext } from './page-title.tsx';
 
 /**
@@ -16,6 +17,7 @@ import { PageTitleContext } from './page-title.tsx';
 export function AppLayout() {
   const { data: user } = useQuery(sessionQuery);
   const [title, setTitle] = useState<string | null>(null);
+  useChangeFeed();
   // Signing out clears the session just before leaving for the sign-in page.
   if (!user) return null;
 

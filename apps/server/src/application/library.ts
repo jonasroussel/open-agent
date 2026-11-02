@@ -14,6 +14,7 @@ import {
 } from '../domain/library-file.ts';
 import type { LibraryRepository } from '../domain/library-repository.ts';
 import type { User } from '../domain/user.ts';
+import type { ChangeFeed } from './ports/change-feed.ts';
 import type { Clock } from './ports/clock.ts';
 import { DocumentTooLong, UnreadableDocument, type DocumentReader } from './ports/document-reader.ts';
 import type { FileStore } from './ports/file-store.ts';
@@ -38,12 +39,14 @@ export class Library {
   readonly #store: FileStore;
   readonly #reader: DocumentReader;
   readonly #clock: Clock;
+  readonly #changes: ChangeFeed;
 
-  constructor(files: LibraryRepository, store: FileStore, reader: DocumentReader, clock: Clock) {
+  constructor(files: LibraryRepository, store: FileStore, reader: DocumentReader, clock: Clock, changes: ChangeFeed) {
     this.#files = files;
     this.#store = store;
     this.#reader = reader;
     this.#clock = clock;
+    this.#changes = changes;
   }
 
   async upload(user: User, upload: Upload): Promise<UploadResult> {
@@ -77,6 +80,7 @@ export class Library {
     await this.#store.save(user.id, file.id, ORIGINAL, upload.bytes);
     for (const picture of pictures) await this.#store.save(user.id, file.id, picture.name, picture.bytes);
     await this.#files.create(file);
+    this.#changes.publish(user.id, { type: 'files' });
     return { ok: true, file };
   }
 
@@ -105,6 +109,7 @@ export class Library {
     if (!file) return false;
     await this.#files.delete(file.id);
     await this.#store.remove(user.id, file.id);
+    this.#changes.publish(user.id, { type: 'files' });
     return true;
   }
 

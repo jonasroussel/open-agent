@@ -3,6 +3,7 @@ import { MAX_ARTIFACT_LENGTH, type ArtifactKind } from '@open-agent/shared';
 import type { ArtifactRepository } from '../domain/artifact-repository.ts';
 import { amendsLatest, cleanArtifactTitle, type Artifact, type ArtifactVersion } from '../domain/artifact.ts';
 import type { User } from '../domain/user.ts';
+import type { ChangeFeed } from './ports/change-feed.ts';
 import type { Clock } from './ports/clock.ts';
 
 export type SaveResult =
@@ -17,9 +18,12 @@ export class Artifacts {
   readonly #artifacts: ArtifactRepository;
   readonly #clock: Clock;
 
-  constructor(artifacts: ArtifactRepository, clock: Clock) {
+  readonly #changes: ChangeFeed;
+
+  constructor(artifacts: ArtifactRepository, clock: Clock, changes: ChangeFeed) {
     this.#artifacts = artifacts;
     this.#clock = clock;
+    this.#changes = changes;
   }
 
   /** From the model's `create_document`. Throws when the content is too long: the model is told and can shorten it. */
@@ -29,7 +33,7 @@ export class Artifacts {
     input: { kind: ArtifactKind; title: string; content: string },
   ): Promise<Artifact> {
     checkLength(input.content);
-    return await this.#artifacts.create(
+    const artifact = await this.#artifacts.create(
       {
         id: crypto.randomUUID(),
         conversationId,
@@ -41,6 +45,8 @@ export class Artifacts {
       input.content,
       'model',
     );
+    this.#changes.publish(user.id, { type: 'artifact', id: artifact.id });
+    return artifact;
   }
 
   /** From the model's `update_document`: only a document of this conversation. Throws otherwise, for the model. */
@@ -49,6 +55,7 @@ export class Artifacts {
     const artifact = await this.#artifacts.find(id);
     if (artifact?.conversationId !== conversationId) throw new Error(`No document ${id} in this conversation.`);
     const version = await this.#artifacts.addVersion(id, content, 'model', this.#clock.now());
+    this.#changes.publish(artifact.userId, { type: 'artifact', id });
     return { ...artifact, version, updatedAt: this.#clock.now() };
   }
 
@@ -99,9 +106,11 @@ export class Artifacts {
     if (latest.content === content) return { ok: true, artifact };
     if (amendsLatest(latest, now)) {
       await this.#artifacts.amendVersion(id, latest.number, content, now);
+      this.#changes.publish(user.id, { type: 'artifact', id });
       return { ok: true, artifact: { ...artifact, updatedAt: now } };
     }
     const version = await this.#artifacts.addVersion(id, content, 'user', now);
+    this.#changes.publish(user.id, { type: 'artifact', id });
     return { ok: true, artifact: { ...artifact, version, updatedAt: now } };
   }
 

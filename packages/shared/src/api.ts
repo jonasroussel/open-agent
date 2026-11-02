@@ -21,6 +21,8 @@ export const API_ROUTES = {
   adminUser: '/api/admin/users/:userId',
   /** GET: how much of their monthly quota the signed-in user has used, as `QuotaResponse`. */
   quota: '/api/quota',
+  /** GET: server-sent events, one `ChangeEvent` per `data:` line, for every change to the signed-in user's data. */
+  events: '/api/events',
   /**
    * GET: the signed-in user's own OpenRouter key, as `OwnKeyResponse`. PUT `SetOwnKeyBody`: checks it with OpenRouter
    * and keeps it encrypted. DELETE: forgets it.
@@ -122,6 +124,20 @@ export type ApiError = {
 export const OWN_KEY_REFUSED = 'own_key_refused';
 
 export type HealthResponse = { status: 'ok'; version: string };
+
+/**
+ * Something of the user's changed, maybe on another of their devices: the client reloads it. Only what changed, never
+ * the data itself.
+ */
+export type ChangeEvent =
+  /** Its messages changed (an answer, an edit, a deletion); the conversation list and the quota with them. */
+  | { type: 'conversation'; id: string }
+  /** The list only: a title, an icon, a pin. */
+  | { type: 'conversations' }
+  | { type: 'memory' }
+  | { type: 'files' }
+  /** A new version of a canvas document. */
+  | { type: 'artifact'; id: string };
 
 export type UserRole = 'user' | 'admin';
 

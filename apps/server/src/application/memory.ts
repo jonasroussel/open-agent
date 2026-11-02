@@ -4,6 +4,7 @@ import type { ConversationRepository } from '../domain/conversation-repository.t
 import type { MemoryRepository } from '../domain/memory-repository.ts';
 import { canUndo, cleanRuleText, type MemoryChange, type MemoryRule } from '../domain/memory.ts';
 import type { User } from '../domain/user.ts';
+import type { ChangeFeed } from './ports/change-feed.ts';
 import type { Clock } from './ports/clock.ts';
 
 /** What the reconciler decided to do with a remark. */
@@ -25,10 +26,13 @@ export class Memory {
   readonly #conversations: ConversationRepository;
   readonly #clock: Clock;
 
-  constructor(memory: MemoryRepository, conversations: ConversationRepository, clock: Clock) {
+  readonly #changes: ChangeFeed;
+
+  constructor(memory: MemoryRepository, conversations: ConversationRepository, clock: Clock, changes: ChangeFeed) {
     this.#memory = memory;
     this.#conversations = conversations;
     this.#clock = clock;
+    this.#changes = changes;
   }
 
   rules(user: User): Promise<MemoryRule[]> {
@@ -110,7 +114,9 @@ export class Memory {
     await this.#memory.markUndone(change.id, now);
     if (change.conversationId && change.messageId) {
       await this.#markNoticeUndone(change.conversationId, change.messageId, change.id);
+      this.#changes.publish(user.id, { type: 'conversation', id: change.conversationId });
     }
+    this.#changes.publish(user.id, { type: 'memory' });
     return { ok: true };
   }
 
@@ -130,7 +136,8 @@ export class Memory {
     return rule && rule.userId === user.id && !rule.deletedAt ? rule : null;
   }
 
-  #record(
+  /** Every change of a rule goes through here: kept for Undo, and told to the user's other devices. */
+  async #record(
     user: User,
     ruleId: number,
     operation: MemoryChange['operation'],
@@ -140,7 +147,7 @@ export class Memory {
     source: RemarkSource | null,
     now: Date,
   ): Promise<MemoryChange> {
-    return this.#memory.recordChange(
+    const change = await this.#memory.recordChange(
       {
         userId: user.id,
         ruleId,
@@ -153,6 +160,8 @@ export class Memory {
       },
       now,
     );
+    this.#changes.publish(user.id, { type: 'memory' });
+    return change;
   }
 }
 

@@ -221,6 +221,13 @@ written by the model and edited by the user, with versions.
 
 - UI in French and English (i18next) from the start; the model answers in the user's language.
 - Responsive PWA, installable on the home screen.
+- **Every device of a user stays in step** (server-sent events, `GET /api/events`): after each change the server
+  sends a small `ChangeEvent` (`conversation` with its id, `conversations`, `memory`, `files`, `artifact` with its id),
+  never the data; each open device reloads what it shows. An answer appears whole on the other device once finished,
+  not word by word. A conversation open there is replaced by the saved copy, unless an answer is on its way on that
+  device; one deleted elsewhere sends its page back to the start. The browser reconnects by itself (a phone waking up),
+  and everything is reloaded once then, for the changes missed. One server process: the feed lives in its memory; a
+  `: ping` comment every 25 s keeps proxies from closing a quiet stream.
 
 ## Out of V1
 

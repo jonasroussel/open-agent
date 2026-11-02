@@ -9,6 +9,7 @@ import type { Library } from '../../application/library.ts';
 import type { Memory } from '../../application/memory.ts';
 import type { MessageMemory } from '../../application/message-memory.ts';
 import type { OwnKeys } from '../../application/own-keys.ts';
+import type { ChangeFeed } from '../../application/ports/change-feed.ts';
 import type { ModelDirectory } from '../../application/ports/model-catalog.ts';
 import type { Quotas } from '../../application/quotas.ts';
 import type { Settings } from '../../application/settings.ts';
@@ -17,6 +18,7 @@ import { createAdminRoutes } from './admin-routes.ts';
 import { createAdminSettingsRoutes } from './admin-settings-routes.ts';
 import { createArtifactRoutes } from './artifact-routes.ts';
 import { createChatRoutes } from './chat-routes.ts';
+import { createEventRoutes } from './event-routes.ts';
 import { createFileRoutes } from './file-routes.ts';
 import { clientAddress, error, isHttps, readJson, type ServerHandle } from './http.ts';
 import { createMemoryRoutes } from './memory-routes.ts';
@@ -39,6 +41,7 @@ export type HttpDependencies = {
   settings: Settings;
   modelDirectory: ModelDirectory;
   ownKeys: OwnKeys;
+  changes: ChangeFeed;
   /** Behind the reverse proxy: `x-forwarded-for` names the client. */
   trustProxy: boolean;
 };
@@ -70,6 +73,7 @@ export function createRoutes({
   settings,
   modelDirectory,
   ownKeys,
+  changes,
   trustProxy,
 }: HttpDependencies) {
   const signedInUser = (request: BunRequest) =>
@@ -137,5 +141,6 @@ export function createRoutes({
     ...createOwnKeyRoutes({ signedInUser, ownKeys }),
     ...createFileRoutes({ signedInUser, library }),
     ...createArtifactRoutes({ signedInUser, artifacts }),
+    ...createEventRoutes({ signedInUser, changes }),
   };
 }
