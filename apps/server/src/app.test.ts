@@ -889,10 +889,16 @@ describe('canvas', () => {
     const history = [...(await open(cookie, CONVERSATION)).messages, userMessage('m3', 'Ajoute la date.')];
     await chat(cookie, CONVERSATION, history);
 
-    // The second answer's first call: the latest version, the user's, is in the instructions; the draft is gone.
+    // The second answer's first call: the latest version, the user's, is in the instructions; the draft is gone, and
+    // the past call keeps no content the model could copy into a new version.
     const prompt = JSON.stringify(models.fast.doStreamCalls[2]!.prompt);
     expect(prompt).toContain('Version corrigée à la main');
     expect(prompt).not.toContain('Brouillon du modèle');
+    const pastCall = models.fast.doStreamCalls[2]!.prompt.flatMap((message) =>
+      message.role === 'assistant' ? message.content : [],
+    ).find((part) => part.type === 'tool-call');
+    expect(pastCall).toMatchObject({ toolName: 'create_document', input: { kind: 'document' } });
+    expect(pastCall).not.toHaveProperty('input.content');
     const opened = (await (await call(`/api/artifacts/${letter!.id}`, { cookie })).json()) as ArtifactResponse;
     expect(opened.content).toBe('Version finale du modèle');
     expect(opened.versions.map(({ number, author }) => [number, author])).toEqual([

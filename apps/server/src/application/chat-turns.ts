@@ -450,7 +450,8 @@ function askTool(alreadyAsked: boolean) {
 
 /**
  * Past versions written by the tools stay out of the model's history: the instructions hold the latest one of each
- * document, so a long document is not paid for again at every version.
+ * document, so a long document is not paid for again at every version. Their content is dropped, not replaced: a
+ * placeholder sentence there was copied by the model as a new version's whole content (2026-11-02).
  */
 function withoutDocumentBodies(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => ({
@@ -459,7 +460,7 @@ function withoutDocumentBodies(messages: ChatMessage[]): ChatMessage[] {
       (part.type === 'tool-create_document' || part.type === 'tool-update_document') && part.input
         ? ({
             ...part,
-            input: { ...part.input, content: '(See the latest version in the instructions.)' },
+            input: Object.fromEntries(Object.entries(part.input).filter(([key]) => key !== 'content')),
           } as typeof part)
         : part,
     ),
