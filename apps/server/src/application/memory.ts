@@ -68,10 +68,11 @@ export class Memory {
   }
 
   /**
-   * Applies what the reconciler decided from a remark, and returns the notice to show under the answer. `null` when
-   * the edit does not hold: a rule that is not the user's (or no longer exists), or an addition to a full memory.
+   * Applies what the reconciler decided from a remark, and returns the notice to show. `source`: the answer the notice
+   * goes under; `null` when the user asked to remember a message, the notice then only shows beside it. `null` back
+   * when the edit does not hold: a rule that is not the user's (or no longer exists), or an addition to a full memory.
    */
-  async applyRemark(user: User, edit: MemoryEdit, source: RemarkSource): Promise<MemoryNotice | null> {
+  async applyRemark(user: User, edit: MemoryEdit, source: RemarkSource | null): Promise<MemoryNotice | null> {
     const now = this.#clock.now();
     if (edit.operation === 'add') {
       const text = cleanRuleText(edit.text);

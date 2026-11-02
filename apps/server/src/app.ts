@@ -8,6 +8,7 @@ import { Conversations } from './application/conversations.ts';
 import { Library } from './application/library.ts';
 import { MemoryReconciler } from './application/memory-reconciler.ts';
 import { Memory } from './application/memory.ts';
+import { MessageMemory } from './application/message-memory.ts';
 import { Models } from './application/models.ts';
 import { OwnKeys } from './application/own-keys.ts';
 import type { Clock } from './application/ports/clock.ts';
@@ -98,6 +99,7 @@ export async function createApp(
     options.defaultModels,
   );
   const roleModels = new Models(models, settings, secrets);
+  const reconciler = new MemoryReconciler(roleModels, usage, settings);
   if (options.adminEmail) await userAccess.ensureAdmin(options.adminEmail);
 
   return createRoutes({
@@ -117,11 +119,12 @@ export async function createApp(
     userAccess,
     conversations: new Conversations(conversations),
     memory,
+    messageMemory: new MessageMemory(conversations, memory, reconciler, quotas),
     chatTurns: new ChatTurns(
       conversations,
       new PreAnalysis(roleModels, usage, settings),
       memory,
-      new MemoryReconciler(roleModels, usage, settings),
+      reconciler,
       usage,
       quotas,
       library,

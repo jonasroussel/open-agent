@@ -82,11 +82,18 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
 
 ### Memory: "never the same mistake twice"
 
-- **Scope:** one global list of rules per user. Rules are about the work and how the user likes to use the tool, not
-  about their identity. Every answer follows them: they close the system prompt.
-- **Capture:** automatic. When the pre-pass returns `feedback`, the reconciler (background model) receives it with the
-  current rules and returns one operation: `add`, `update` (replace or invert a rule), `delete`, or `none`. An edit
-  naming a rule that is not the user's, or adding to a full memory, is dropped.
+- **Scope:** one global list of rules per user: how they like the assistant to work, and lasting facts about them that
+  answers depend on (where they live, household, job, diet, equipment). Facts about the current task only (a date, a
+  budget for this trip) are not kept. Every answer gets them at the end of the system prompt: preferences to follow,
+  facts to use when they matter.
+- **Capture:** automatic. When the pre-pass returns `feedback` (a preference, a lasting fact, or anything the user asks
+  to remember), the reconciler (background model) receives it with the current rules and returns one operation:
+  `add`, `update` (replace or invert a rule), `delete`, or `none`. An edit naming a rule that is not the user's, or
+  adding to a full memory, is dropped.
+- **"Remember" button** on the user's own messages (next to Copy and Edit, once the answer is done): the reconciler
+  gets the whole message (2,000 characters at most) as an explicit request, keeps what lasts in it as one rule, and
+  answers `none` only when a rule already says it. The notice, with Undo, shows under the message for this visit (or
+  "Already in your memory"); the rule itself is on the memory page. Counted in the quota like any memory call.
 - **Contradiction:** a remark opposite to a stored rule updates that rule; it never adds a second, conflicting one.
 - **Visible:** the change shows under the answer to the remark ("Updated: “Short answers.” → “Detailed answers.”"),
   with Undo and a link to the memory page. The notice is a `data-memory` part of the answer, so it stays in the
@@ -183,7 +190,8 @@ written by the model and edited by the user, with versions.
   model uses), loaded only with the panel. Saved 1.2 s after typing stops. Saves within 10 minutes of the user's own
   last version change that version: one version per sitting. A save based on an older version is refused
   (`artifact_changed`): the panel then shows the model's newer version.
-- **Versions:** a menu lists them (who, when); an old one shows read-only and can be brought back, as a new version.
+- **Versions:** a menu lists them (who, when); an old one shows read-only and can be brought back, as a new version. A
+  newer version, written by the model meanwhile, replaces the old one being looked at.
 - **Exports:** Word (`docx` in the browser, loaded on first use: headings, bold, italics, lists, links, tables, line
   breaks) and PDF through the browser's print dialog, from the page itself with a print stylesheet (printing an
   iframe fails in Safari on iPhone), always in light colors, with the title as the file name.

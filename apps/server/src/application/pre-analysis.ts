@@ -130,7 +130,7 @@ function transcript(history: readonly ChatMessage[], rules: readonly MemoryRule[
       `${message.role === 'user' ? 'User' : 'Assistant'}: ${cut(textOf(message), CONTEXT_CHARACTERS)}${attachments(message)}`,
   );
   return [
-    ...(rules.length > 0 ? ["The user's preferences:", ...rules.map((rule) => `- ${rule.text}`), ''] : []),
+    ...(rules.length > 0 ? ["The user's memory:", ...rules.map((rule) => `- ${rule.text}`), ''] : []),
     ...(lines.length > 0 ? ['Conversation so far:', ...lines, ''] : []),
     'Latest user message:',
     `${cut(textOf(latest), LATEST_CHARACTERS)}${attachments(latest)}`,

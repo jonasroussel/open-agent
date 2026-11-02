@@ -6,6 +6,7 @@ import {
   type ChatMessage,
   type LibraryFileDto,
   type MemoryNotice,
+  type RememberMessageResponse,
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -85,6 +86,17 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
     return 'undone';
   };
 
+  /** "Remember" on one of the user's messages; the notice shows beside it. */
+  const rememberMessage = async (messageId: string): Promise<MemoryNotice | null | 'failed'> => {
+    const result = await api<RememberMessageResponse>(API_ROUTES.memoryRemember, {
+      method: 'POST',
+      body: { conversationId: chat.id, messageId },
+    });
+    void queryClient.invalidateQueries({ queryKey: memoryRulesQuery.queryKey });
+    void queryClient.invalidateQueries({ queryKey: quotaQuery.queryKey });
+    return result.ok ? result.data.notice : 'failed';
+  };
+
   const navigate = useNavigate();
   const { doc } = useSearch({ strict: false }) as { doc?: string };
   const answering = busy ? messages.at(-1) : undefined;
@@ -144,6 +156,8 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
                         ? sendMessage({ text, files, messageId: message.id })
                         : sendMessage({ files, messageId: message.id }));
                     }}
+                    onRemember={busy ? null : () => rememberMessage(message.id)}
+                    onUndoMemory={undoMemory}
                   />
                 ) : (
                   <AssistantMessage

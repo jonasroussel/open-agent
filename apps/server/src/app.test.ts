@@ -17,6 +17,7 @@ import type {
   AdminUserDto,
   QuotaResponse,
   OwnKeyResponse,
+  RememberMessageResponse,
   SearchResponse,
   AdminSettingsResponse,
   ModelCapability,
@@ -1213,6 +1214,30 @@ describe('memory', () => {
     expect(noticeOf(messages[1]!)).toMatchObject({
       data: { operation: 'update', before: 'Réponses courtes.', after: 'Réponses détaillées.' },
     });
+  });
+
+  test('"Remember" on a message keeps what lasts in it, even when its analysis kept nothing, and can be undone', async () => {
+    const cookie = await signIn(ADMIN);
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Merci, mais on habite à Nantes !')]);
+    expect(await rulesOf(cookie)).toEqual([]);
+    const remember = (who: string, messageId: string) =>
+      call('/api/memory/remember', { method: 'POST', body: { conversationId: CONVERSATION, messageId }, cookie: who });
+
+    reconciliation = { operation: 'add', ruleId: null, text: 'Habite à Nantes.' };
+    const { notice } = (await (await remember(cookie, 'm1')).json()) as RememberMessageResponse;
+    expect(notice).toMatchObject({ operation: 'add', before: null, after: 'Habite à Nantes.', undone: false });
+    expect((await rulesOf(cookie)).map((rule) => rule.text)).toEqual(['Habite à Nantes.']);
+    const asked = models.background.doGenerateCalls.map((generation) => JSON.stringify(generation)).at(-1);
+    expect(asked).toContain('Merci, mais on habite à Nantes !');
+    expect(asked).toContain('The user asked to remember this message');
+
+    expect((await call(`/api/memory/changes/${notice!.changeId}/undo`, { method: 'POST', cookie })).status).toBe(204);
+    expect(await rulesOf(cookie)).toEqual([]);
+
+    const answer = (await open(cookie, CONVERSATION)).messages[1]!;
+    expect(await errorOf(await remember(cookie, answer.id))).toBe('not_found');
+    await invite(cookie, 'ana@example.com');
+    expect(await errorOf(await remember(await signIn('ana@example.com'), 'm1'))).toBe('not_found');
   });
 
   test('undo puts the rule back and marks the notice, but not once the rule changed again', async () => {

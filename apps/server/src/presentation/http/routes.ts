@@ -7,6 +7,7 @@ import type { ChatTurns } from '../../application/chat-turns.ts';
 import type { Conversations } from '../../application/conversations.ts';
 import type { Library } from '../../application/library.ts';
 import type { Memory } from '../../application/memory.ts';
+import type { MessageMemory } from '../../application/message-memory.ts';
 import type { OwnKeys } from '../../application/own-keys.ts';
 import type { ModelDirectory } from '../../application/ports/model-catalog.ts';
 import type { Quotas } from '../../application/quotas.ts';
@@ -30,6 +31,7 @@ export type HttpDependencies = {
   userAccess: UserAccess;
   conversations: Conversations;
   memory: Memory;
+  messageMemory: MessageMemory;
   chatTurns: ChatTurns;
   quotas: Quotas;
   library: Library;
@@ -60,6 +62,7 @@ export function createRoutes({
   userAccess,
   conversations,
   memory,
+  messageMemory,
   chatTurns,
   quotas,
   library,
@@ -130,7 +133,7 @@ export function createRoutes({
     ...createAdminRoutes({ signedInUser, userAccess, quotas }),
     ...createAdminSettingsRoutes({ signedInUser, settings, modelDirectory, userAccess, memory }),
     ...createChatRoutes({ signedInUser, conversations, chatTurns, quotas }),
-    ...createMemoryRoutes({ signedInUser, memory }),
+    ...createMemoryRoutes({ signedInUser, memory, messageMemory }),
     ...createOwnKeyRoutes({ signedInUser, ownKeys }),
     ...createFileRoutes({ signedInUser, library }),
     ...createArtifactRoutes({ signedInUser, artifacts }),

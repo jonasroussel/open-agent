@@ -43,6 +43,8 @@ export const API_ROUTES = {
   memoryRule: '/api/memory/rules/:ruleId',
   /** POST: undoes a change the assistant made from a remark; also marks its notice in the conversation as undone. */
   memoryChangeUndo: '/api/memory/changes/:changeId/undo',
+  /** POST `RememberMessageBody`: keeps what lasts in one of the user's messages, as `RememberMessageResponse`. */
+  memoryRemember: '/api/memory/remember',
   /** GET: the signed-in user's files, newest first. POST multipart, field `file`: uploads one, as `UploadFileResponse`. */
   files: '/api/files',
   /** GET: the file itself, only for its owner. DELETE: removes it from the library. */
@@ -277,6 +279,10 @@ export type MemoryRuleDto = { id: number; text: string; updatedAt: string };
 export type ListMemoryRulesResponse = { rules: MemoryRuleDto[] };
 
 export type MemoryRuleBody = { text: string };
+
+export type RememberMessageBody = { conversationId: string; messageId: string };
+/** `notice: null`: the memory already holds it, or nothing in the message lasts. */
+export type RememberMessageResponse = { notice: MemoryNotice | null };
 
 /** A file of the user's library. Messages point to it with a `file` part whose `url` is the file's `url`. */
 export type LibraryFileDto = {

@@ -498,7 +498,7 @@ function instructions(
     ...(rules.length > 0
       ? [
           '',
-          "The user's preferences, learned from their remarks. Follow them, unless their latest message asks otherwise:",
+          'What you remember about the user, from what they said: preferences to follow unless their latest message asks otherwise, and facts about them to use when they matter:',
           ...rules.map((rule) => `- ${rule.text}`),
         ]
       : []),

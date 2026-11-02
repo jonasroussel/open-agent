@@ -30,24 +30,36 @@ export class MemoryReconciler {
     this.#settings = settings;
   }
 
-  /** `null`: nothing to change, or the model's answer does not hold (an unknown rule, a missing text). */
+  /**
+   * `null`: nothing to change, or the model's answer does not hold (an unknown rule, a missing text). `explicit`: the
+   * user asked to remember this message, so what lasts in it is kept.
+   */
   async reconcile(
     user: User,
     conversationId: string,
     remark: string,
     rules: readonly MemoryRule[],
     abortSignal: AbortSignal,
+    explicit = false,
   ): Promise<MemoryEdit | null> {
     const choice = this.#models.choose('background', user);
+    // A full memory takes no new rule: said to the model, and enforced by `Memory.applyRemark`.
+    const lines = [
+      this.#settings.prompt('memory'),
+      ...(explicit
+        ? [
+            'The user asked to remember this message: keep what lasts in it, a preference or a fact, as one rule. Answer "none" only when a rule already says it, or when nothing in it lasts beyond the current task.',
+          ]
+        : []),
+      ...(rules.length >= MAX_MEMORY_RULES
+        ? ['The list is full: "add" is not allowed; update the closest rule or answer "none".']
+        : []),
+    ];
     try {
       const result = await generateText({
         model: choice.model,
         output: Output.object({ schema }),
-        // A full memory takes no new rule: said to the model, and enforced by `Memory.applyRemark`.
-        instructions:
-          rules.length >= MAX_MEMORY_RULES
-            ? `${this.#settings.prompt('memory')}\n\nThe list is full: "add" is not allowed; update the closest rule or answer "none".`
-            : this.#settings.prompt('memory'),
+        instructions: lines.join('\n\n'),
         prompt: [
           `Remark: ${remark}`,
           '',

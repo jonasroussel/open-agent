@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import {
   AppWindow,
   BookmarkCheck,
+  BookmarkPlus,
   Check,
   ChevronRight,
   CornerDownRight,
@@ -32,22 +33,42 @@ function partsText(message: ChatMessage, type: 'text' | 'reasoning'): string {
 }
 
 /**
- * The user's message: its files, then an indigo bubble on the right, which can be copied or edited (the answers after
- * it are redone).
+ * The user's message: its files, then an indigo bubble on the right, which can be copied, edited (the answers after
+ * it are redone), or remembered.
  */
 export function UserMessage({
   message,
   canEdit,
   onEdit,
+  onRemember,
+  onUndoMemory,
 }: {
   message: ChatMessage;
   canEdit: boolean;
   onEdit: (text: string) => void;
+  /** `null` back: the memory already holds it. Only once the message is saved, so not while its answer streams. */
+  onRemember: (() => Promise<MemoryNotice | null | 'failed'>) | null;
+  onUndoMemory: (notice: MemoryNotice) => Promise<UndoOutcome>;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState<string | null>(null);
+  // What "Remember" gave, shown under the message for this visit: the memory page keeps the rule itself.
+  const [remembered, setRemembered] = useState<MemoryNotice | 'pending' | 'known' | 'failed' | null>(null);
   const text = partsText(message, 'text');
   const files = message.parts.flatMap((part) => (part.type === 'file' ? [part] : []));
+
+  async function remember() {
+    if (!onRemember) return;
+    setRemembered('pending');
+    const result = await onRemember();
+    setRemembered(result ?? 'known');
+  }
+
+  async function undo(notice: MemoryNotice): Promise<UndoOutcome> {
+    const outcome = await onUndoMemory(notice);
+    if (outcome === 'undone') setRemembered({ ...notice, undone: true });
+    return outcome;
+  }
 
   if (draft !== null) {
     return (
@@ -102,7 +123,17 @@ export function UserMessage({
             <Pencil />
           </ActionButton>
         )}
+        {text && onRemember && (
+          <ActionButton label={t('chat.remember')} onClick={() => void remember()} disabled={remembered === 'pending'}>
+            <BookmarkPlus />
+          </ActionButton>
+        )}
       </MessageActions>
+      {typeof remembered === 'object' && remembered !== null && (
+        <MemoryNoticeLine notice={remembered} onUndo={() => undo(remembered)} />
+      )}
+      {remembered === 'known' && <p className='text-muted-foreground text-sm'>{t('memory.alreadyKnown')}</p>}
+      {remembered === 'failed' && <p className='text-destructive text-sm'>{t('memory.rememberFailed')}</p>}
     </div>
   );
 }
@@ -417,9 +448,19 @@ function MessageActions({ children }: { children: ReactNode }) {
   );
 }
 
-function ActionButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+function ActionButton({
+  label,
+  onClick,
+  disabled = false,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <Button variant='ghost' size='icon-sm' aria-label={label} title={label} onClick={onClick}>
+    <Button variant='ghost' size='icon-sm' aria-label={label} title={label} onClick={onClick} disabled={disabled}>
       {children}
     </Button>
   );

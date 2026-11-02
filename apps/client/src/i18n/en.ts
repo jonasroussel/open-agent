@@ -30,6 +30,7 @@ export const en = {
     copied: 'Copied',
     regenerate: 'Answer again',
     edit: 'Edit',
+    remember: 'Remember',
     cancel: 'Cancel',
     resend: 'Send',
     failed: 'The answer failed.',
@@ -58,6 +59,8 @@ export const en = {
     deleted: 'Forgotten: “{{before}}”',
     undo: 'Undo',
     undone: 'Undone',
+    alreadyKnown: 'Already in your memory.',
+    rememberFailed: 'This could not be remembered. Try again.',
     seeAll: 'See all',
   },
   files: {

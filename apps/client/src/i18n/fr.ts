@@ -32,6 +32,7 @@ export const fr: Translation = {
     copied: 'Copié',
     regenerate: 'Répondre à nouveau',
     edit: 'Modifier',
+    remember: 'Retenir',
     cancel: 'Annuler',
     resend: 'Envoyer',
     failed: 'La réponse a échoué.',
@@ -61,6 +62,8 @@ export const fr: Translation = {
     deleted: 'J’ai oublié : « {{before}} »',
     undo: 'Annuler',
     undone: 'Annulé',
+    alreadyKnown: 'C’est déjà dans votre mémoire.',
+    rememberFailed: 'Je n’ai pas pu le retenir. Réessayez.',
     seeAll: 'Tout voir',
   },
   files: {

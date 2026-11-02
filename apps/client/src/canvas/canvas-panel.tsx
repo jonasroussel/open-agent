@@ -119,7 +119,11 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const opened = useQuery(artifactQuery(id));
-  const [viewing, setViewing] = useState<number | null>(null);
+  // An old version picked while `latest` was the newest: a newer version, written meanwhile, shows instead.
+  const [picked, setPicked] = useState<{ number: number; latest: number } | null>(null);
+  const viewing = picked !== null && picked.latest === opened.data?.artifact.version ? picked.number : null;
+  const view = (number: number | null) =>
+    setPicked(number === null || !opened.data ? null : { number, latest: opened.data.artifact.version });
   const old = useQuery({ ...artifactVersionQuery(id, viewing ?? 0), enabled: viewing !== null });
   const [editor, setEditor] = useState<Editor | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
@@ -212,7 +216,7 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
     await save(old.data.content);
     draft.current = null;
     setLoaded(null);
-    setViewing(null);
+    view(null);
   }
 
   async function copy() {
@@ -240,7 +244,7 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
             <DropdownMenuLabel>{t('canvas.versions')}</DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={String(viewing ?? artifact.version)}
-              onValueChange={(value) => setViewing(Number(value) === artifact.version ? null : Number(value))}
+              onValueChange={(value) => view(Number(value) === artifact.version ? null : Number(value))}
             >
               {versions.map((version) => (
                 <DropdownMenuRadioItem key={version.number} value={String(version.number)}>
@@ -298,7 +302,7 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
           <Button size='sm' onClick={() => void restore()} disabled={!old.data}>
             {t('canvas.restore')}
           </Button>
-          <Button size='sm' variant='ghost' onClick={() => setViewing(null)}>
+          <Button size='sm' variant='ghost' onClick={() => view(null)}>
             {t('canvas.backToLatest')}
           </Button>
         </div>
