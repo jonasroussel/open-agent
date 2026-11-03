@@ -140,7 +140,7 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
             <p className='text-muted-foreground text-lg'>{t('home.prompt')}</p>
           </div>
         ) : (
-          <StickToBottom className='relative min-h-0 flex-1' resize='smooth' initial='instant'>
+          <StickToBottom className='relative min-h-0 flex-1' resize='instant' initial='instant'>
             <StickToBottom.Content className='mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6'>
               {messages.map((message, index) =>
                 message.role === 'user' ? (
@@ -187,6 +187,7 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
               )}
             </StickToBottom.Content>
             <ScrollToBottom />
+            <KeepAtBottom />
           </StickToBottom>
         )}
         <div className='mx-auto w-full max-w-3xl px-4 pb-3'>
@@ -233,6 +234,26 @@ function pendingQuestionOf(message: ChatMessage | undefined): string | null {
   return part?.type === 'tool-ask_user' ? part.toolCallId : null;
 }
 
+/**
+ * While the view is held at the bottom, it follows each new line in the same frame. The library scrolls one frame
+ * after a resize, even when instant, so every line of a streamed answer showed a frame or two late.
+ */
+function KeepAtBottom() {
+  const { contentRef, scrollRef, state } = useStickToBottomContext();
+
+  useEffect(() => {
+    const content = contentRef.current;
+    const scroller = scrollRef.current;
+    if (!content || !scroller) return;
+    const observer = new ResizeObserver(() => {
+      if (state.isAtBottom && !state.escapedFromLock) scroller.scrollTop = scroller.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [contentRef, scrollRef, state]);
+
+  return null;
+}
 function ScrollToBottom() {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext();
   if (isAtBottom) return null;
