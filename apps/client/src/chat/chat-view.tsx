@@ -208,7 +208,6 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
               placeholder={pendingQuestion ? t('chat.answerPlaceholder') : t('chat.placeholder')}
             />
           )}
-          <p className='text-muted-foreground mt-2 text-center text-xs'>{t('chat.disclaimer')}</p>
         </div>
       </div>
       {canvasOpen && <CanvasPanel documentId={doc ?? null} live={liveClosed ? null : live} onClose={closeCanvas} />}
