@@ -359,6 +359,9 @@ export type ConversationResponse = { conversation: ConversationDto; messages: Ch
 
 export type UpdateConversationBody = { title?: string; pinned?: boolean };
 
+/** A title the user writes: about a sidebar row. */
+export const MAX_CONVERSATION_TITLE_LENGTH = 80;
+
 /** A search longer than this is refused; a real one is a few words. */
 export const MAX_SEARCH_LENGTH = 200;
 

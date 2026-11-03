@@ -1,4 +1,4 @@
-import { API_ROUTES, apiPath, type ConversationDto } from '@open-agent/shared';
+import { API_ROUTES, apiPath, MAX_CONVERSATION_TITLE_LENGTH, type ConversationDto } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
@@ -6,7 +6,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { forgetChat } from '@/chat/chat-store.ts';
-import { conversationQuery, conversationsQuery } from '@/chat/conversations-query.ts';
+import { conversationQuery, conversationsQuery, renameConversation } from '@/chat/conversations-query.ts';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -156,11 +156,7 @@ function RenameDialog({ conversation, onClose }: { conversation: ConversationDto
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!conversation || !title.trim()) return;
-    await api(apiPath(API_ROUTES.conversation, { conversationId: conversation.id }), {
-      method: 'PATCH',
-      body: { title: title.trim() },
-    });
-    await queryClient.invalidateQueries({ queryKey: conversationsQuery.queryKey });
+    await renameConversation(queryClient, conversation.id, title.trim());
     onClose();
   }
 
@@ -177,7 +173,12 @@ function RenameDialog({ conversation, onClose }: { conversation: ConversationDto
           <DialogHeader>
             <DialogTitle>{t('conversations.renameTitle')}</DialogTitle>
           </DialogHeader>
-          <Input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={80} autoFocus />
+          <Input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={MAX_CONVERSATION_TITLE_LENGTH}
+            autoFocus
+          />
           <DialogFooter>
             <Button type='button' variant='outline' onClick={onClose}>
               {t('conversations.cancel')}

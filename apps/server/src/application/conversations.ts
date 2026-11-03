@@ -1,3 +1,5 @@
+import { MAX_CONVERSATION_TITLE_LENGTH } from '@open-agent/shared';
+
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
 import {
   cleanSnippet,
@@ -9,7 +11,6 @@ import {
 import type { User } from '../domain/user.ts';
 import type { ChangeFeed } from './ports/change-feed.ts';
 
-const MAX_TITLE_LENGTH = 80;
 const SEARCH_RESULTS = 20;
 
 export type ConversationUpdate = { title?: unknown; pinned?: unknown };
@@ -45,7 +46,7 @@ export class Conversations {
     update: ConversationUpdate,
   ): Promise<{ ok: true; conversation: Conversation } | { ok: false; reason: 'not_found' | 'invalid_request' }> {
     const title = typeof update.title === 'string' ? update.title.trim() : undefined;
-    if (update.title !== undefined && (!title || title.length > MAX_TITLE_LENGTH)) {
+    if (update.title !== undefined && (!title || title.length > MAX_CONVERSATION_TITLE_LENGTH)) {
       return { ok: false, reason: 'invalid_request' };
     }
     if (update.pinned !== undefined && typeof update.pinned !== 'boolean')

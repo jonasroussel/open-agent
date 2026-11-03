@@ -1,12 +1,15 @@
 import { createContext, use, useEffect } from 'react';
 
-export const PageTitleContext = createContext<(title: string | null) => void>(() => {});
+/** `rename`: the title can be edited in the top bar, and this saves it. */
+export type PageTitle = { text: string; rename?: (title: string) => Promise<void> };
 
-/** Shows `title` in the top bar while the page is open. */
-export function usePageTitle(title: string | null) {
+export const PageTitleContext = createContext<(title: PageTitle | null) => void>(() => {});
+
+/** Shows `title` in the top bar while the page is open. `rename` must keep its identity (`useCallback`). */
+export function usePageTitle(title: string | null, rename?: (title: string) => Promise<void>) {
   const setTitle = use(PageTitleContext);
   useEffect(() => {
-    setTitle(title);
+    setTitle(title === null ? null : { text: title, rename });
     return () => setTitle(null);
-  }, [title, setTitle]);
+  }, [title, rename, setTitle]);
 }

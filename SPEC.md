@@ -330,7 +330,8 @@ Same layout and tooling as `inscript-carte`.
 
 - Modeled on Chatbox AI: the sidebar and the top bar (page title) share one grey frame; the page is a white panel
   below the top bar, with a rounded top-left corner. A tinted "New conversation" button tops the sidebar, the user
-  menu ends it. In dark mode the frame is darker than the panel.
+  menu ends it. In dark mode the frame is darker than the panel. A conversation's title in the top bar is edited in
+  place: a tap makes it a field, Enter or leaving it saves, Escape gives up.
 - One brand color: indigo night `#2a2c6e` (`oklch(0.333 0.112 277)`), no gradients: actions, the icon, and the user's
   bubbles. Neutral greys elsewhere; the assistant's bubbles are grey.
 - Dark mode: charcoal surfaces and a lighter indigo (`oklch(0.52 0.15 277)`), since `#2a2c6e` disappears on them.
