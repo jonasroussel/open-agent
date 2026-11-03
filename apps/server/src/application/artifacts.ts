@@ -59,14 +59,19 @@ export class Artifacts {
     return { ...artifact, version, updatedAt: this.#clock.now() };
   }
 
-  /** What the model must see at each answer: the latest content of every document of the conversation. */
-  async latestOf(conversationId: string): Promise<{ artifact: Artifact; content: string }[]> {
+  /**
+   * What the model must see at each answer: the latest content of every document of the conversation, and which older
+   * version the user brought back, if the latest is one.
+   */
+  async latestOf(
+    conversationId: string,
+  ): Promise<{ artifact: Artifact; content: string; restoredFrom: number | null }[]> {
     const artifacts = await this.#artifacts.listOf(conversationId);
     return await Promise.all(
-      artifacts.map(async (artifact) => ({
-        artifact,
-        content: (await this.#artifacts.version(artifact.id, artifact.version))!.content,
-      })),
+      artifacts.map(async (artifact) => {
+        const latest = (await this.#artifacts.version(artifact.id, artifact.version))!;
+        return { artifact, content: latest.content, restoredFrom: latest.restoredFrom };
+      }),
     );
   }
 
@@ -90,26 +95,38 @@ export class Artifacts {
   }
 
   /**
-   * The user's edit, or an old version brought back. Refused when the document changed since `baseVersion`: the
-   * user would overwrite the model's newer version without seeing it.
+   * The user's edit, or an old version brought back (`restoredFrom`). Refused when the document changed since
+   * `baseVersion`: the user would overwrite the model's newer version without seeing it. A restore is always a new
+   * version, so the model can be told what was undone.
    */
-  async save(user: User, id: string, content: unknown, baseVersion: unknown): Promise<SaveResult> {
+  async save(
+    user: User,
+    id: string,
+    content: unknown,
+    baseVersion: unknown,
+    restoredFrom: unknown = null,
+  ): Promise<SaveResult> {
     if (typeof content !== 'string' || content.length > MAX_ARTIFACT_LENGTH || typeof baseVersion !== 'number') {
       return { ok: false, reason: 'invalid_request' };
     }
     const artifact = await this.#own(user, id);
     if (!artifact) return { ok: false, reason: 'not_found' };
     if (baseVersion !== artifact.version) return { ok: false, reason: 'artifact_changed' };
+    if (restoredFrom !== null && typeof restoredFrom !== 'number') return { ok: false, reason: 'invalid_request' };
+    const restored = restoredFrom === null ? null : await this.#artifacts.version(id, restoredFrom);
+    if (restoredFrom !== null && (!restored || restored.number >= artifact.version || restored.content !== content)) {
+      return { ok: false, reason: 'invalid_request' };
+    }
 
     const now = this.#clock.now();
     const latest = (await this.#artifacts.version(id, artifact.version))!;
     if (latest.content === content) return { ok: true, artifact };
-    if (amendsLatest(latest, now)) {
+    if (!restored && amendsLatest(latest, now)) {
       await this.#artifacts.amendVersion(id, latest.number, content, now);
       this.#changes.publish(user.id, { type: 'artifact', id });
       return { ok: true, artifact: { ...artifact, updatedAt: now } };
     }
-    const version = await this.#artifacts.addVersion(id, content, 'user', now);
+    const version = await this.#artifacts.addVersion(id, content, 'user', now, restored?.number ?? null);
     this.#changes.publish(user.id, { type: 'artifact', id });
     return { ok: true, artifact: { ...artifact, version, updatedAt: now } };
   }

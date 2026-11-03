@@ -226,7 +226,12 @@ export class ChatTurns {
             messages: await convertToModelMessages(
               await this.#library.expandFiles(
                 user,
-                withoutDocumentBodies(withLatestRequest(withAnsweredQuestions(messages), analysis.rewrittenRequest)),
+                withoutDocumentBodies(
+                  withNotes(
+                    withLatestRequest(withAnsweredQuestions(messages), analysis.rewrittenRequest),
+                    restoreNotes(documents),
+                  ),
+                ),
               ),
             ),
             tools,
@@ -437,6 +442,30 @@ function withLatestRequest(messages: ChatMessage[], rewrittenRequest: string | n
   );
 }
 
+/**
+ * A document the user brought back to an older version is said in their latest message: in the instructions alone,
+ * the model redid the undone changes it saw asked and confirmed earlier in the history (2026-11-03).
+ */
+function restoreNotes(documents: readonly { artifact: Artifact; restoredFrom: number | null }[]): string[] {
+  return documents.flatMap(({ artifact, restoredFrom }) =>
+    restoredFrom
+      ? [
+          `[Canvas: I brought "${artifact.title}" back to version ${restoredFrom}, on purpose. The changes made to it after that version, earlier in this conversation, are undone: do not redo them unless I ask again.]`,
+        ]
+      : [],
+  );
+}
+
+/** Notes for the model only, opening the user's latest message: the conversation keeps the user's own words. */
+function withNotes(messages: ChatMessage[], notes: readonly string[]): ChatMessage[] {
+  const latestIndex = messages.findLastIndex((message) => message.role === 'user');
+  return messages.map((message, index) =>
+    index === latestIndex
+      ? { ...message, parts: [{ type: 'text' as const, text: notes.join('\n') }, ...message.parts] }
+      : message,
+  );
+}
+
 const askInput = z.object({ question: z.string(), options: z.array(z.string()) });
 const ASK_DESCRIPTION =
   'Ask the user one question when you cannot go on without a choice only they can make. Offer 2 to 4 short answers they can tap, or [] when none can be guessed; they may also type their own. Your answer stops until they reply, then goes on. An answer null means you may not ask again in this answer: decide yourself and say what you assumed.';
@@ -484,7 +513,7 @@ function instructions(
   rules: readonly MemoryRule[],
   now: Date,
   canSearch: boolean,
-  documents: readonly { artifact: Artifact; content: string }[],
+  documents: readonly { artifact: Artifact; content: string; restoredFrom: number | null }[],
 ): string {
   const today = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeZone: 'Europe/Paris' }).format(now);
   return [
@@ -497,8 +526,15 @@ function instructions(
           '',
           "Documents in this conversation's canvas, latest versions (the user may have edited them by hand):",
           ...documents.map(
-            ({ artifact, content }) =>
-              `<document id="${artifact.id}" kind="${artifact.kind}" title="${artifact.title.replaceAll('"', "'")}" version="${artifact.version}">\n${content}\n</document>`,
+            ({ artifact, content, restoredFrom }) =>
+              `<document id="${artifact.id}" kind="${artifact.kind}" title="${artifact.title.replaceAll('"', "'")}" version="${artifact.version}"${restoredFrom ? ` restored-from="${restoredFrom}"` : ''}>\n${content}\n</document>`,
+          ),
+          ...documents.flatMap(({ artifact, restoredFrom }) =>
+            restoredFrom
+              ? [
+                  `The user brought "${artifact.title}" back to version ${restoredFrom} on purpose: the changes made after it, yours included, were undone. Work from this content, never redo those changes unless the user asks, and do not describe the document as it was before.`,
+                ]
+              : [],
           ),
         ]
       : []),

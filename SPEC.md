@@ -192,8 +192,13 @@ closing the panel forgets it.
   model uses), loaded only with the panel. Saved 1.2 s after typing stops. Saves within 10 minutes of the user's own
   last version change that version: one version per sitting. A save based on an older version is refused
   (`artifact_changed`): the panel then shows the model's newer version.
-- **Versions:** a menu lists them (who, when); an old one shows read-only and can be brought back, as a new version. A
-  newer version, written by the model meanwhile, replaces the old one being looked at.
+- **Versions:** a menu lists them (who, when); an old one shows read-only and can be brought back, as a new version
+  marked `restored_from` ("v4 · v1 brought back by you"), never merged into the user's last one. A newer version,
+  written by the model meanwhile, replaces the old one being looked at.
+- **The model knows of a restore:** while the latest version of a document is a restore, the document carries
+  `restored-from` in the instructions, and a note opens the user's latest message (for the model only) saying the later
+  changes were undone on purpose. In the instructions alone the model redid them: it saw them asked and confirmed
+  earlier in the history (2026-11-03).
 - **Exports:** Word (`docx` in the browser, loaded on first use: headings, bold, italics, lists, links, tables, line
   breaks) and PDF through the browser's print dialog, from the page itself with a print stylesheet (printing an
   iframe fails in Safari on iPhone), always in light colors, with the title as the file name.
@@ -286,7 +291,7 @@ Same layout and tooling as `inscript-carte`.
 | `memory_rule_changes` | user, rule, operation, before, after, source (`remark` / `user` / `admin`), conversation and message of the notice, undone at |
 | `library_files` | id (UUID, in its address), user, name, kind (`image` / `pdf` / `word` / `text`), media type, size, content (JSON: whole text and names of the pictures on disk), created at |
 | `artifacts` | id (UUID, named by the model in `update_document`), conversation, user, kind (`document` / `html`), title, created/updated at |
-| `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), created at |
+| `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), created at, the version it brought back (`restored_from`) |
 | `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter, paid by the user's own key |
 | `settings` | key (`model.fast`, `prompt.assistant`…), value, updated at; a missing key means the default |
 

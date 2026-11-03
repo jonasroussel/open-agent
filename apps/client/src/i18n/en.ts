@@ -105,6 +105,7 @@ export const en = {
     versions: 'Versions',
     byModel: 'v{{version}} · by the assistant',
     byUser: 'v{{version}} · by you',
+    restoredByUser: 'v{{version}} · v{{from}} brought back by you',
     viewingOld: 'Old version {{version}}',
     oldVersion: 'You are looking at version {{version}}.',
     restore: 'Bring back this version',

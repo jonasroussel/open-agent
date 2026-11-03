@@ -85,5 +85,10 @@ export function toArtifactDto(artifact: Artifact): ArtifactDto {
 }
 
 export function toArtifactVersionDto(version: Omit<ArtifactVersion, 'content'>): ArtifactVersionDto {
-  return { number: version.number, author: version.author, createdAt: version.createdAt.toISOString() };
+  return {
+    number: version.number,
+    author: version.author,
+    createdAt: version.createdAt.toISOString(),
+    restoredFrom: version.restoredFrom,
+  };
 }

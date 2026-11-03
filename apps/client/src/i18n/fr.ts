@@ -109,6 +109,7 @@ export const fr: Translation = {
     versions: 'Versions',
     byModel: 'v{{version}} · par l’assistant',
     byUser: 'v{{version}} · par vous',
+    restoredByUser: 'v{{version}} · v{{from}} rétablie par vous',
     viewingOld: 'Ancienne version {{version}}',
     oldVersion: 'Vous regardez la version {{version}}.',
     restore: 'Revenir à cette version',

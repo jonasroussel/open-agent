@@ -143,11 +143,12 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
   }, [opened.data, loaded]);
 
   const save = useCallback(
-    async (content: string) => {
+    // `restoredFrom`: an old version brought back, so the model learns its later changes were undone.
+    async (content: string, restoredFrom?: number) => {
       const base = queryClient.getQueryData<ArtifactResponse>(artifactQuery(id).queryKey);
       if (!base) return;
       setSaveState('saving');
-      const result = await saveArtifact(id, { content, baseVersion: base.artifact.version });
+      const result = await saveArtifact(id, { content, baseVersion: base.artifact.version, restoredFrom });
       if (!result.ok) {
         setSaveState(result.error === 'artifact_changed' ? 'conflict' : 'failed');
         draft.current = null;
@@ -213,7 +214,7 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
 
   async function restore() {
     if (viewing === null || !old.data) return;
-    await save(old.data.content);
+    await save(old.data.content, viewing);
     draft.current = null;
     setLoaded(null);
     view(null);
@@ -248,7 +249,9 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
             >
               {versions.map((version) => (
                 <DropdownMenuRadioItem key={version.number} value={String(version.number)}>
-                  {t(version.author === 'model' ? 'canvas.byModel' : 'canvas.byUser', { version: version.number })}
+                  {version.restoredFrom
+                    ? t('canvas.restoredByUser', { version: version.number, from: version.restoredFrom })
+                    : t(version.author === 'model' ? 'canvas.byModel' : 'canvas.byUser', { version: version.number })}
                   <span className='text-muted-foreground ml-auto pl-4 text-xs'>
                     {timeFormat.format(new Date(version.createdAt))}
                   </span>

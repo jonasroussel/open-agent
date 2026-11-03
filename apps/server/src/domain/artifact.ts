@@ -20,6 +20,8 @@ export type ArtifactVersion = {
   content: string;
   author: ArtifactAuthor;
   createdAt: Date;
+  /** The older version the user brought back as this one; `null` for any other version. */
+  restoredFrom: number | null;
 };
 
 /**

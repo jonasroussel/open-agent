@@ -330,7 +330,13 @@ export type ArtifactDto = {
   updatedAt: string;
 };
 
-export type ArtifactVersionDto = { number: number; author: ArtifactAuthor; createdAt: string };
+/** `restoredFrom`: the older version the user brought back as this one. */
+export type ArtifactVersionDto = {
+  number: number;
+  author: ArtifactAuthor;
+  createdAt: string;
+  restoredFrom: number | null;
+};
 
 export type ListArtifactsResponse = { artifacts: ArtifactDto[] };
 
@@ -339,8 +345,11 @@ export type ArtifactResponse = { artifact: ArtifactDto; content: string; version
 
 export type ArtifactVersionResponse = ArtifactVersionDto & { content: string };
 
-/** `baseVersion`: the version the user edited; another one since means someone else changed it. */
-export type SaveArtifactBody = { content: string; baseVersion: number };
+/**
+ * `baseVersion`: the version the user edited; another one since means someone else changed it. `restoredFrom`: the
+ * older version brought back, whose content this is.
+ */
+export type SaveArtifactBody = { content: string; baseVersion: number; restoredFrom?: number };
 
 export type SaveArtifactResponse = { artifact: ArtifactDto };
 

@@ -983,6 +983,37 @@ describe('canvas', () => {
     expect(opened.content).toBe('v3');
   });
 
+  test('bringing back an old version is a new version the model is told about, so it does not redo what was undone', async () => {
+    const cookie = await signIn(ADMIN);
+    scriptedCalls = [{ toolName: 'create_document', input: { kind: 'document', title: 'CV', content: 'CV court' } }];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Fais mon CV.')]);
+    const [cv] = await artifactsOf(cookie);
+    scriptedCalls = [{ toolName: 'update_document', input: { id: cv!.id, content: 'CV long avec loisirs' } }];
+    const history = [...(await open(cookie, CONVERSATION)).messages, userMessage('m3', 'Ajoute mes loisirs.')];
+    await chat(cookie, CONVERSATION, history);
+
+    const restore = (content: string, restoredFrom: number) =>
+      call(`/api/artifacts/${cv!.id}/versions`, {
+        method: 'POST',
+        body: { content, baseVersion: 2, restoredFrom },
+        cookie,
+      });
+    expect(await errorOf(await restore('autre chose', 1))).toBe('invalid_request');
+    expect(await errorOf(await restore('CV court', 2))).toBe('invalid_request');
+    expect((await restore('CV court', 1)).status).toBe(200);
+
+    const opened = (await (await call(`/api/artifacts/${cv!.id}`, { cookie })).json()) as ArtifactResponse;
+    expect(opened.content).toBe('CV court');
+    expect(opened.versions[0]).toMatchObject({ number: 3, author: 'user', restoredFrom: 1 });
+
+    const next = [...(await open(cookie, CONVERSATION)).messages, userMessage('m5', 'Merci.')];
+    await chat(cookie, CONVERSATION, next);
+    const prompt = models.fast.doStreamCalls.at(-1)!.prompt;
+    expect(JSON.stringify(prompt)).toContain('version=\\"3\\" restored-from=\\"1\\"');
+    expect(JSON.stringify(prompt.at(-1))).toContain('back to version 1, on purpose');
+    expect(JSON.stringify(prompt.at(-1))).toContain('Merci.');
+  });
+
   test("a document is only its owner's: nobody else reads it, edits it, or has the model rewrite it", async () => {
     const adminCookie = await signIn(ADMIN);
     scriptedCalls = [{ toolName: 'create_document', input: { kind: 'html', title: 'Jeu', content: '<p>secret</p>' } }];

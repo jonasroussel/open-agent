@@ -51,7 +51,13 @@ export function createArtifactRoutes({ signedInUser, artifacts }: ArtifactHttpDe
       POST: (request: BunRequest<typeof API_ROUTES.artifactVersions>) =>
         withUser(request, async (user) => {
           const body = await readJson(request);
-          const result = await artifacts.save(user, request.params.artifactId, body?.content, body?.baseVersion);
+          const result = await artifacts.save(
+            user,
+            request.params.artifactId,
+            body?.content,
+            body?.baseVersion,
+            body?.restoredFrom,
+          );
           if (!result.ok) return error(result.reason, SAVE_STATUS[result.reason]);
           return Response.json({ artifact: toArtifactDto(result.artifact) } satisfies SaveArtifactResponse);
         }),

@@ -15,7 +15,15 @@ type ArtifactRow = {
   version: number;
 };
 
-type VersionRow = { artifact_id: string; number: number; author: ArtifactAuthor; created_at: string };
+type VersionRow = {
+  artifact_id: string;
+  number: number;
+  author: ArtifactAuthor;
+  created_at: string;
+  restored_from: number | null;
+};
+
+const VERSION_COLUMNS = ['artifact_id', 'number', 'author', 'created_at', 'restored_from'] as const;
 
 export class SqliteArtifactRepository implements ArtifactRepository {
   readonly #database: Knex;
@@ -56,7 +64,7 @@ export class SqliteArtifactRepository implements ArtifactRepository {
   async versions(artifactId: string): Promise<Omit<ArtifactVersion, 'content'>[]> {
     const rows: VersionRow[] = await this.#database('artifact_versions')
       .where({ artifact_id: artifactId })
-      .select('artifact_id', 'number', 'author', 'created_at')
+      .select(VERSION_COLUMNS)
       .orderBy('number', 'desc');
     return rows.map(toVersion);
   }
@@ -64,16 +72,29 @@ export class SqliteArtifactRepository implements ArtifactRepository {
   async version(artifactId: string, number: number): Promise<ArtifactVersion | null> {
     const row: (VersionRow & { content: string }) | undefined = await this.#database('artifact_versions')
       .where({ artifact_id: artifactId, number })
-      .first('artifact_id', 'number', 'author', 'created_at', 'content');
+      .first(...VERSION_COLUMNS, 'content');
     return row ? { ...toVersion(row), content: row.content } : null;
   }
 
-  async addVersion(artifactId: string, content: string, author: ArtifactAuthor, now: Date): Promise<number> {
+  async addVersion(
+    artifactId: string,
+    content: string,
+    author: ArtifactAuthor,
+    now: Date,
+    restoredFrom: number | null = null,
+  ): Promise<number> {
     return await this.#database.transaction(async (trx) => {
       const last = await trx('artifact_versions').where({ artifact_id: artifactId }).max({ number: 'number' }).first();
       const number = Number(last?.number ?? 0) + 1;
       const at = now.toISOString();
-      await trx('artifact_versions').insert({ artifact_id: artifactId, number, content, author, created_at: at });
+      await trx('artifact_versions').insert({
+        artifact_id: artifactId,
+        number,
+        content,
+        author,
+        created_at: at,
+        restored_from: restoredFrom,
+      });
       await trx('artifacts').where({ id: artifactId }).update({ updated_at: at });
       return number;
     });
@@ -114,5 +135,6 @@ function toVersion(row: VersionRow): Omit<ArtifactVersion, 'content'> {
     number: row.number,
     author: row.author,
     createdAt: new Date(row.created_at),
+    restoredFrom: row.restored_from,
   };
 }
