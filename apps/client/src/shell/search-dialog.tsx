@@ -80,7 +80,7 @@ function SearchDialogContent({ onOpen }: { onOpen: () => void }) {
     <DialogContent showCloseButton={false} className='top-[15%] translate-y-0 gap-0 p-0 sm:max-w-xl'>
       <DialogTitle className='sr-only'>{t('search.open')}</DialogTitle>
       <form
-        className='flex items-center gap-3 border-b px-4'
+        className='flex items-center gap-3 px-4'
         onSubmit={(event) => {
           event.preventDefault();
           if (shown[0]) open(shown[0].conversation.id);
@@ -98,7 +98,7 @@ function SearchDialogContent({ onOpen }: { onOpen: () => void }) {
         />
       </form>
       {shown.length > 0 && (
-        <ul className='grid max-h-[60vh] gap-0.5 overflow-y-auto p-2'>
+        <ul className='grid max-h-[60vh] gap-0.5 overflow-y-auto border-t p-2'>
           {shown.map(({ conversation, snippet }) => (
             <li key={conversation.id}>
               <button
@@ -134,7 +134,7 @@ function SearchDialogContent({ onOpen }: { onOpen: () => void }) {
         </ul>
       )}
       {query.trim() && results.data?.length === 0 && (
-        <p className='text-muted-foreground px-4 py-8 text-center text-sm'>{t('search.empty')}</p>
+        <p className='text-muted-foreground border-t px-4 py-8 text-center text-sm'>{t('search.empty')}</p>
       )}
     </DialogContent>
   );
