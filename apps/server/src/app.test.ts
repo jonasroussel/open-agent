@@ -32,6 +32,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import type { Knex } from 'knex';
 
 import { createApp } from './app.ts';
+import { PageUnavailable, PlaceNotFound } from './application/ports/context-services.ts';
 import { UnreadableDocument, type PdfPage } from './application/ports/document-reader.ts';
 import type { SignInEmail } from './application/ports/mailer.ts';
 import type { ModelCatalog, ModelInfo } from './application/ports/model-catalog.ts';
@@ -91,6 +92,17 @@ let keysUsed: (string | null)[];
 let keyAccepted: boolean | null;
 /** OpenRouter refuses the users' own keys during the answer. */
 let ownKeyRefused: boolean;
+/** The one page the fake web answers, and the one town the fake weather knows. */
+const PAGE = {
+  url: 'https://example.org/bail',
+  title: 'Le bail',
+  text: 'Le préavis est de 3 mois, 1 mois en zone tendue.',
+};
+const FORECAST = {
+  place: 'Nantes, Pays de la Loire, France',
+  now: { sky: 'light rain', temperatureC: 9, feelsLikeC: 6, windKmh: 20 },
+  days: [{ date: '2026-11-01', sky: 'light rain', minC: 6, maxC: 12, rainChance: 80, rainMm: 4 }],
+};
 const FOUND = {
   title: 'Prix des carburants',
   url: 'https://www.prix-carburants.gouv.fr/',
@@ -279,6 +291,18 @@ beforeEach(async () => {
             return pdfPages;
           },
           readWord: async () => [],
+        },
+        pages: {
+          read: async (url) => {
+            if (url !== PAGE.url) throw new PageUnavailable('The page answered 404.');
+            return PAGE;
+          },
+        },
+        weather: {
+          forecast: async (place) => {
+            if (place !== 'Nantes') throw new PlaceNotFound(`No place named "${place}" was found.`);
+            return FORECAST;
+          },
         },
       },
       {
@@ -683,6 +707,8 @@ async function listen(cookie: string) {
   const hangUp = new AbortController();
   const response = await fetch(new URL('/api/events', server.url), { headers: { cookie }, signal: hangUp.signal });
   const heard: ChangeEvent[] = [];
+  // `until` callers, woken at each event to look again.
+  const waiters: (() => void)[] = [];
   const decoder = new TextDecoder();
   let buffer = '';
   const reading = (async () => {
@@ -692,6 +718,7 @@ async function listen(cookie: string) {
         const blocks = buffer.split('\n\n');
         buffer = blocks.pop()!;
         for (const block of blocks) if (block.startsWith('data: ')) heard.push(JSON.parse(block.slice(6)));
+        for (const wake of waiters.splice(0)) wake();
       }
     } catch {
       // Hung up.
@@ -699,6 +726,14 @@ async function listen(cookie: string) {
   })();
   return {
     heard,
+    /** Events travel on their own: resolves once what was heard satisfies `enough`. */
+    until: async (enough: (events: ChangeEvent[]) => boolean) => {
+      while (!enough(heard)) {
+        const { promise, resolve } = Promise.withResolvers<void>();
+        waiters.push(resolve);
+        await promise;
+      }
+    },
     hangUp: async () => {
       hangUp.abort();
       await reading;
@@ -717,13 +752,18 @@ describe('changes between devices', () => {
     await call('/api/memory/rules', { method: 'POST', body: { text: 'Réponses courtes.' }, cookie: phone });
     await call(`/api/conversations/${CONVERSATION}`, { method: 'PATCH', body: { pinned: true }, cookie: phone });
     await call(`/api/conversations/${CONVERSATION}`, { method: 'DELETE', cookie: phone });
+    await computer.until((events) => events.filter((event) => event.type === 'conversation').length >= 2);
     await computer.hangUp();
     await ana.hangUp();
 
-    expect(computer.heard).toContainEqual({ type: 'conversation', id: CONVERSATION });
+    // The answer saved, then the deletion; the title is named in the background, its event comes at any time.
+    const conversationEvents = computer.heard.filter((event) => event.type === 'conversation');
+    expect(conversationEvents).toEqual([
+      { type: 'conversation', id: CONVERSATION },
+      { type: 'conversation', id: CONVERSATION },
+    ]);
     expect(computer.heard).toContainEqual({ type: 'memory' });
     expect(computer.heard).toContainEqual({ type: 'conversations' });
-    expect(computer.heard.at(-1)).toEqual({ type: 'conversation', id: CONVERSATION });
     expect(ana.heard).toEqual([]);
     expect((await call('/api/events')).status).toBe(401);
   });
@@ -749,6 +789,109 @@ describe('search', () => {
     await chat(cookie, CONVERSATION, [userMessage('m1', 'Bonjour')]);
     expect(await search(cookie, 'freebox')).toEqual([]);
     expect((await call(`/api/search?q=${'a'.repeat(201)}`, { cookie })).status).toBe(400);
+  });
+});
+
+/** What each tool call of the answer gave: its output, or the error the model got. */
+async function toolResults(cookie: string, conversationId = CONVERSATION) {
+  const { messages } = await open(cookie, conversationId);
+  return messages.at(-1)!.parts.flatMap((part) =>
+    part.type.startsWith('tool-') && 'state' in part
+      ? [
+          {
+            tool: part.type.slice(5),
+            output: 'output' in part ? part.output : undefined,
+            error: 'errorText' in part ? part.errorText : undefined,
+          },
+        ]
+      : [],
+  );
+}
+
+describe('context tools', () => {
+  test("the model looks up the user's other conversations, their files and a page they named, and knows the time", async () => {
+    const cookie = await signIn(ADMIN);
+    await chat(cookie, 'other-conversation-id', [userMessage('m1', 'Le code du portail de la Freebox est 4721.')]);
+    const notes = (await (
+      await upload(cookie, 'notes.txt', 'text/plain', 'Rendez-vous chez le notaire le 12.')
+    ).json()) as UploadFileResponse;
+    scriptedCalls = [
+      { toolName: 'search_conversations', input: { query: 'freebox portail' } },
+      { toolName: 'read_conversation', input: { id: 'other-conversation-id' } },
+      { toolName: 'list_files', input: {} },
+      { toolName: 'read_file', input: { id: notes.file.id } },
+      { toolName: 'read_web_page', input: { url: PAGE.url } },
+    ];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Rappelle-moi tout ça.')]);
+
+    const [found, read, listed, file, page] = await toolResults(cookie);
+    expect(found).toMatchObject({
+      tool: 'search_conversations',
+      output: { results: [{ id: 'other-conversation-id' }] },
+    });
+    expect(read!.output).toMatchObject({ id: 'other-conversation-id', shortened: false });
+    expect(JSON.stringify(read!.output)).toContain('User: Le code du portail de la Freebox est 4721.');
+    expect(listed!.output).toMatchObject({ files: [{ id: notes.file.id, name: 'notes.txt', kind: 'text' }] });
+    expect(file!.output).toEqual({
+      id: notes.file.id,
+      name: 'notes.txt',
+      text: 'Rendez-vous chez le notaire le 12.',
+      hasPictures: false,
+    });
+    expect(page!.output).toEqual({ ...PAGE, shortened: false });
+
+    // The second answer's first call: the time opens the user's message, for the model only.
+    const lastMessage = JSON.stringify(models.fast.doStreamCalls[1]!.prompt.at(-1));
+    expect(lastMessage).toContain('[Now: Sunday, 1 November 2026 at 11:00, Paris time.]');
+    expect(lastMessage).toContain('Rappelle-moi tout ça.');
+    expect(textOfMessage((await open(cookie, CONVERSATION)).messages[1]!)).toBe(ANSWER);
+  });
+
+  test("weather, exact calculations and dates come from the server, not the model's guess", async () => {
+    const cookie = await signIn(ADMIN);
+    scriptedCalls = [
+      { toolName: 'weather', input: { place: 'Nantes', days: 1 } },
+      { toolName: 'calculate', input: { expression: '1250 * 1.2 - 300' } },
+      { toolName: 'days_between', input: { from: '2026-11-01', to: '2026-12-25' } },
+      { toolName: 'date_plus_days', input: { date: '2026-11-01', days: 45 } },
+    ];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Météo, budget et dates ?')]);
+
+    expect((await toolResults(cookie)).map(({ output }) => output)).toEqual([
+      FORECAST,
+      { expression: '1250 * 1.2 - 300', result: '1200' },
+      { from: '2026-11-01', to: '2026-12-25', days: 54, fromWeekday: 'Sunday', toWeekday: 'Friday' },
+      { date: '2026-11-01', days: 45, result: '2026-12-16', weekday: 'Wednesday' },
+    ]);
+  });
+
+  test("someone else's conversation or file stays out of reach, and every failure reaches the model to say so", async () => {
+    const adminCookie = await signIn(ADMIN);
+    await invite(adminCookie, 'ana@example.com');
+    const anaCookie = await signIn('ana@example.com');
+    await chat(anaCookie, 'ana-conversation-id', [userMessage('m1', 'Mon secret.')]);
+    const anaFile = (await (
+      await upload(anaCookie, 'secret.txt', 'text/plain', 'Secret.')
+    ).json()) as UploadFileResponse;
+    scriptedCalls = [
+      { toolName: 'read_conversation', input: { id: 'ana-conversation-id' } },
+      { toolName: 'read_file', input: { id: anaFile.file.id } },
+      { toolName: 'read_conversation', input: { id: CONVERSATION } },
+      { toolName: 'weather', input: { place: 'Atlantis', days: 1 } },
+      { toolName: 'calculate', input: { expression: '7 / 0' } },
+    ];
+    await chat(adminCookie, CONVERSATION, [userMessage('m1', 'Lis tout.')]);
+
+    const results = await toolResults(adminCookie);
+    expect(results.map(({ output }) => output)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(results.map(({ error }) => error)).toEqual([
+      'No conversation with this id.',
+      'No file with this id in the library.',
+      'This is the current conversation: you already have it.',
+      'No place named "Atlantis" was found.',
+      'The result is not a number (a division by zero?).',
+    ]);
+    expect(JSON.stringify(await open(adminCookie, CONVERSATION))).not.toContain('Secret');
   });
 });
 

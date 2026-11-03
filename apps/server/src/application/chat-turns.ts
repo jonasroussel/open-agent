@@ -39,12 +39,14 @@ import type { MemoryRule } from '../domain/memory.ts';
 import { isExhausted } from '../domain/quota.ts';
 import type { User } from '../domain/user.ts';
 import type { Artifacts } from './artifacts.ts';
+import type { ContextTools } from './context-tools.ts';
 import type { Library } from './library.ts';
 import type { MemoryReconciler } from './memory-reconciler.ts';
 import type { Memory } from './memory.ts';
 import type { Models } from './models.ts';
 import type { ChangeFeed } from './ports/change-feed.ts';
 import type { Clock } from './ports/clock.ts';
+import { ToolRefusal } from './ports/context-services.ts';
 import { ModelUnavailableError } from './ports/model-catalog.ts';
 import type { WebSearch } from './ports/web-search.ts';
 import { textOf, type Analysis, type PreAnalysis } from './pre-analysis.ts';
@@ -66,8 +68,11 @@ const dataSchemas = {
 /** Ids come from the client (`crypto.randomUUID()`); anything else is refused before reaching the database. */
 const CONVERSATION_ID = /^[\w-]{8,64}$/;
 
-/** Two searches, a document, then the answer: the last step may not use tools. */
-const MAX_STEPS = 4;
+/**
+ * Lookups (searches, a page, a file, a calculation), a document, then the answer: the last step may not use tools. Each
+ * step sends the whole conversation again, so each tool also has its own cap (`CONTEXT_TOOL_CAPS`).
+ */
+const MAX_STEPS = 6;
 /** Past two searches the model answers with what it has: a third one costs without helping. */
 const MAX_SEARCHES = 2;
 /** What the model reads of each page found: enough to answer, few tokens. */
@@ -99,6 +104,7 @@ export class ChatTurns {
   readonly #settings: Settings;
   readonly #clock: Clock;
   readonly #webSearch: WebSearch | null;
+  readonly #contextTools: ContextTools;
   readonly #changes: ChangeFeed;
 
   constructor(
@@ -114,6 +120,7 @@ export class ChatTurns {
     settings: Settings,
     clock: Clock,
     webSearch: WebSearch | null,
+    contextTools: ContextTools,
     changes: ChangeFeed,
   ) {
     this.#conversations = conversations;
@@ -128,6 +135,7 @@ export class ChatTurns {
     this.#settings = settings;
     this.#clock = clock;
     this.#webSearch = webSearch;
+    this.#contextTools = contextTools;
     this.#changes = changes;
   }
 
@@ -203,14 +211,15 @@ export class ChatTurns {
           const documents = await this.#artifacts.latestOf(conversation.id);
           // Searches spent this turn, counted here because one step may ask for several at once.
           const searches = { count: 0 };
-          const documentToolNames = ['create_document', 'update_document'] as const;
           const tools = {
             ...this.#documentTools(user, conversation.id),
             ...(this.#webSearch
               ? { web_search: this.#searchTool(user, conversation.id, this.#webSearch, abortSignal, searches) }
               : {}),
+            ...this.#contextTools.for(user, conversation.id, abortSignal),
             ask_user: askTool(resumed !== null && hasAsked(resumed)),
           };
+          const withoutSearch = Object.keys(tools).filter((name) => name !== 'web_search') as (keyof typeof tools)[];
           const searchFirst = this.#webSearch !== null && analysis.webSearch;
           const result = streamText({
             model: choice.model,
@@ -227,24 +236,23 @@ export class ChatTurns {
               await this.#library.expandFiles(
                 user,
                 withoutDocumentBodies(
-                  withNotes(
-                    withLatestRequest(withAnsweredQuestions(messages), analysis.rewrittenRequest),
-                    restoreNotes(documents),
-                  ),
+                  withNotes(withLatestRequest(withAnsweredQuestions(messages), analysis.rewrittenRequest), [
+                    timeNote(this.#clock.now()),
+                    ...restoreNotes(documents),
+                  ]),
                 ),
               ),
             ),
             tools,
             stopWhen: isStepCount(MAX_STEPS),
-            // "Two searches, a document, then the answer": the search tool is withheld once two are spent, and the
-            // last step writes.
+            // The search tool is withheld once two are spent, and the last step writes.
             prepareStep: ({ stepNumber, steps }) => {
               const searched = steps.reduce(
                 (count, step) => count + step.toolCalls.filter((call) => call.toolName === 'web_search').length,
                 0,
               );
               if (stepNumber === MAX_STEPS - 1) return { toolChoice: 'none' };
-              if (searched >= MAX_SEARCHES) return { activeTools: [...documentToolNames, 'ask_user'] };
+              if (searched >= MAX_SEARCHES) return { activeTools: withoutSearch };
               if (stepNumber === 0 && searchFirst) return { toolChoice: 'required', activeTools: ['web_search'] };
               return undefined;
             },
@@ -298,8 +306,12 @@ export class ChatTurns {
     };
   }
 
-  /** The text of a failed answer, read by the client: a refused own key gets its own, the person can fix it. */
+  /**
+   * The text of a failure, kept with the answer or the tool call. A tool's refusal is kept as it is: the model reads it
+   * again at the next messages. A refused own key gets its own, so the person can fix it.
+   */
   #failure(user: User, error: unknown): string {
+    if (error instanceof ToolRefusal) return error.message;
     console.error('Answer failed:', error);
     return user.ownKey && APICallError.isInstance(error) && KEY_REFUSED[error.statusCode ?? 0]
       ? OWN_KEY_REFUSED
@@ -440,6 +452,23 @@ function withLatestRequest(messages: ChatMessage[], rewrittenRequest: string | n
         }
       : message,
   );
+}
+
+/**
+ * The date and time, at the start of the user's latest message for the model only: there, it changes nothing before
+ * it, so the provider's cache of the instructions and the history stays valid from one message to the next.
+ */
+function timeNote(now: Date): string {
+  const time = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Paris',
+  }).format(now);
+  return `[Now: ${time}, Paris time.]`;
 }
 
 /**

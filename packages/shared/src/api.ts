@@ -252,11 +252,56 @@ export const MAX_ASK_OPTIONS = 4;
 /** The longest answer the server accepts: a typed answer is a few sentences, not a document to attach. */
 export const MAX_ASK_ANSWER_LENGTH = 4000;
 
+/** One of the user's other conversations the model found by its words. */
+export type FoundConversation = { id: string; title: string | null; updatedAt: string; snippet: string };
+export type SearchConversationsOutput = { results: FoundConversation[] };
+/** `text`: its messages, "User:" and "Assistant:", the oldest cut first when it is long (`shortened`). */
+export type ReadConversationOutput = { id: string; title: string | null; text: string; shortened: boolean };
+
+export type LibraryFileSummary = { id: string; name: string; kind: FileKind; size: number; createdAt: string };
+export type ListFilesOutput = { files: LibraryFileSummary[] };
+/** The file's text; its pictures are not in it (the user can attach the file for the model to see them). */
+export type ReadFileOutput = { id: string; name: string; text: string; hasPictures: boolean };
+
+/** The readable text of a page the user gave, `shortened` past what the model reads. */
+export type ReadWebPageOutput = { url: string; title: string | null; text: string; shortened: boolean };
+
+export type WeatherInput = { place: string; days: number };
+export type WeatherDay = {
+  date: string;
+  /** In words, in English: "light rain", "clear sky". */
+  sky: string;
+  minC: number;
+  maxC: number;
+  rainChance: number | null;
+  rainMm: number | null;
+};
+export type WeatherOutput = {
+  /** The place found, as "Nantes, Pays de la Loire, France". */
+  place: string;
+  now: { sky: string; temperatureC: number; feelsLikeC: number; windKmh: number };
+  days: WeatherDay[];
+};
+
+export type CalculateOutput = { expression: string; result: string };
+
+export type DaysBetweenOutput = { from: string; to: string; days: number; fromWeekday: string; toWeekday: string };
+export type DatePlusDaysOutput = { date: string; days: number; result: string; weekday: string };
+
 export type ChatTools = {
   web_search: { input: WebSearchInput; output: WebSearchOutput };
   create_document: { input: CreateDocumentInput; output: DocumentToolOutput };
   update_document: { input: UpdateDocumentInput; output: DocumentToolOutput };
   ask_user: { input: AskUserInput; output: AskUserOutput };
+  search_conversations: { input: { query: string }; output: SearchConversationsOutput };
+  read_conversation: { input: { id: string }; output: ReadConversationOutput };
+  list_files: { input: Record<string, never>; output: ListFilesOutput };
+  read_file: { input: { id: string }; output: ReadFileOutput };
+  read_web_page: { input: { url: string }; output: ReadWebPageOutput };
+  weather: { input: WeatherInput; output: WeatherOutput };
+  calculate: { input: { expression: string }; output: CalculateOutput };
+  days_between: { input: { from: string; to: string }; output: DaysBetweenOutput };
+  date_plus_days: { input: { date: string; days: number }; output: DatePlusDaysOutput };
 };
 
 export type ChatMessage = UIMessage<ChatMessageMetadata, ChatDataParts, ChatTools>;

@@ -3,6 +3,8 @@ import type { ApiError } from '@open-agent/shared';
 import { createApp } from './app.ts';
 import { appVersion } from './infrastructure/app-version.ts';
 import { config } from './infrastructure/config.ts';
+import { OpenMeteoWeather } from './infrastructure/context/open-meteo-weather.ts';
+import { ReadableWebPageReader } from './infrastructure/context/readable-web-page-reader.ts';
 import { AesSecretBox } from './infrastructure/crypto/aes-secret-box.ts';
 import { createDatabase } from './infrastructure/database/connection.ts';
 import { DiskFileStore } from './infrastructure/files/disk-file-store.ts';
@@ -49,6 +51,8 @@ const routes = await createApp(
     webSearch,
     fileStore: new DiskFileStore(config.filesPath),
     documents: new PopplerMammothReader(),
+    pages: new ReadableWebPageReader(),
+    weather: new OpenMeteoWeather(),
   },
   {
     version,

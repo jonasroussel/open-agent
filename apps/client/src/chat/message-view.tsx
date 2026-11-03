@@ -23,6 +23,8 @@ import { Textarea } from '@/components/ui/textarea.tsx';
 import { FileChip } from '@/files/file-chip.tsx';
 import { cn } from '@/lib/utils.ts';
 
+import { ContextToolLine, isContextToolPart } from './context-tool-line.tsx';
+
 const Markdown = lazy(() => import('./markdown.tsx'));
 
 function partsText(message: ChatMessage, type: 'text' | 'reasoning'): string {
@@ -160,6 +162,8 @@ export function AssistantMessage({
   const deepThinking = message.metadata?.route === 'reasoning';
   const notices = message.parts.flatMap((part) => (part.type === 'data-memory' ? [part.data] : []));
   const searches = message.parts.flatMap((part) => (part.type === 'tool-web_search' ? [part] : []));
+  const lookups = message.parts.filter(isContextToolPart);
+  const lookingUp = lookups.some((part) => part.state === 'input-streaming' || part.state === 'input-available');
   const documents = message.parts.flatMap((part) =>
     part.type === 'tool-create_document' || part.type === 'tool-update_document' ? [part] : [],
   );
@@ -184,6 +188,9 @@ export function AssistantMessage({
               failed={search.state === 'output-error'}
             />
           ))}
+          {lookups.map((part) => (
+            <ContextToolLine key={part.toolCallId} part={part} />
+          ))}
           {documents.map((part) => (
             <DocumentCard key={part.toolCallId} part={part} onOpen={onOpenDocument} />
           ))}
@@ -192,7 +199,7 @@ export function AssistantMessage({
               <Markdown text={text} streaming={streaming} />
             </Suspense>
           ) : (
-            !deepThinking && streaming && documents.length === 0 && !asking && <Dots />
+            !deepThinking && streaming && documents.length === 0 && !asking && !lookingUp && <Dots />
           )}
         </div>
         {notices.map((notice) => (

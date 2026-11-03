@@ -113,6 +113,14 @@ export class Library {
     return true;
   }
 
+  /** A file's text, for the model's `read_file`; its pictures stay out, the model is told there are some. */
+  async text(user: User, id: string): Promise<{ file: LibraryFile; text: string; hasPictures: boolean } | null> {
+    const file = await this.#files.find(user.id, id);
+    if (!file) return null;
+    const texts = file.content.flatMap((piece) => (piece.type === 'text' ? [piece.text] : []));
+    return { file, text: texts.join('\n\n'), hasPictures: texts.length < file.content.length };
+  }
+
   /** Every `file` part becomes the file's whole content, as text and pictures, between `<file>` tags. */
   async expandFiles(user: User, messages: readonly ChatMessage[]): Promise<ChatMessage[]> {
     return await Promise.all(

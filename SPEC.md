@@ -54,7 +54,7 @@ flowchart TD
   Q -- yes --> P["Pre-pass: 1 call, background model"]
   P --> C{Truly ambiguous?}
   C -- yes --> D["One short question (ask_user) with answers to tap;<br/>the answer resumes the message, analyzed again"]
-  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, canvas"]
+  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, canvas, lookups, ask_user"]
   P -- feedback detected --> R["Memory reconciler<br/>ADD / UPDATE / DELETE / NOOP"]
   R --> T["Notice under the answer: 'Remembered: …' + Undo"]
   M --> U[Usage ledger]
@@ -136,13 +136,45 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   service that fails for another reason is tried again at the next search. Both sit behind the `WebSearch` port.
   Compared on 2026-11-01: Parallel and Brave need a card, Exa's and Linkup's terms do not fit, Google and Bing closed.
 - **When:** the main model has a `web_search` tool (query, `recent`) and uses it for facts that change or that it may
-  not know. When the pre-pass sets `webSearch`, the first step must search. At most two searches, then the answer:
-  the third step may not search.
+  not know. When the pre-pass sets `webSearch`, the first step must search. At most two searches per answer: then the
+  search tool is withheld.
 - **What the user sees:** a line "Searching the web: “…”" pulsing in the answer, then one link per site read; the
   answer links its sources inline. A failed search says so and the model answers without it.
 - **Language:** French users get French results (Tavily `language`, `country: france`; SearXNG `fr-FR`). Safe search on.
 - **Cost:** each search is a `web_search` usage event at 0 $; each model step is its own `answer` event. Measured: a
   turn with two searches ≈ 0.0003 $.
+
+### Lookups
+
+The main model looks things up rather than guess (`ContextTools`, `application/context-tools.ts`); everything is the
+user's own or public, and nothing writes.
+
+- **Date and time:** not a tool. "[Now: Tuesday, 3 November 2026 at 22:42, Paris time.]" opens the user's latest
+  message, for the model only: there it changes nothing before it, so the provider's prompt cache stays valid.
+- **The user's other conversations:** `search_conversations` (the history's full-text search, the current one left
+  out) then `read_conversation` (its messages as "User:" / "Assistant:" text, the latest 30,000 characters).
+- **The user's library:** `list_files` (30 newest) then `read_file`: its text, without its pictures (the model is told
+  there are some, and asks the user to attach the file to see them). A file over 50,000 tokens is refused rather than
+  read in part: attached, the model reads all of it.
+- **A web page:** `read_web_page` for a link the user gives, or a search result whose extract is not enough. Fetched by
+  the server, every address and redirect checked public (private, loopback, link-local and Docker addresses refused:
+  no SSRF), http(s) on ports 80/443 only, 3 MB at most, then read like Firefox's reader view (Readability on
+  linkedom; the whole text without scripts and menus when the reader view finds under 1,000 characters). The model
+  reads 30,000 characters. Sites that refuse robots (403) say so.
+- **Weather:** `weather` (place, 1 to 7 days) from Open-Meteo (free, no key, Météo-France for France): now, then each
+  day's sky, min/max, rain chance and amount. Where the user lives comes from the memory. The pre-pass never forces a
+  web search for the weather.
+- **Exact calculations:** `calculate` with mathjs (sums, percentages, conversions such as "5 km to mile"; the functions
+  that change mathjs or parse further are switched off); `days_between` and `date_plus_days` count calendar days in
+  UTC (no clock-change surprises).
+- **Limits:** each call sends the whole conversation to the model again, so each tool has a cap per answer (2
+  conversation searches and reads, 1 file list, 2 file reads, 3 pages, 2 forecasts, 5 calculations, 3 date counts),
+  and an answer has 6 steps, the last one without tools. A refusal (`ToolRefusal`: not found, someone else's, too
+  long, unknown place) reaches the model and stays with the call, so it reads it again later; any other failure is
+  hidden as "The answer failed.".
+- **What the user sees:** one line per lookup in the answer ("A relu « Prénoms pour chat roux »", "Météo : Nantes…",
+  "(3*19.99 + 2*7.45) * 0.85 = 63.6395"), pulsing while it runs; a conversation, file or page links to it.
+- **The pre-pass knows:** it never asks the user for a file, an earlier conversation, a page, the weather or the time.
 
 ### Files and photos
 

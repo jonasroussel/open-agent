@@ -4,6 +4,7 @@ import type { Knex } from 'knex';
 import { Artifacts } from './application/artifacts.ts';
 import { Authentication } from './application/authentication.ts';
 import { ChatTurns } from './application/chat-turns.ts';
+import { ContextTools } from './application/context-tools.ts';
 import { Conversations } from './application/conversations.ts';
 import { Library } from './application/library.ts';
 import { MemoryReconciler } from './application/memory-reconciler.ts';
@@ -12,6 +13,7 @@ import { MessageMemory } from './application/message-memory.ts';
 import { Models } from './application/models.ts';
 import { OwnKeys } from './application/own-keys.ts';
 import type { Clock } from './application/ports/clock.ts';
+import type { WeatherService, WebPageReader } from './application/ports/context-services.ts';
 import type { DocumentReader } from './application/ports/document-reader.ts';
 import type { FileStore } from './application/ports/file-store.ts';
 import type { Mailer } from './application/ports/mailer.ts';
@@ -23,6 +25,7 @@ import { Quotas } from './application/quotas.ts';
 import { Settings } from './application/settings.ts';
 import { UsageRecorder } from './application/usage-recorder.ts';
 import { UserAccess } from './application/user-access.ts';
+import { MathjsCalculator } from './infrastructure/context/mathjs-calculator.ts';
 import { SqliteArtifactRepository } from './infrastructure/database/sqlite-artifact-repository.ts';
 import { SqliteConversationRepository } from './infrastructure/database/sqlite-conversation-repository.ts';
 import { SqliteLibraryRepository } from './infrastructure/database/sqlite-library-repository.ts';
@@ -74,12 +77,27 @@ export type AppAdapters = {
   webSearch: WebSearch | null;
   fileStore: FileStore;
   documents: DocumentReader;
+  /** Pages the user names, for the model's `read_web_page`. */
+  pages: WebPageReader;
+  weather: WeatherService;
 };
 
 /** Wires the application; the composition root for `main.ts` and the HTTP tests. */
 export async function createApp(
   database: Knex,
-  { clock, mailer, models, modelDirectory, keyChecker, secrets, webSearch, fileStore, documents }: AppAdapters,
+  {
+    clock,
+    mailer,
+    models,
+    modelDirectory,
+    keyChecker,
+    secrets,
+    webSearch,
+    fileStore,
+    documents,
+    pages,
+    weather,
+  }: AppAdapters,
   options: AppOptions,
 ) {
   const users = new SqliteUserRepository(database);
@@ -136,6 +154,7 @@ export async function createApp(
       settings,
       clock,
       webSearch,
+      new ContextTools(conversations, library, new MathjsCalculator(), pages, weather),
       changes,
     ),
     quotas,
