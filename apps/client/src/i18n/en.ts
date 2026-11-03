@@ -17,8 +17,29 @@ export const en = {
     dark: 'Dark',
   },
   home: {
-    greeting: 'Hello 👋',
-    prompt: 'What are we doing today?',
+    greetings: {
+      morning: ['Good morning ☀️', 'Morning! Coffee first ☕', 'A fresh start'],
+      midday: ['Hello 👋', 'Enjoy your lunch 🍽️', 'Lunch break'],
+      afternoon: ['Good afternoon 🌤️', 'Hello again 👋', 'Back at it'],
+      evening: ['Good evening 🌆', 'Evening, already', 'The day winds down'],
+      night: ['Still up? 🌙', 'Hello, night owl 🦉', 'A midnight idea?'],
+    },
+    occasions: {
+      monday: ['Happy Monday 💪', 'New week, fresh start'],
+      friday: ['The weekend is close 🎉', 'Almost Friday night'],
+      weekend: ['Happy weekend ☀️', 'Weekend mode 🛋️'],
+    },
+    prompts: {
+      morning: ['What are we doing today?', 'Where do we start this morning?', 'A list to make, an email to write?'],
+      midday: ['A quick question before going back?', 'What can I do for you?', 'An idea for lunch?'],
+      afternoon: [
+        'What are we working on this afternoon?',
+        'A letter, a calculation, an idea?',
+        'What can I do for you?',
+      ],
+      evening: ['What do we get ready for tomorrow?', 'An idea for dinner?', 'What can I do for you?'],
+      night: ['An idea that cannot wait?', 'I am listening, even at this hour.', 'What keeps you up?'],
+    },
   },
   chat: {
     placeholder: 'Ask anything…',

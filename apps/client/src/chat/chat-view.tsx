@@ -27,6 +27,7 @@ import { QUOTA_WARNING_PERCENT, quotaQuery, resetMonth } from '@/quota/quota-que
 
 import { Composer } from './composer.tsx';
 import { conversationsQuery } from './conversations-query.ts';
+import { Greeting } from './greeting.tsx';
 import { AssistantMessage, PendingAnswer, type UndoOutcome, UserMessage } from './message-view.tsx';
 
 /**
@@ -139,8 +140,7 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
         {messages.length === 0 ? (
           <div className='flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center'>
             <BrandIcon className='size-14' />
-            <h2 className='text-2xl font-semibold tracking-tight'>{t('home.greeting')}</h2>
-            <p className='text-muted-foreground text-lg'>{t('home.prompt')}</p>
+            <Greeting />
           </div>
         ) : (
           <StickToBottom className='relative min-h-0 flex-1' resize='instant' initial='instant'>

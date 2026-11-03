@@ -19,8 +19,41 @@ export const fr: Translation = {
     dark: 'Sombre',
   },
   home: {
-    greeting: 'Bonjour 👋',
-    prompt: 'Qu’est-ce qu’on fait aujourd’hui ?',
+    greetings: {
+      morning: ['Bonjour ☀️', 'Un café, et c’est parti ☕', 'Belle journée en vue'],
+      midday: ['Bonjour 👋', 'Bon appétit 🍽️', 'C’est la pause de midi'],
+      afternoon: ['Bon après-midi 🌤️', 'Rebonjour 👋', 'On s’y remet ?'],
+      evening: ['Bonsoir 🌆', 'Déjà le soir', 'La journée se termine'],
+      night: ['Encore debout ? 🌙', 'Bonsoir, oiseau de nuit 🦉', 'Une idée de minuit ?'],
+    },
+    occasions: {
+      monday: ['Bon lundi 💪', 'Nouvelle semaine, nouveau départ'],
+      friday: ['Bientôt le week-end 🎉', 'Vendredi, enfin'],
+      weekend: ['Bon week-end ☀️', 'Mode week-end 🛋️'],
+    },
+    prompts: {
+      morning: [
+        'Qu’est-ce qu’on fait aujourd’hui ?',
+        'Par quoi commence-t-on ce matin ?',
+        'Une liste à faire, un mail à écrire ?',
+      ],
+      midday: [
+        'Une question rapide avant de reprendre ?',
+        'Que puis-je faire pour vous ?',
+        'Une idée pour le déjeuner ?',
+      ],
+      afternoon: [
+        'Qu’est-ce qu’on avance cet après-midi ?',
+        'Une lettre, un calcul, une idée ?',
+        'Que puis-je faire pour vous ?',
+      ],
+      evening: ['Qu’est-ce qu’on prépare pour demain ?', 'Une idée pour le dîner ?', 'Que puis-je faire pour vous ?'],
+      night: [
+        'Une idée qui ne peut pas attendre ?',
+        'Je vous écoute, même à cette heure-ci.',
+        'Une idée de dernière minute ?',
+      ],
+    },
   },
   chat: {
     placeholder: 'Posez votre question…',
