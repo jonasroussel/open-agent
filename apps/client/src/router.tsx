@@ -7,6 +7,7 @@ import { AdminUsersPage } from './admin/admin-users-page.tsx';
 import { sessionQuery } from './auth/session.ts';
 import { SignInPage } from './auth/sign-in-page.tsx';
 import { VerifyLinkPage } from './auth/verify-link-page.tsx';
+import { openCanvasOf } from './canvas/open-canvas.ts';
 import { hasChat } from './chat/chat-store.ts';
 import { ConversationPage } from './chat/conversation-page.tsx';
 import { conversationQuery, conversationsQuery } from './chat/conversations-query.ts';
@@ -65,6 +66,15 @@ const conversationRoute = createRoute({
   // `?doc=`: the canvas document open next to the conversation; back closes it.
   validateSearch: (search: Record<string, unknown>): { doc?: string } =>
     typeof search.doc === 'string' ? { doc: search.doc } : {},
+  // Coming back to a conversation opens the document its canvas showed. Not when the address was already this
+  // conversation's: back, inside it, still closes the canvas. (`cause` says "stay" from one conversation to another.)
+  beforeLoad: ({ preload, search, params }) => {
+    if (preload || search.doc) return;
+    const path = `/c/${params.conversationId}`;
+    if (router.state.resolvedLocation?.pathname === path) return;
+    const doc = openCanvasOf(params.conversationId);
+    if (doc) throw redirect({ to: '/c/$conversationId', params, search: { doc }, replace: true });
+  },
   // Messages arrive with the page, not right after it. A missing one stays an error in the cache: the page leaves.
   loader: async ({ context, params }) => {
     if (hasChat(params.conversationId)) return;

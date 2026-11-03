@@ -176,7 +176,9 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
 ### Canvas
 
 A panel beside the conversation (full screen on a phone, `?doc=` in the address, back closes it) holding documents
-written by the model and edited by the user, with versions.
+written by the model and edited by the user, with versions. The document open in each conversation is remembered on
+the device (`localStorage`, 100 conversations at most): coming back to the conversation from elsewhere opens it again;
+closing the panel forgets it.
 
 - **The model's tools:** `create_document` (kind `document` or `html`, title, whole content) and `update_document`
   (id, whole new content). It writes any text to keep, send or print there, never in the chat, then answers in one

@@ -17,6 +17,7 @@ import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
 
 import { CanvasPanel } from '@/canvas/canvas-panel.tsx';
 import { artifactQuery, liveDocumentOf } from '@/canvas/canvas-query.ts';
+import { rememberOpenCanvas } from '@/canvas/open-canvas.ts';
 import { BrandIcon } from '@/components/brand-icon.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { toFilePart } from '@/files/library.ts';
@@ -99,6 +100,8 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
 
   const navigate = useNavigate();
   const { doc } = useSearch({ strict: false }) as { doc?: string };
+  // Opening, switching or closing the document, here or by the model: remembered for when the user comes back.
+  useEffect(() => rememberOpenCanvas(chat.id, doc ?? null), [chat.id, doc]);
   const answering = busy ? messages.at(-1) : undefined;
   const live = liveDocumentOf(answering);
   // Closing the canvas while the model writes keeps it closed for that answer only.
