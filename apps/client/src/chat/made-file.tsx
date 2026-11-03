@@ -25,9 +25,12 @@ export function isMadeFilePart(part: Part): part is MadeFilePart {
   return part.type in MAKING_TOOLS;
 }
 
-/** Drawn images have the shape the model asked for, known before they arrive. */
+/**
+ * Drawn images have the shape the model asked for, known before they arrive. The bubble takes the width of what it
+ * holds: a landscape one needs its own width, a percentage of an empty bubble is nothing.
+ */
 const DRAWN_SHAPES: Record<ImageAspect, string> = {
-  '16:9': 'aspect-video w-full max-w-xl',
+  '16:9': 'aspect-video w-[36rem] max-w-full',
   '9:16': 'aspect-[9/16] h-[28rem] max-h-[70vh]',
 };
 
