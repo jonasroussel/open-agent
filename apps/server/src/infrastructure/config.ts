@@ -28,11 +28,12 @@ export const config = {
    * entered again. Development data needs no secret.
    */
   encryptionKey: Bun.env.ENCRYPTION_KEY || (isProduction ? required('ENCRYPTION_KEY') : 'development'),
-  /** OpenRouter model ids per role; the admin page will set them later. The user chose these on 2026-11-01. */
+  /** OpenRouter model ids per role, until the admin page changes them. The user chose these on 2026-11-01 and 2026-11-03. */
   models: {
     fast: Bun.env.FAST_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',
     reasoning: Bun.env.REASONING_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',
     background: Bun.env.BACKGROUND_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',
+    image: Bun.env.IMAGE_MODEL ?? 'google/gemini-3.1-flash-lite-image',
   },
   /** Never logged. Tavily's free plan: 1,000 searches a month; SearXNG takes over when they are used up. */
   tavilyApiKey: Bun.env.TAVILY_API_KEY || null,

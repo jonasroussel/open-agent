@@ -153,7 +153,7 @@ export class Library {
       }),
     );
     return [
-      { type: 'text', text: `<file name="${file.name.replaceAll('"', "'")}">` },
+      { type: 'text', text: `<file id="${file.id}" name="${file.name.replaceAll('"', "'")}">` },
       ...pieces,
       { type: 'text', text: '</file>' },
     ];
@@ -179,6 +179,8 @@ export class Library {
           ];
         });
       }
+      case 'spreadsheet':
+        return [{ type: 'text', text: await this.#reader.readSpreadsheet(bytes) }];
       case 'word': {
         const pieces = await this.#reader.readWord(bytes);
         return pieces.map((piece) => {

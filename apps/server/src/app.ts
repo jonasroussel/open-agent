@@ -7,6 +7,7 @@ import { ChatTurns } from './application/chat-turns.ts';
 import { ContextTools } from './application/context-tools.ts';
 import { Conversations } from './application/conversations.ts';
 import { Library } from './application/library.ts';
+import { MakingTools } from './application/making-tools.ts';
 import { MemoryReconciler } from './application/memory-reconciler.ts';
 import { Memory } from './application/memory.ts';
 import { MessageMemory } from './application/message-memory.ts';
@@ -35,6 +36,7 @@ import { SqliteSettingsRepository } from './infrastructure/database/sqlite-setti
 import { SqliteSignInRequestStore } from './infrastructure/database/sqlite-sign-in-request-store.ts';
 import { SqliteUsageLedger } from './infrastructure/database/sqlite-usage-ledger.ts';
 import { SqliteUserRepository } from './infrastructure/database/sqlite-user-repository.ts';
+import { OfficeFileMaker } from './infrastructure/files/office-file-maker.ts';
 import { InMemoryChangeFeed } from './infrastructure/in-memory-change-feed.ts';
 import { InMemoryLoginAttemptLimiter } from './infrastructure/in-memory-login-attempt-limiter.ts';
 import { createRoutes } from './presentation/http/routes.ts';
@@ -155,6 +157,7 @@ export async function createApp(
       clock,
       webSearch,
       new ContextTools(conversations, library, new MathjsCalculator(), pages, weather),
+      new MakingTools(library, roleModels, usage, new OfficeFileMaker()),
       changes,
     ),
     quotas,

@@ -1,14 +1,17 @@
 import type { FileKind } from '@open-agent/shared';
-import { FileImage, FileText, FileType, LoaderCircle, X } from 'lucide-react';
+import { FileImage, FileSpreadsheet, FileText, FileType, LoaderCircle, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils.ts';
 
-export const KIND_ICONS = { image: FileImage, pdf: FileText, word: FileType, text: FileText } satisfies Record<
-  FileKind,
-  unknown
->;
+export const KIND_ICONS = {
+  image: FileImage,
+  pdf: FileText,
+  word: FileType,
+  spreadsheet: FileSpreadsheet,
+  text: FileText,
+} satisfies Record<FileKind, unknown>;
 
 /**
  * An image shows itself; other files show their kind's icon and their name, or the icon alone in lists that already

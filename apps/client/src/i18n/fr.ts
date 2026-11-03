@@ -97,6 +97,23 @@ export const fr: Translation = {
     datePlusDays_other: '{{date}} + {{count}} jours = {{result}}',
     failed: '{{what}} : sans succès',
   },
+  made: {
+    making: {
+      generate_image: 'Création de l’image…',
+      create_spreadsheet: 'Création du fichier Excel…',
+      create_pdf: 'Création du PDF…',
+      create_chart: 'Création du graphique…',
+      create_qr_code: 'Création du QR code…',
+    },
+    failed: {
+      generate_image: 'L’image n’a pas pu être créée.',
+      create_spreadsheet: 'Le fichier Excel n’a pas pu être créé.',
+      create_pdf: 'Le PDF n’a pas pu être créé.',
+      create_chart: 'Le graphique n’a pas pu être créé.',
+      create_qr_code: 'Le QR code n’a pas pu être créé.',
+    },
+    inLibrary: 'Dans « Mes fichiers »',
+  },
   memory: {
     title: 'Mes souvenirs',
     description:
@@ -121,12 +138,14 @@ export const fr: Translation = {
   files: {
     title: 'Mes fichiers',
     description:
-      'Tout ce que vous m’avez envoyé. Vous pouvez réutiliser un fichier dans n’importe quelle conversation, avec le trombone.',
+      'Tout ce que vous m’avez envoyé, et les fichiers et images que j’ai créés pour vous. Vous pouvez réutiliser un fichier dans n’importe quelle conversation, avec le trombone.',
     empty: 'Aucun fichier pour l’instant. Envoyez-en un dans une conversation, ou ajoutez-le ici.',
     add: 'Ajouter des fichiers',
     adding: 'Ajout…',
     delete: 'Supprimer',
     deleteNamed: 'Supprimer {{name}}',
+    download: 'Télécharger',
+    open: 'Agrandir « {{name}} »',
     deleteTitle: 'Supprimer « {{name}} » ?',
     deleteDescription:
       'Le fichier est supprimé pour de bon. Les conversations qui l’utilisaient restent, mais je ne peux plus le lire.',
@@ -180,17 +199,25 @@ export const fr: Translation = {
     models: 'Modèles',
     modelsDescription:
       'Le modèle OpenRouter utilisé pour chaque type d’appel. Un changement compte dès le message suivant, pour tout le monde.',
-    role: { fast: 'Réponses courantes', reasoning: 'Réponses avec réflexion', background: 'Arrière-plan' },
+    role: {
+      fast: 'Réponses courantes',
+      reasoning: 'Réponses avec réflexion',
+      background: 'Arrière-plan',
+      image: 'Images',
+    },
     roleDescription: {
       fast: 'La plupart des réponses : discussion, rédaction, fichiers, recherche web, documents.',
       reasoning: 'Calculs, organisation, comparaisons : le modèle réfléchit avant de répondre.',
       background: 'Les appels invisibles : l’analyse de chaque message, la mémoire, les titres.',
+      image: 'Dessine les images demandées, à partir de mots ou des photos de la personne.',
     },
     requirement: {
       fast: 'Seuls les modèles qui lisent le texte et les images, utilisent des outils (recherche web, Canvas) et peuvent répondre sans réfléchir sont proposés.',
       reasoning:
         'Seuls les modèles qui lisent le texte et les images, utilisent des outils et savent réfléchir sont proposés.',
       background: 'Seuls les modèles qui répondent en JSON structuré et peuvent répondre sans réfléchir sont proposés.',
+      image:
+        'Seuls les modèles qui lisent le texte et les images et dessinent des images sont proposés. Le prix affiché est celui du texte : une image coûte en plus, environ 0,03 $ avec Gemini Flash Lite Image.',
     },
     default: 'Par défaut',
     changed: 'Modifié',

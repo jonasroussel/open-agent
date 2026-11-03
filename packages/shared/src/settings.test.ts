@@ -13,4 +13,9 @@ describe('missingCapabilities', () => {
     expect(missingCapabilities('background', ['text', 'structured_outputs', 'thinking_off'])).toEqual([]);
     expect(missingCapabilities('background', ['text', 'structured_outputs', 'reasoning'])).toEqual(['thinking_off']);
   });
+
+  test('the image model reads words and photos and draws', () => {
+    expect(missingCapabilities('image', ['text', 'image', 'image_output'])).toEqual([]);
+    expect(missingCapabilities('image', ['text', 'image', 'tools'])).toEqual(['image_output']);
+  });
 });

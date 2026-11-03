@@ -1,5 +1,5 @@
 /** What a paid call was for: the quota counts every one, the admin page splits them. */
-export type UsagePurpose = 'answer' | 'pre_pass' | 'memory' | 'title' | 'web_search';
+export type UsagePurpose = 'answer' | 'pre_pass' | 'memory' | 'title' | 'web_search' | 'image';
 
 export type UsageEvent = {
   userId: number;

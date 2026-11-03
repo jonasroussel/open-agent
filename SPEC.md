@@ -54,7 +54,7 @@ flowchart TD
   Q -- yes --> P["Pre-pass: 1 call, background model"]
   P --> C{Truly ambiguous?}
   C -- yes --> D["One short question (ask_user) with answers to tap;<br/>the answer resumes the message, analyzed again"]
-  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, canvas, lookups, ask_user"]
+  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, canvas, lookups, files and images, ask_user"]
   P -- feedback detected --> R["Memory reconciler<br/>ADD / UPDATE / DELETE / NOOP"]
   R --> T["Notice under the answer: 'Remembered: …' + Undo"]
   M --> U[Usage ledger]
@@ -170,11 +170,42 @@ user's own or public, and nothing writes.
 - **Limits:** each call sends the whole conversation to the model again, so each tool has a cap per answer (2
   conversation searches and reads, 1 file list, 2 file reads, 3 pages, 2 forecasts, 5 calculations, 3 date counts),
   and an answer has 6 steps, the last one without tools. A refusal (`ToolRefusal`: not found, someone else's, too
-  long, unknown place) reaches the model and stays with the call, so it reads it again later; any other failure is
-  hidden as "The answer failed.".
+  long, unknown place) reaches the model and stays with the call, so it reads it again later, as do the fields a call
+  missed (DeepSeek once called a tool with `{}`); any other failure is hidden as "The answer failed.".
 - **What the user sees:** one line per lookup in the answer ("A relu « Prénoms pour chat roux »", "Météo : Nantes…",
   "(3*19.99 + 2*7.45) * 0.85 = 63.6395"), pulsing while it runs; a conversation, file or page links to it.
 - **The pre-pass knows:** it never asks the user for a file, an earlier conversation, a page, the weather or the time.
+
+### Files and images the model makes
+
+Dedicated tools, not code the model writes and runs (`MakingTools`, `application/making-tools.ts`; the files behind
+the `FileMaker` port, `infrastructure/files/office-file-maker.ts`). Each file is saved into the user's library like an
+upload (so `read_file` reads it later, and it shows in "My files" on every device), and shows in the answer: an image
+centered, with "Download", opening over the app when tapped (`ImagePreview`), another file as a card that downloads it
+(a PDF opens in the browser's viewer). A failed
+try the model then made right is not shown.
+
+- **Images:** `generate_image` (an English prompt, `16:9` or `9:16`, up to 3 `sourceImageIds`) on the `image` role's
+  model, default `google/gemini-3.1-flash-lite-image`, through OpenRouter's chat API with `modalities: ["image",
+  "text"]` and `image_config.aspect_ratio`: its cost then comes like any answer's, as a usage event `image`, paid by
+  the user's own key when they gave one. To change an image, the model passes the ids of the user's pictures (attached
+  ones show theirs in `<file id="…">`) or of one drawn before. Measured: 4 to 6 s and 0.0336 $ an image (1,120 image
+  tokens); 768 × 1376 in portrait. A picture the model refuses to draw (safety) comes back as its words, told to the
+  model.
+- **Excel:** `create_spreadsheet` (sheets of columns with a format: text, number, integer, euro, percent, date; rows;
+  a text starting with "=" is a formula) with exceljs: a bold indigo header row, frozen, with filters. Excel computes
+  the formulas when it opens the file.
+- **PDF:** `create_pdf` from Markdown (titles, bold, lists, task boxes, tables, quotes, links) with pdfmake and its
+  Roboto, A4, page numbers past one page; `![caption](id)` shows a JPEG or PNG of the user's library. pdfmake reads no
+  URL and no file but its fonts. For a text to edit, the model still uses the canvas.
+- **Charts:** `create_chart` from a Vega-Lite spec with its data inline, drawn as a PNG (resvg, twice the size, Roboto,
+  indigo first). Safe to run on the server: a spec naming a `url` anywhere is refused (Vega would load it), the
+  expressions are evaluated by `vega-interpreter` (no generated code), pictures are stripped from the SVG before resvg
+  (which reads paths from the disk), and a chart over 2,000 pixels is refused.
+- **QR codes:** `create_qr_code` (a link, a text, a Wi-Fi network as `WIFI:T:WPA;S:…;P:…;;`, a vCard), 800 px PNG.
+- **Limits per answer:** 2 images, 2 workbooks, 2 PDFs, 3 charts, 2 QR codes.
+- **The pre-pass knows:** a drawing or a file is never unclear for want of a style, colors or a format; making one
+  never needs the web.
 
 ### Files and photos
 
@@ -190,14 +221,16 @@ user's own or public, and nothing writes.
   hundred tokens on DeepSeek.
 - **Word (.docx):** mammoth's HTML (keeps tables), the pictures it contains, and the headers and footers mammoth
   skips, read from the zip with `unzip`. EMF/WMF drawings cannot be shown; the model is told one is there.
-- **Text (.txt, .md, .csv):** as is. Not accepted: HEIC from browsers that cannot open it, .doc, Excel, PowerPoint,
-  HTML, SVG.
+- **Text (.txt, .md, .csv):** as is. **Excel (.xlsx):** each sheet as numbered rows, with formulas (and their result
+  when Excel saved one) and dates; a zip expanding past 100 MB is refused before exceljs reads it. Not accepted: HEIC
+  from browsers that cannot open it, .doc, .xls, PowerPoint, HTML, SVG.
 - **Reading happens once, at upload**, into the file's `content`; the pictures are stored next to the original. Each
-  answer turns the message's `file` parts into `<file name="…">` + text and pictures; the pre-analysis and the title
-  only see the names (`[Attached: …]`), so the pre-analysis never asks what a file contains.
+  answer turns the message's `file` parts into `<file id="…" name="…">` + text and pictures; the pre-analysis and the
+  title only see the names (`[Attached: …]`), so the pre-analysis never asks what a file contains.
 - **Personal library ("My files"):** every uploaded file stays, reusable in any conversation from the paperclip
-  ("From my files", with a search). The page is a grid of tiles, not a list: an image fills its tile, a PDF shows
-  its first page (`/api/files/:id/preview`), Word and text files show their icon and type. A tile opens the file;
+  ("From my files", with a search), with the files and images the model made. The page is a grid of tiles, not a
+  list: an image fills its tile, a PDF shows its first page (`/api/files/:id/preview`), Word, Excel and text files
+  show their icon and type. An image tile opens the image over the page (`ImagePreview`), any other tile the file;
   files are added with a button or dropped on the page, and deleted from the tile. A deleted file stays named in
   its conversations, and the model is told it is gone. No `@` mention, no RAG, no embeddings.
 - **Privacy:** a file opens only for its owner (`/api/files/:id`, `nosniff`); a message may only point to the
@@ -246,9 +279,9 @@ closing the panel forgets it.
   picker lists OpenRouter's models (kept an hour by the server, `:batch` variants left out), cheapest first, with
   their prices, and only those that can take the role: text and pictures in, tools, and thinking that can be turned
   off (OpenRouter's `reasoning.mandatory` unset) for `fast`; text and pictures in, tools and reasoning for
-  `reasoning`; text in, structured JSON and thinking that can be turned off for `background`
-  (`missingCapabilities`). The server checks it again on save. Thinking per role stays in the code (off, `medium`,
-  off).
+  `reasoning`; text in, structured JSON and thinking that can be turned off for `background`; text and pictures in and
+  images out for `image` (`missingCapabilities`). The server checks it again on save. Thinking per role stays in the
+  code (off, `medium`, off). The price shown is the text's: an image costs about 0.03 $ more.
 - **Prompts (Settings page):** the assistant, the analysis of each message and the memory prompts, edited whole, used
   from the next message, with "Bring back the original" (the text in `default-prompts.ts`). What depends on the
   conversation is always added by the code after the text: the date and the app's language, a missing web search,
@@ -343,6 +376,7 @@ Same layout and tooling as `inscript-carte`.
 | `FAST_MODEL` | Everyday answers until the admin page changes it; default `deepseek/deepseek-v4.1-flash-1017`, thinking off |
 | `REASONING_MODEL` | Answers that need thinking, same; thinking `medium` |
 | `BACKGROUND_MODEL` | Pre-pass, memory and titles, same; thinking off |
+| `IMAGE_MODEL` | Images the user asks for; default `google/gemini-3.1-flash-lite-image` |
 | `TAVILY_API_KEY` | First web search service (optional) |
 | `SEARXNG_URL` | Our SearXNG, e.g. `http://open-agent-searxng:8080` (default `http://localhost:8888` in development) |
 | `PLUNK_API_KEY` | Sign-in emails (unset in development: links and codes go to the server log) |

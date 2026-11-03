@@ -24,6 +24,7 @@ import { FileChip } from '@/files/file-chip.tsx';
 import { cn } from '@/lib/utils.ts';
 
 import { ContextToolLine, isContextToolPart } from './context-tool-line.tsx';
+import { isMadeFilePart, MadeFile } from './made-file.tsx';
 
 const Markdown = lazy(() => import('./markdown.tsx'));
 
@@ -164,6 +165,14 @@ export function AssistantMessage({
   const searches = message.parts.flatMap((part) => (part.type === 'tool-web_search' ? [part] : []));
   const lookups = message.parts.filter(isContextToolPart);
   const lookingUp = lookups.some((part) => part.state === 'input-streaming' || part.state === 'input-available');
+  // A failed try the model then made right is no news for the user.
+  const made = message.parts
+    .filter(isMadeFilePart)
+    .filter(
+      (part, index, all) =>
+        part.state !== 'output-error' ||
+        !all.slice(index + 1).some((later) => later.type === part.type && later.state === 'output-available'),
+    );
   const documents = message.parts.flatMap((part) =>
     part.type === 'tool-create_document' || part.type === 'tool-update_document' ? [part] : [],
   );
@@ -194,12 +203,20 @@ export function AssistantMessage({
           {documents.map((part) => (
             <DocumentCard key={part.toolCallId} part={part} onOpen={onOpenDocument} />
           ))}
+          {made.map((part) => (
+            <MadeFile key={part.toolCallId} part={part} />
+          ))}
           {text ? (
             <Suspense fallback={<p className='text-[15px] leading-relaxed whitespace-pre-wrap'>{text}</p>}>
               <Markdown text={text} streaming={streaming} />
             </Suspense>
           ) : (
-            !deepThinking && streaming && documents.length === 0 && !asking && !lookingUp && <Dots />
+            !deepThinking &&
+            streaming &&
+            documents.length === 0 &&
+            made.length === 0 &&
+            !asking &&
+            !lookingUp && <Dots />
           )}
         </div>
         {notices.map((notice) => (

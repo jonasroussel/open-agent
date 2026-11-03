@@ -9,6 +9,8 @@ export interface DocumentReader {
   readPdf(bytes: Uint8Array): Promise<PdfPage[]>;
   /** Throws `UnreadableDocument` for a broken file. */
   readWord(bytes: Uint8Array): Promise<WordPiece[]>;
+  /** Each sheet as a table of text. Throws `UnreadableDocument` for a broken file, `DocumentTooLong` for a huge one. */
+  readSpreadsheet(bytes: Uint8Array): Promise<string>;
 }
 
 export class UnreadableDocument extends Error {}

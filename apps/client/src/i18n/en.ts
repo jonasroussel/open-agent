@@ -83,6 +83,23 @@ export const en = {
     datePlusDays_other: '{{date}} + {{count}} days = {{result}}',
     failed: '{{what}}: did not work',
   },
+  made: {
+    making: {
+      generate_image: 'Drawing the image…',
+      create_spreadsheet: 'Making the Excel file…',
+      create_pdf: 'Making the PDF…',
+      create_chart: 'Drawing the chart…',
+      create_qr_code: 'Making the QR code…',
+    },
+    failed: {
+      generate_image: 'The image could not be drawn.',
+      create_spreadsheet: 'The Excel file could not be made.',
+      create_pdf: 'The PDF could not be made.',
+      create_chart: 'The chart could not be drawn.',
+      create_qr_code: 'The QR code could not be made.',
+    },
+    inLibrary: 'In “My files”',
+  },
   memory: {
     title: 'My memories',
     description:
@@ -105,12 +122,15 @@ export const en = {
   },
   files: {
     title: 'My files',
-    description: 'Everything you sent me. You can use a file again in any conversation, from the paperclip.',
+    description:
+      'Everything you sent me, and the files and images I made for you. You can use a file again in any conversation, from the paperclip.',
     empty: 'No files yet. Send one from a conversation, or add it here.',
     add: 'Add files',
     adding: 'Adding…',
     delete: 'Delete',
     deleteNamed: 'Delete {{name}}',
+    download: 'Download',
+    open: 'Enlarge “{{name}}”',
     deleteTitle: 'Delete “{{name}}”?',
     deleteDescription:
       'The file is deleted for good. The conversations that used it stay, but I can no longer read it there.',
@@ -164,16 +184,24 @@ export const en = {
     models: 'Models',
     modelsDescription:
       'Which OpenRouter model each kind of call uses. A change applies to the next message, for everyone.',
-    role: { fast: 'Everyday answers', reasoning: 'Answers that need thinking', background: 'Background' },
+    role: {
+      fast: 'Everyday answers',
+      reasoning: 'Answers that need thinking',
+      background: 'Background',
+      image: 'Images',
+    },
     roleDescription: {
       fast: 'Most answers: chatting, writing, files, web search, documents.',
       reasoning: 'Calculations, planning, comparisons: the model thinks before answering.',
       background: 'Hidden calls: the analysis of each message, the memory, the titles.',
+      image: 'Draws the images people ask for, from words or from their photos.',
     },
     requirement: {
       fast: 'Only models that read text and pictures, use tools (web search, canvas) and can answer without thinking are listed.',
       reasoning: 'Only models that read text and pictures, use tools and can think are listed.',
       background: 'Only models that answer in structured JSON and can answer without thinking are listed.',
+      image:
+        'Only models that read text and pictures and draw images are listed. The price shown is for text: each image costs more, about $0.03 with Gemini Flash Lite Image.',
     },
     default: 'Default',
     changed: 'Changed',

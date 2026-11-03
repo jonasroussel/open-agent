@@ -1,3 +1,4 @@
+import type { ChatRole } from '@open-agent/shared';
 import { createOpenRouter, type OpenRouterProvider } from '@openrouter/ai-sdk-provider';
 import type { ProviderMetadata } from 'ai';
 
@@ -13,7 +14,7 @@ import {
  * Thinking per role, tested on deepseek-v4.1-flash-1017 (2026-11-01): off, a title takes about 0.5 s with 0 reasoning
  * tokens; `medium` solved a train-crossing problem in 3.4 s for 0.0007 $, as well as `high` (5.8 s).
  */
-const REASONING: Record<ModelRole, { enabled: boolean; effort: 'none' | 'medium' }> = {
+const REASONING: Record<ChatRole, { enabled: boolean; effort: 'none' | 'medium' }> = {
   fast: { enabled: false, effort: 'none' },
   reasoning: { enabled: true, effort: 'medium' },
   background: { enabled: false, effort: 'none' },
@@ -35,7 +36,11 @@ export class OpenRouterModelCatalog implements ModelCatalog {
     // A provider is a few closures: making one per call for an own key costs nothing worth caching.
     const chosen = ownKey ? provider(ownKey) : this.#provider;
     if (!chosen) throw new ModelUnavailableError();
-    const model = chosen.chat(modelId, { usage: { include: true }, reasoning: REASONING[role] });
+    // The image model answers through the chat API too: its cost then comes as for any answer.
+    const model =
+      role === 'image'
+        ? chosen.chat(modelId, { usage: { include: true }, extraBody: { modalities: ['image', 'text'] } })
+        : chosen.chat(modelId, { usage: { include: true }, reasoning: REASONING[role] });
     return { model, modelId, paidByUser: ownKey !== null };
   }
 

@@ -2,6 +2,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import ExcelJS from 'exceljs';
 import mammoth from 'mammoth';
 
 import {
@@ -22,6 +23,8 @@ const MAX_OUTPUT_CHARACTERS = 2_000_000;
 const MAX_PDF_PAGES = 100;
 /** Pictures kept from a Word file, whose zip may hold far more than the uploaded 20 MB. */
 const MAX_WORD_IMAGE_BYTES = 20 * 1024 * 1024;
+/** A spreadsheet's zip, expanded: exceljs reads it all in memory, so a zip bomb is refused before. */
+const MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024;
 /** Word may embed EMF or WMF drawings, which the model cannot see. */
 const VISIBLE_IMAGE_TYPES: Record<string, true> = {
   'image/png': true,
@@ -29,7 +32,7 @@ const VISIBLE_IMAGE_TYPES: Record<string, true> = {
   'image/gif': true,
   'image/webp': true,
 };
-/** PDFs with Poppler (`pdftotext`, `pdftoppm`; `poppler-utils` in the image), Word files with mammoth. */
+/** PDFs with Poppler (`pdftotext`, `pdftoppm`; `poppler-utils` in the image), Word files with mammoth, Excel with exceljs. */
 export class PopplerMammothReader implements DocumentReader {
   async readPdf(bytes: Uint8Array): Promise<PdfPage[]> {
     const folder = await mkdtemp(join(tmpdir(), 'open-agent-pdf-'));
@@ -99,10 +102,59 @@ export class PopplerMammothReader implements DocumentReader {
     for (const text of margins.footers) pieces.push({ type: 'text', text: `Footer: ${text}` });
     return pieces;
   }
+
+  async readSpreadsheet(bytes: Uint8Array): Promise<string> {
+    const expanded = await expandedSize(bytes);
+    if (expanded > MAX_SPREADSHEET_BYTES) throw new DocumentTooLong('The spreadsheet is too big to read.');
+    const workbook = new ExcelJS.Workbook();
+    try {
+      await workbook.xlsx.load(bytes.slice().buffer);
+    } catch (error) {
+      throw new UnreadableDocument(String(error));
+    }
+    const sheets = workbook.worksheets.map((sheet) => {
+      const rows: string[] = [];
+      sheet.eachRow((row, number) => {
+        const cells = Array.from({ length: row.cellCount }, (_, index) => cellText(row.getCell(index + 1).value));
+        rows.push(`${number} | ${cells.join(' | ')}`);
+      });
+      return `Sheet "${sheet.name}":\n${rows.join('\n') || '(empty)'}`;
+    });
+    const text = sheets.join('\n\n');
+    if (text.length > MAX_OUTPUT_CHARACTERS) throw new DocumentTooLong('The spreadsheet holds too much text.');
+    return text;
+  }
 }
 
 function pushText(pieces: WordPiece[], text: string): void {
   if (text.trim()) pieces.push({ type: 'text', text });
+}
+
+/** What a cell shows, with its formula when it has one: a formula written by a program has no result until Excel opens it. */
+function cellText(value: ExcelJS.CellValue): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value !== 'object') return String(value);
+  if ('richText' in value) return value.richText.map((run) => run.text).join('');
+  if ('hyperlink' in value) return `${value.text} (${value.hyperlink})`;
+  if ('error' in value) return value.error;
+  const formula = 'formula' in value ? value.formula : value.sharedFormula;
+  const result = value.result === undefined ? '' : ` → ${cellText(value.result as ExcelJS.CellValue)}`;
+  return `=${formula}${result}`;
+}
+
+/** The size of a zip once expanded, from `unzip -l`'s last line, without expanding anything. */
+async function expandedSize(bytes: Uint8Array): Promise<number> {
+  const folder = await mkdtemp(join(tmpdir(), 'open-agent-xlsx-'));
+  try {
+    const xlsx = join(folder, 'sheet.xlsx');
+    await Bun.write(xlsx, bytes);
+    const total = /(\d+)\s+\d+ files?\s*$/.exec(await run(['unzip', '-l', xlsx]));
+    if (!total) throw new UnreadableDocument('unzip did not give the size.');
+    return Number(total[1]);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 }
 
 /**

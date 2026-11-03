@@ -1,5 +1,5 @@
-/** What a file is for the model: an image it sees, or text read out of it. */
-export type FileKind = 'image' | 'pdf' | 'word' | 'text';
+/** What a file is for the model: an image it sees, or text read out of it (a spreadsheet's sheets as tables). */
+export type FileKind = 'image' | 'pdf' | 'word' | 'spreadsheet' | 'text';
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_FILES_PER_MESSAGE = 5;
@@ -14,6 +14,10 @@ const FILE_TYPES: Record<FileKind, { mediaTypes: readonly string[]; extensions: 
   word: {
     mediaTypes: ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
     extensions: ['docx'],
+  },
+  spreadsheet: {
+    mediaTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    extensions: ['xlsx'],
   },
   text: { mediaTypes: ['text/plain', 'text/markdown', 'text/csv'], extensions: ['txt', 'md', 'csv'] },
 };

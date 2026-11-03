@@ -9,7 +9,7 @@ const CACHE_MS = 60 * 60 * 1000;
 type OpenRouterModel = {
   id: string;
   name: string;
-  architecture: { input_modalities: string[] };
+  architecture: { input_modalities: string[]; output_modalities?: string[] };
   supported_parameters?: string[];
   reasoning?: { mandatory?: boolean };
   pricing: { prompt: string; completion: string };
@@ -40,6 +40,7 @@ function toModelInfo(model: OpenRouterModel): ModelInfo {
   if (parameters.includes('reasoning')) capabilities.push('reasoning');
   if (!model.reasoning?.mandatory) capabilities.push('thinking_off');
   if (parameters.includes('structured_outputs')) capabilities.push('structured_outputs');
+  if (model.architecture.output_modalities?.includes('image')) capabilities.push('image_output');
   return {
     id: model.id,
     name: model.name,

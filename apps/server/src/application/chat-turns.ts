@@ -8,6 +8,7 @@ import {
 } from '@open-agent/shared';
 import {
   APICallError,
+  InvalidToolInputError,
   convertToModelMessages,
   createUIMessageStream,
   generateText,
@@ -41,6 +42,7 @@ import type { User } from '../domain/user.ts';
 import type { Artifacts } from './artifacts.ts';
 import type { ContextTools } from './context-tools.ts';
 import type { Library } from './library.ts';
+import type { MakingTools } from './making-tools.ts';
 import type { MemoryReconciler } from './memory-reconciler.ts';
 import type { Memory } from './memory.ts';
 import type { Models } from './models.ts';
@@ -70,13 +72,16 @@ const CONVERSATION_ID = /^[\w-]{8,64}$/;
 
 /**
  * Lookups (searches, a page, a file, a calculation), a document, then the answer: the last step may not use tools. Each
- * step sends the whole conversation again, so each tool also has its own cap (`CONTEXT_TOOL_CAPS`).
+ * step sends the whole conversation again, so each tool also has its own cap (`CONTEXT_TOOL_CAPS`, `MAKING_TOOL_CAPS`).
  */
 const MAX_STEPS = 6;
 /** Past two searches the model answers with what it has: a third one costs without helping. */
 const MAX_SEARCHES = 2;
 /** What the model reads of each page found: enough to answer, few tokens. */
 const RESULT_CHARACTERS = 1500;
+/** A refused tool call's message names the fields it missed; the value it quotes may be long. */
+const MAX_INVALID_INPUT_CHARACTERS = 800;
+const INVALID_INPUT = 'AI_InvalidToolInputError: ';
 
 /** OpenRouter's answers to a key it does not know (401), without credit (402) or disabled (403). */
 const KEY_REFUSED: Record<number, true> = { 401: true, 402: true, 403: true };
@@ -105,6 +110,7 @@ export class ChatTurns {
   readonly #clock: Clock;
   readonly #webSearch: WebSearch | null;
   readonly #contextTools: ContextTools;
+  readonly #makingTools: MakingTools;
   readonly #changes: ChangeFeed;
 
   constructor(
@@ -121,6 +127,7 @@ export class ChatTurns {
     clock: Clock,
     webSearch: WebSearch | null,
     contextTools: ContextTools,
+    makingTools: MakingTools,
     changes: ChangeFeed,
   ) {
     this.#conversations = conversations;
@@ -136,6 +143,7 @@ export class ChatTurns {
     this.#clock = clock;
     this.#webSearch = webSearch;
     this.#contextTools = contextTools;
+    this.#makingTools = makingTools;
     this.#changes = changes;
   }
 
@@ -217,6 +225,7 @@ export class ChatTurns {
               ? { web_search: this.#searchTool(user, conversation.id, this.#webSearch, abortSignal, searches) }
               : {}),
             ...this.#contextTools.for(user, conversation.id, abortSignal),
+            ...this.#makingTools.for(user, conversation.id, abortSignal),
             ask_user: askTool(resumed !== null && hasAsked(resumed)),
           };
           const withoutSearch = Object.keys(tools).filter((name) => name !== 'web_search') as (keyof typeof tools)[];
@@ -307,11 +316,14 @@ export class ChatTurns {
   }
 
   /**
-   * The text of a failure, kept with the answer or the tool call. A tool's refusal is kept as it is: the model reads it
-   * again at the next messages. A refused own key gets its own, so the person can fix it.
+   * The text of a failure, kept with the answer or the tool call. A tool's refusal is kept as it is, as are the fields a
+   * call missed: the model reads them, and again at the next messages. A refused own key gets its own, so the person can
+   * fix it.
    */
   #failure(user: User, error: unknown): string {
     if (error instanceof ToolRefusal) return error.message;
+    const invalidInput = invalidInputOf(error);
+    if (invalidInput) return invalidInput.slice(0, MAX_INVALID_INPUT_CHARACTERS);
     console.error('Answer failed:', error);
     return user.ownKey && APICallError.isInstance(error) && KEY_REFUSED[error.statusCode ?? 0]
       ? OWN_KEY_REFUSED
@@ -575,4 +587,14 @@ function instructions(
         ]
       : []),
   ].join('\n');
+}
+
+/**
+ * A call its schema refuses reaches `#failure` twice: as the error for the call, then as its text for the call's result
+ * (`AI_InvalidToolInputError: Invalid input for tool …`).
+ */
+function invalidInputOf(error: unknown): string | null {
+  if (InvalidToolInputError.isInstance(error)) return error.message;
+  if (typeof error === 'string' && error.startsWith(INVALID_INPUT)) return error.slice(INVALID_INPUT.length);
+  return null;
 }

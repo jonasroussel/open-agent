@@ -26,6 +26,8 @@ import type {
   ListConversationsResponse,
   ListMemoryRulesResponse,
   SessionResponse,
+  ModelRole,
+  MadeFileOutput,
 } from '@open-agent/shared';
 import { APICallError, simulateReadableStream, type UIMessage } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
@@ -83,7 +85,16 @@ const plainAnalysis = (overrides: Partial<Analysis> = {}): Analysis => ({
 let analysis: Analysis | null;
 /** What the memory reconciler answers in the current test. */
 let reconciliation: { operation: string; ruleId: number | null; text: string | null };
-let models: { fast: MockLanguageModelV4; reasoning: MockLanguageModelV4; background: MockLanguageModelV4 };
+let models: Record<ModelRole, MockLanguageModelV4>;
+/** The image model draws `DRAWN`; `false`: it only answers words, as when it declines. */
+let imageDraws: boolean;
+/** One white pixel: a real PNG, which a PDF can show. */
+const DRAWN = new Uint8Array(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+);
 /** The searches the model made in the current test; `searchDown`: the search service fails. */
 let searches: WebSearchRequest[];
 let searchDown: boolean;
@@ -179,6 +190,17 @@ function fakeModels(): ModelCatalog {
         };
       },
     }),
+    image: new MockLanguageModelV4({
+      doGenerate: async () => ({
+        content: imageDraws
+          ? [{ type: 'file', mediaType: 'image/png', data: { type: 'data', data: DRAWN } }]
+          : [{ type: 'text', text: 'I cannot draw real people.' }],
+        finishReason: { unified: 'stop', raw: undefined },
+        usage,
+        warnings: [],
+        providerMetadata: { openrouter: { usage: { cost: 0.0336 } } },
+      }),
+    }),
   };
   const openRouter = new OpenRouterModelCatalog(null);
   return {
@@ -210,7 +232,7 @@ function setKey(cookie: string, key: string) {
   return call('/api/own-key', { method: 'PUT', body: { key }, cookie });
 }
 
-/** The models OpenRouter offers in the tests: those of the environment, a newer one, and one blind to pictures. */
+/** The models OpenRouter offers in the tests: those of the environment, a newer one, one blind to pictures, one that draws. */
 const MODEL_LIST: ModelInfo[] = [
   ...(['fast-model', 'reasoning-model', 'background-model'] as const).map((id) => ({
     id,
@@ -233,6 +255,13 @@ const MODEL_LIST: ModelInfo[] = [
     inputPrice: 0.05,
     outputPrice: 0.2,
   },
+  {
+    id: 'image-model',
+    name: 'Draws',
+    capabilities: ['text', 'image', 'image_output'],
+    inputPrice: 0.25,
+    outputPrice: 1.5,
+  },
 ];
 
 /** What the fake document reader finds in the next PDF; `null`: the PDF is broken. */
@@ -252,6 +281,7 @@ beforeEach(async () => {
   sent = [];
   mailerDown = false;
   pdfPages = [];
+  imageDraws = true;
   filesFolder = mkdtempSync(join(tmpdir(), 'open-agent-files-'));
   database = createDatabase(':memory:');
   await database.migrate.latest();
@@ -291,6 +321,7 @@ beforeEach(async () => {
             return pdfPages;
           },
           readWord: async () => [],
+          readSpreadsheet: async () => 'Sheet "Budget":\n1 | Poste | Montant\n2 | Loyer | 750\n3 | Total | =SUM(B2:B2)',
         },
         pages: {
           read: async (url) => {
@@ -311,7 +342,12 @@ beforeEach(async () => {
         adminEmail: ADMIN,
         devSignInCode: DEV_CODE,
         defaultMonthlyQuotaUsd: DEFAULT_QUOTA,
-        defaultModels: { fast: 'fast-model', reasoning: 'reasoning-model', background: 'background-model' },
+        defaultModels: {
+          fast: 'fast-model',
+          reasoning: 'reasoning-model',
+          background: 'background-model',
+          image: 'image-model',
+        },
         trustProxy: false,
       },
     ),
@@ -792,20 +828,20 @@ describe('search', () => {
   });
 });
 
-/** What each tool call of the answer gave: its output, or the error the model got. */
+/** What each tool call of the answer gave: its output, or the error the model got. A call with an invalid input is saved as a `dynamic-tool`. */
 async function toolResults(cookie: string, conversationId = CONVERSATION) {
   const { messages } = await open(cookie, conversationId);
-  return messages.at(-1)!.parts.flatMap((part) =>
-    part.type.startsWith('tool-') && 'state' in part
-      ? [
-          {
-            tool: part.type.slice(5),
-            output: 'output' in part ? part.output : undefined,
-            error: 'errorText' in part ? part.errorText : undefined,
-          },
-        ]
-      : [],
-  );
+  return messages.at(-1)!.parts.flatMap((part) => {
+    if (part.type === 'dynamic-tool') return [{ tool: part.toolName, output: undefined, error: part.errorText }];
+    if (!part.type.startsWith('tool-') || !('state' in part)) return [];
+    return [
+      {
+        tool: part.type.slice(5),
+        output: 'output' in part ? part.output : undefined,
+        error: 'errorText' in part ? part.errorText : undefined,
+      },
+    ];
+  });
 }
 
 describe('context tools', () => {
@@ -892,6 +928,145 @@ describe('context tools', () => {
       'The result is not a number (a division by zero?).',
     ]);
     expect(JSON.stringify(await open(adminCookie, CONVERSATION))).not.toContain('Secret');
+  });
+});
+
+describe('making tools', () => {
+  test("an image drawn from the user's attached photo lands in their library, in the shape asked, and is billed", async () => {
+    const cookie = await signIn(ADMIN);
+    const photo = (await (await upload(cookie, 'chat.png', 'image/png', DRAWN)).json()) as UploadFileResponse;
+    scriptedCalls = [
+      {
+        toolName: 'generate_image',
+        input: {
+          prompt: 'The same cat with a red Christmas hat',
+          aspect: '9:16',
+          fileName: 'Chat de Noël',
+          sourceImageIds: [photo.file.id],
+        },
+      },
+    ];
+    const message: ChatMessage = {
+      id: 'm1',
+      role: 'user',
+      parts: [
+        { type: 'file', mediaType: 'image/png', filename: 'chat.png', url: photo.file.url },
+        { type: 'text', text: 'Mets-lui un bonnet de Noël.' },
+      ],
+    };
+    await chat(cookie, CONVERSATION, [message]);
+
+    // The model sees the id of what is attached, to draw from it.
+    expect(JSON.stringify(models.fast.doStreamCalls[0]!.prompt)).toContain(`<file id=\\"${photo.file.id}\\"`);
+    const [made] = await toolResults(cookie);
+    const output = made!.output as MadeFileOutput;
+    expect(output).toMatchObject({ name: 'Chat de Noël.png', kind: 'image', mediaType: 'image/png' });
+    expect(new Uint8Array(await (await call(`/api/files/${output.id}`, { cookie })).arrayBuffer())).toEqual(DRAWN);
+
+    const [drawing] = models.image.doGenerateCalls;
+    expect(drawing!.providerOptions).toEqual({ openrouter: { image_config: { aspect_ratio: '9:16' } } });
+    const content = drawing!.prompt.at(-1)!.content;
+    expect(content).toContainEqual(expect.objectContaining({ type: 'file', mediaType: 'image/png' }));
+    expect(content).toContainEqual({ type: 'text', text: 'The same cat with a red Christmas hat' });
+    const billed = await database('usage_events').where({ purpose: 'image' }).select('model', 'cost_usd');
+    expect(billed).toEqual([{ model: 'image-model', cost_usd: 0.0336 }]);
+  });
+
+  test('Excel, PDF, chart and QR code files are made on the server, kept in the library, and readable later', async () => {
+    const cookie = await signIn(ADMIN);
+    const photo = (await (await upload(cookie, 'logo.png', 'image/png', DRAWN)).json()) as UploadFileResponse;
+    pdfPages = [{ text: 'Attestation', image: DRAWN }];
+    scriptedCalls = [
+      {
+        toolName: 'create_spreadsheet',
+        input: {
+          fileName: 'Budget.xlsx',
+          sheets: [
+            {
+              name: 'Budget',
+              columns: [{ header: 'Poste' }, { header: 'Montant', format: 'euro' }],
+              rows: [
+                ['Loyer', 750],
+                ['Total', '=SUM(B2:B2)'],
+              ],
+            },
+          ],
+        },
+      },
+      {
+        toolName: 'create_pdf',
+        input: { fileName: 'Attestation', markdown: `# Attestation\n\n![Logo](${photo.file.id})` },
+      },
+      {
+        toolName: 'create_chart',
+        input: {
+          fileName: 'Dépenses',
+          spec: {
+            data: { values: [{ poste: 'Loyer', montant: 750 }] },
+            mark: 'bar',
+            encoding: { x: { field: 'poste', type: 'nominal' }, y: { field: 'montant', type: 'quantitative' } },
+          },
+        },
+      },
+      { toolName: 'create_qr_code', input: { fileName: 'Wi-Fi', text: 'WIFI:T:WPA;S:Maison;P:secret;;' } },
+    ];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Fais-moi tout ça.')]);
+
+    const outputs = (await toolResults(cookie)).map(({ output }) => output as MadeFileOutput);
+    expect(outputs.map(({ name, kind }) => [name, kind])).toEqual([
+      ['Budget.xlsx', 'spreadsheet'],
+      ['Attestation.pdf', 'pdf'],
+      ['Dépenses.png', 'image'],
+      ['Wi-Fi.png', 'image'],
+    ]);
+    const starts = await Promise.all(
+      outputs.map(async ({ id }) => {
+        const bytes = new Uint8Array(await (await call(`/api/files/${id}`, { cookie })).arrayBuffer());
+        return new TextDecoder().decode(bytes.slice(0, 4));
+      }),
+    );
+    expect(starts).toEqual(['PK\u0003\u0004', '%PDF', '\uFFFDPNG', '\uFFFDPNG']);
+
+    scriptedCalls = [{ toolName: 'read_file', input: { id: outputs[0]!.id } }];
+    await chat(cookie, 'second-conversation-id', [userMessage('m1', 'Relis le budget.')]);
+    const [read] = await toolResults(cookie, 'second-conversation-id');
+    expect(read!.output).toMatchObject({ name: 'Budget.xlsx', text: expect.stringContaining('=SUM(B2:B2)') });
+  });
+
+  test('what cannot be made reaches the model to say why, and an answer draws two images at most', async () => {
+    const cookie = await signIn(ADMIN);
+    const notes = (await (await upload(cookie, 'notes.txt', 'text/plain', 'Notes.')).json()) as UploadFileResponse;
+    const draw = { prompt: 'A lighthouse', aspect: '16:9', fileName: 'Phare' };
+    scriptedCalls = [
+      { toolName: 'generate_image', input: { ...draw, sourceImageIds: [notes.file.id] } },
+      { toolName: 'create_pdf', input: { fileName: 'Lettre', markdown: '![Logo](unknown-id)' } },
+      {
+        toolName: 'create_chart',
+        input: { fileName: 'Courbe', spec: { data: { url: 'http://169.254.169.254/latest' }, mark: 'line' } },
+      },
+      // As DeepSeek did once: a call without its fields.
+      { toolName: 'create_spreadsheet', input: {} },
+    ];
+    imageDraws = false;
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Essaie.')]);
+    expect((await toolResults(cookie)).map(({ error }) => error)).toEqual([
+      '"notes.txt" is not a JPEG, PNG or WebP picture: the image model cannot use it.',
+      'No image with the id "unknown-id" in the user\'s library.',
+      'A chart takes its data inline (data.values), never from a URL.',
+      expect.stringContaining('Invalid input for tool create_spreadsheet'),
+    ]);
+
+    scriptedCalls = [
+      { toolName: 'generate_image', input: draw },
+      { toolName: 'generate_image', input: draw },
+      { toolName: 'generate_image', input: draw },
+    ];
+    await chat(cookie, 'second-conversation-id', [userMessage('m1', 'Trois phares.')]);
+    expect((await toolResults(cookie, 'second-conversation-id')).map(({ error }) => error)).toEqual([
+      'The image model drew nothing, saying: I cannot draw real people.',
+      'The image model drew nothing, saying: I cannot draw real people.',
+      'No more generate_image in this answer: tell the user to ask again for more.',
+    ]);
   });
 });
 

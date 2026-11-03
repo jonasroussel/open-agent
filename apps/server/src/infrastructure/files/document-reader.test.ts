@@ -3,6 +3,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import ExcelJS from 'exceljs';
+
 import { UnreadableDocument } from '../../application/ports/document-reader.ts';
 import { PopplerMammothReader } from './document-reader.ts';
 
@@ -74,5 +76,26 @@ describe('PopplerMammothReader.readWord', () => {
     expect(texts[0]).toBe('Header: Dossier 4471 & suite');
     expect(texts.join('\n')).toContain('<td><p>M. Garnier</p></td>');
     expect(texts.at(-1)).toBe('Footer: Confidentiel');
+  });
+});
+
+describe('PopplerMammothReader.readSpreadsheet', () => {
+  test('gives each sheet as numbered rows, with formulas, their results when saved by Excel, and dates', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const budget = workbook.addWorksheet('Budget');
+    budget.addRow(['Poste', 'Montant', 'Payé le']);
+    budget.addRow(['Loyer', 750, new Date('2026-11-05T00:00:00Z')]);
+    budget.addRow([{ richText: [{ text: 'To' }, { text: 'tal' }] }, { formula: 'SUM(B2:B2)', result: 750 }]);
+    workbook.addWorksheet('Notes').addRow(['À relire']);
+    const bytes = new Uint8Array(await workbook.xlsx.writeBuffer());
+
+    expect(await new PopplerMammothReader().readSpreadsheet(bytes)).toBe(
+      'Sheet "Budget":\n1 | Poste | Montant | Payé le\n2 | Loyer | 750 | 2026-11-05\n3 | Total | =SUM(B2:B2) → 750\n\nSheet "Notes":\n1 | À relire',
+    );
+  });
+
+  test('refuses what is not a spreadsheet', async () => {
+    const reading = new PopplerMammothReader().readSpreadsheet(new TextEncoder().encode('not a zip'));
+    await expect(reading).rejects.toBeInstanceOf(UnreadableDocument);
   });
 });

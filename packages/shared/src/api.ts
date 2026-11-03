@@ -288,6 +288,38 @@ export type CalculateOutput = { expression: string; result: string };
 export type DaysBetweenOutput = { from: string; to: string; days: number; fromWeekday: string; toWeekday: string };
 export type DatePlusDaysOutput = { date: string; days: number; result: string; weekday: string };
 
+/** A file the assistant made, saved in the user's library: the answer shows it, with a download. */
+export type MadeFileOutput = { id: string; name: string; kind: FileKind; mediaType: string; size: number };
+
+/** Landscape or portrait: the image model draws these two shapes. */
+export type ImageAspect = '16:9' | '9:16';
+export const IMAGE_ASPECTS: readonly ImageAspect[] = ['16:9', '9:16'];
+/** `sourceImageIds`: images of the user's library (attached ones show their id) to start from or to change. */
+export type GenerateImageInput = { prompt: string; aspect: ImageAspect; fileName: string; sourceImageIds?: string[] };
+
+export type SpreadsheetFormat = 'text' | 'number' | 'integer' | 'euro' | 'percent' | 'date';
+export const SPREADSHEET_FORMATS: readonly SpreadsheetFormat[] = [
+  'text',
+  'number',
+  'integer',
+  'euro',
+  'percent',
+  'date',
+];
+export type SpreadsheetCell = string | number | boolean | null;
+/** A cell text starting with "=" is a formula; a `date` column takes "YYYY-MM-DD". */
+export type SpreadsheetSheet = {
+  name: string;
+  columns: { header: string; format?: SpreadsheetFormat; width?: number }[];
+  rows: SpreadsheetCell[][];
+};
+export type CreateSpreadsheetInput = { fileName: string; sheets: SpreadsheetSheet[] };
+/** `markdown` may show images of the user's library as `![caption](file id)`. */
+export type CreatePdfInput = { fileName: string; markdown: string; landscape?: boolean };
+/** `spec`: a Vega-Lite chart with its data inline. */
+export type CreateChartInput = { fileName: string; spec: Record<string, unknown> };
+export type CreateQrCodeInput = { fileName: string; text: string };
+
 export type ChatTools = {
   web_search: { input: WebSearchInput; output: WebSearchOutput };
   create_document: { input: CreateDocumentInput; output: DocumentToolOutput };
@@ -302,6 +334,11 @@ export type ChatTools = {
   calculate: { input: { expression: string }; output: CalculateOutput };
   days_between: { input: { from: string; to: string }; output: DaysBetweenOutput };
   date_plus_days: { input: { date: string; days: number }; output: DatePlusDaysOutput };
+  generate_image: { input: GenerateImageInput; output: MadeFileOutput };
+  create_spreadsheet: { input: CreateSpreadsheetInput; output: MadeFileOutput };
+  create_pdf: { input: CreatePdfInput; output: MadeFileOutput };
+  create_chart: { input: CreateChartInput; output: MadeFileOutput };
+  create_qr_code: { input: CreateQrCodeInput; output: MadeFileOutput };
 };
 
 export type ChatMessage = UIMessage<ChatMessageMetadata, ChatDataParts, ChatTools>;

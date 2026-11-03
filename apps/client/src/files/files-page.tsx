@@ -22,6 +22,7 @@ import { usePageTitle } from '@/shell/page-title.tsx';
 
 import { KIND_ICONS } from './file-chip.tsx';
 import { fileDetails } from './file-details.ts';
+import { ImagePreview, type PreviewedImage } from './image-preview.tsx';
 import { libraryFilesQuery, uploadFile } from './library.ts';
 
 /** "My files": everything the user sent, as tiles to open again, add (button or drop), or delete. */
@@ -35,6 +36,7 @@ export function FilesPage() {
   const [error, setError] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<LibraryFileDto | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [previewed, setPreviewed] = useState<PreviewedImage | null>(null);
 
   async function add(list: File[]) {
     setUploading(true);
@@ -103,7 +105,11 @@ export function FilesPage() {
         <ul className='grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4'>
           {files.data.map((file) => (
             <li key={file.id} className='group relative'>
-              <FileTile file={file} details={fileDetails(file, i18n.language)} />
+              <FileTile
+                file={file}
+                details={fileDetails(file, i18n.language)}
+                onPreview={() => setPreviewed({ url: file.url, name: file.name })}
+              />
               <Button
                 variant='secondary'
                 size='icon'
@@ -118,6 +124,8 @@ export function FilesPage() {
           ))}
         </ul>
       )}
+
+      <ImagePreview image={previewed} onClose={() => setPreviewed(null)} />
 
       <AlertDialog open={toDelete !== null} onOpenChange={(open) => !open && setToDelete(null)}>
         <AlertDialogContent>
@@ -137,18 +145,18 @@ export function FilesPage() {
   );
 }
 
-/** An image fills its tile, a PDF shows its first page; Word and text files show their icon and their type. */
-function FileTile({ file, details }: { file: LibraryFileDto; details: string }) {
+/**
+ * An image fills its tile and opens over the page; a PDF shows its first page; Word, Excel and text files show their
+ * icon and their type. Files other than images open in a new tab.
+ */
+function FileTile({ file, details, onPreview }: { file: LibraryFileDto; details: string; onPreview: () => void }) {
   const Icon = KIND_ICONS[file.kind];
   const extension = file.name.includes('.') ? file.name.split('.').pop()! : file.kind;
+  const className =
+    'bg-card hover:border-ring/50 block w-full overflow-hidden rounded-xl border text-left transition-shadow hover:shadow-md';
 
-  return (
-    <a
-      href={file.url}
-      target='_blank'
-      rel='noreferrer'
-      className='bg-card hover:border-ring/50 block overflow-hidden rounded-xl border transition-shadow hover:shadow-md'
-    >
+  const body = (
+    <>
       <div className='bg-muted relative aspect-[4/3] overflow-hidden border-b'>
         {file.previewUrl ? (
           <img
@@ -175,6 +183,19 @@ function FileTile({ file, details }: { file: LibraryFileDto; details: string }) 
         </span>
         <span className='text-muted-foreground text-xs'>{details}</span>
       </div>
+    </>
+  );
+
+  if (file.kind === 'image') {
+    return (
+      <button type='button' onClick={onPreview} className={cn(className, 'cursor-zoom-in')}>
+        {body}
+      </button>
+    );
+  }
+  return (
+    <a href={file.url} target='_blank' rel='noreferrer' className={className}>
+      {body}
     </a>
   );
 }
