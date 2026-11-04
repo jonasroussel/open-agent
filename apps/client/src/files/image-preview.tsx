@@ -1,8 +1,9 @@
-import { Download } from 'lucide-react';
+import { Download, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
+import { Button } from '@/components/ui/button.tsx';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 
 export type PreviewedImage = { url: string; name: string };
 
@@ -16,7 +17,9 @@ export function ImagePreview({ image, onClose }: { image: PreviewedImage | null;
     <Dialog open={image !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         aria-describedby={undefined}
-        className='w-auto max-w-[calc(100vw-2rem)] gap-3 p-3 sm:max-w-[calc(100vw-4rem)]'
+        showCloseButton={false}
+        // `w-max`: centered with `left: 50%`, an `auto` width only gets the half of the screen right of the center.
+        className='w-max max-w-[calc(100vw-1rem)] gap-3 p-2 sm:max-w-[calc(100vw-4rem)] sm:p-3'
       >
         {shown && (
           <>
@@ -25,6 +28,17 @@ export function ImagePreview({ image, onClose }: { image: PreviewedImage | null;
               alt={shown.name}
               className='max-h-[calc(100dvh-8rem)] max-w-full justify-self-center rounded-lg object-contain'
             />
+            {/* On the image: its own background keeps it readable over a light picture. */}
+            <DialogClose asChild>
+              <Button
+                variant='secondary'
+                size='icon-sm'
+                aria-label={t('files.closePreview')}
+                className='bg-background/80 hover:bg-background absolute top-4 right-4 rounded-full shadow-sm backdrop-blur-sm sm:top-5 sm:right-5'
+              >
+                <X />
+              </Button>
+            </DialogClose>
             <div className='text-muted-foreground flex min-w-0 items-center justify-between gap-3 pr-1 pl-1 text-xs'>
               <DialogTitle className='truncate text-xs font-normal'>{shown.name}</DialogTitle>
               <a

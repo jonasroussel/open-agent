@@ -131,6 +131,7 @@ export const en = {
     deleteNamed: 'Delete {{name}}',
     download: 'Download',
     open: 'Enlarge “{{name}}”',
+    closePreview: 'Close the image',
     deleteTitle: 'Delete “{{name}}”?',
     deleteDescription:
       'The file is deleted for good. The conversations that used it stay, but I can no longer read it there.',

@@ -146,6 +146,7 @@ export const fr: Translation = {
     deleteNamed: 'Supprimer {{name}}',
     download: 'Télécharger',
     open: 'Agrandir « {{name}} »',
+    closePreview: 'Fermer l’image',
     deleteTitle: 'Supprimer « {{name}} » ?',
     deleteDescription:
       'Le fichier est supprimé pour de bon. Les conversations qui l’utilisaient restent, mais je ne peux plus le lire.',
