@@ -4,6 +4,7 @@ import type { Knex } from 'knex';
 import { Artifacts } from './application/artifacts.ts';
 import { Authentication } from './application/authentication.ts';
 import { ChatTurns } from './application/chat-turns.ts';
+import { Commands } from './application/commands.ts';
 import { ContextTools } from './application/context-tools.ts';
 import { Conversations } from './application/conversations.ts';
 import { Library } from './application/library.ts';
@@ -28,6 +29,7 @@ import { UsageRecorder } from './application/usage-recorder.ts';
 import { UserAccess } from './application/user-access.ts';
 import { MathjsCalculator } from './infrastructure/context/mathjs-calculator.ts';
 import { SqliteArtifactRepository } from './infrastructure/database/sqlite-artifact-repository.ts';
+import { SqliteCommandRepository } from './infrastructure/database/sqlite-command-repository.ts';
 import { SqliteConversationRepository } from './infrastructure/database/sqlite-conversation-repository.ts';
 import { SqliteLibraryRepository } from './infrastructure/database/sqlite-library-repository.ts';
 import { SqliteMemoryRepository } from './infrastructure/database/sqlite-memory-repository.ts';
@@ -115,6 +117,7 @@ export async function createApp(
   const memory = new Memory(new SqliteMemoryRepository(database), conversations, clock, changes);
   const library = new Library(new SqliteLibraryRepository(database), fileStore, documents, clock, changes);
   const artifacts = new Artifacts(new SqliteArtifactRepository(database), clock, changes);
+  const commands = new Commands(new SqliteCommandRepository(database), clock, changes);
   const settings = await Settings.load(
     new SqliteSettingsRepository(database),
     modelDirectory,
@@ -143,6 +146,7 @@ export async function createApp(
     conversations: new Conversations(conversations, changes),
     memory,
     messageMemory: new MessageMemory(conversations, memory, reconciler, quotas),
+    commands,
     chatTurns: new ChatTurns(
       conversations,
       new PreAnalysis(roleModels, usage, settings),
@@ -158,6 +162,7 @@ export async function createApp(
       webSearch,
       new ContextTools(conversations, library, new MathjsCalculator(), pages, weather),
       new MakingTools(library, roleModels, usage, new OfficeFileMaker()),
+      commands,
       changes,
     ),
     quotas,

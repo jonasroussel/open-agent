@@ -238,6 +238,28 @@ try the model then made right is not shown.
 - **Cost:** in the quota like the rest. Measured: 0.0001 to 0.0007 $ per answer with a 2-page PDF and a photo
   (about 3,200 tokens). A big file costs at every answer of its conversation.
 
+### Commands
+
+A user's usual requests, run again without retyping them (`Commands`, `application/commands.ts`).
+
+- **Making one:** asked in a conversation ("Fais-moi une commande qui corrige les fautes de mes textes"): the model
+  writes the prompt as standing instructions for any text and picks a short name, with `save_command`; the answer
+  shows "Commande /corriger créée", linked to the page. Asked again with the same name, it rewrites it. The model knows
+  the user's command names. Or by hand in "My commands" (`/commands`): name, prompt, how often it ran; edit, delete.
+- **Names:** what is typed after `/`: lowercase letters (accents too), digits and dashes, from a letter, 24 at most,
+  unique per user (`commandNameOf`, shared by the client and the server). 50 commands at most, 4,000 characters of
+  prompt.
+- **Running one:** `/cor` at the start of the field lists the commands it may start (arrows, Enter or Tab, or a tap),
+  `/corriger ` typed in full picks it too, or a tap on its button in the field, between the paperclip and the send
+  button (most used first, scrolled sideways when they do not fit). The field then shows a badge; Backspace in an empty
+  field or its cross removes it. A command
+  alone, without text, applies to the conversation so far.
+- **What is sent:** the message keeps the user's words and `metadata.command` (`id`, `name`), shown as a badge in
+  their bubble. At each answer the server puts the command's current prompt before those words, for the model, the
+  pre-analysis and the title; never in the saved conversation. A command deleted since is said so. Each message
+  counts one use. An edited message keeps its command.
+- **Sync:** a change publishes `commands`: the other devices reload the list.
+
 ### Canvas
 
 A panel beside the conversation (full screen on a phone, `?doc=` in the address, back closes it) holding documents
@@ -361,6 +383,7 @@ Same layout and tooling as `inscript-carte`.
 | `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), created at, the version it brought back (`restored_from`) |
 | `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter, paid by the user's own key |
 | `settings` | key (`model.fast`, `prompt.assistant`…), value, updated at; a missing key means the default |
+| `commands` | id (UUID), user, name (unique per user), prompt, uses, created/updated at |
 
 ## Configuration
 

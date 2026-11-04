@@ -9,6 +9,7 @@ import {
   Globe,
   MessagesSquare,
   Search,
+  SquareSlash,
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -28,6 +29,7 @@ const CONTEXT_TOOLS = {
   'tool-calculate': true,
   'tool-days_between': true,
   'tool-date_plus_days': true,
+  'tool-save_command': true,
 } as const;
 
 export type ContextToolPart = Extract<Part, { type: keyof typeof CONTEXT_TOOLS }>;
@@ -137,5 +139,18 @@ function lineOf(part: ContextToolPart, running: boolean, t: ReturnType<typeof us
           ? t('tools.datePlusDays', { date: part.output.date, count: part.output.days, result: part.output.result })
           : t('tools.dates'),
       };
+    case 'tool-save_command': {
+      if (!done) return { icon: SquareSlash, label: t('commands.saving') };
+      const label = t(part.output.created ? 'commands.created' : 'commands.updated', { name: part.output.name });
+      return {
+        icon: SquareSlash,
+        label,
+        target: (
+          <Link to='/commands' className='hover:text-foreground'>
+            {label}
+          </Link>
+        ),
+      };
+    }
   }
 }

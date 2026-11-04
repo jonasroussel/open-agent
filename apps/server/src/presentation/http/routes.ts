@@ -4,6 +4,7 @@ import type { BunRequest } from 'bun';
 import type { Artifacts } from '../../application/artifacts.ts';
 import type { Authentication, SignInResult } from '../../application/authentication.ts';
 import type { ChatTurns } from '../../application/chat-turns.ts';
+import type { Commands } from '../../application/commands.ts';
 import type { Conversations } from '../../application/conversations.ts';
 import type { Library } from '../../application/library.ts';
 import type { Memory } from '../../application/memory.ts';
@@ -18,6 +19,7 @@ import { createAdminRoutes } from './admin-routes.ts';
 import { createAdminSettingsRoutes } from './admin-settings-routes.ts';
 import { createArtifactRoutes } from './artifact-routes.ts';
 import { createChatRoutes } from './chat-routes.ts';
+import { createCommandRoutes } from './command-routes.ts';
 import { createEventRoutes } from './event-routes.ts';
 import { createFileRoutes } from './file-routes.ts';
 import { clientAddress, error, isHttps, readJson, type ServerHandle } from './http.ts';
@@ -34,6 +36,7 @@ export type HttpDependencies = {
   conversations: Conversations;
   memory: Memory;
   messageMemory: MessageMemory;
+  commands: Commands;
   chatTurns: ChatTurns;
   quotas: Quotas;
   library: Library;
@@ -66,6 +69,7 @@ export function createRoutes({
   conversations,
   memory,
   messageMemory,
+  commands,
   chatTurns,
   quotas,
   library,
@@ -138,6 +142,7 @@ export function createRoutes({
     ...createAdminSettingsRoutes({ signedInUser, settings, modelDirectory, userAccess, memory }),
     ...createChatRoutes({ signedInUser, conversations, chatTurns, quotas }),
     ...createMemoryRoutes({ signedInUser, memory, messageMemory }),
+    ...createCommandRoutes({ signedInUser, commands }),
     ...createOwnKeyRoutes({ signedInUser, ownKeys }),
     ...createFileRoutes({ signedInUser, library }),
     ...createArtifactRoutes({ signedInUser, artifacts }),

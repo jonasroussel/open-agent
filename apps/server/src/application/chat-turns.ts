@@ -40,6 +40,7 @@ import type { MemoryRule } from '../domain/memory.ts';
 import { isExhausted } from '../domain/quota.ts';
 import type { User } from '../domain/user.ts';
 import type { Artifacts } from './artifacts.ts';
+import type { Commands } from './commands.ts';
 import type { ContextTools } from './context-tools.ts';
 import type { Library } from './library.ts';
 import type { MakingTools } from './making-tools.ts';
@@ -111,6 +112,7 @@ export class ChatTurns {
   readonly #webSearch: WebSearch | null;
   readonly #contextTools: ContextTools;
   readonly #makingTools: MakingTools;
+  readonly #commands: Commands;
   readonly #changes: ChangeFeed;
 
   constructor(
@@ -128,6 +130,7 @@ export class ChatTurns {
     webSearch: WebSearch | null,
     contextTools: ContextTools,
     makingTools: MakingTools,
+    commands: Commands,
     changes: ChangeFeed,
   ) {
     this.#conversations = conversations;
@@ -144,6 +147,7 @@ export class ChatTurns {
     this.#webSearch = webSearch;
     this.#contextTools = contextTools;
     this.#makingTools = makingTools;
+    this.#commands = commands;
     this.#changes = changes;
   }
 
@@ -173,7 +177,11 @@ export class ChatTurns {
     if (existing && existing.userId !== user.id) return { ok: false, reason: 'not_found' };
     const conversation = existing ?? (await this.#conversations.create({ id, userId: user.id, now }));
     // Conversations from before icons get theirs at their next message; a title, maybe renamed by the user, stays.
-    if (!conversation.title || !conversation.icon) void this.#name(user, conversation, messages[0]!);
+    // Each command gets its prompt before the user's words: for the pre-analysis, the title and the model, never in
+    // the saved conversation, which keeps the badge.
+    const expanded = await this.#commands.expand(user, messages);
+    if (!resumed) void this.#commands.recordUse(user, messages.at(-1)!);
+    if (!conversation.title || !conversation.icon) void this.#name(user, conversation, expanded[0]!);
 
     const stream = createUIMessageStream<ChatMessage>({
       originalMessages: messages,
@@ -184,7 +192,7 @@ export class ChatTurns {
       onError: (error) => this.#failure(user, error),
       execute: async ({ writer }) => {
         const rules = await this.#memory.rules(user);
-        const analysis = await this.#analysis(user, conversation.id, messages, resumed, rules, abortSignal);
+        const analysis = await this.#analysis(user, conversation.id, expanded, resumed, rules, abortSignal);
         const messageId = resumed?.id ?? crypto.randomUUID();
         // An answer to a question is a choice, not a remark about how the assistant works.
         const remembering =
@@ -226,6 +234,7 @@ export class ChatTurns {
               : {}),
             ...this.#contextTools.for(user, conversation.id, abortSignal),
             ...this.#makingTools.for(user, conversation.id, abortSignal),
+            save_command: this.#commands.toolFor(user),
             ask_user: askTool(resumed !== null && hasAsked(resumed)),
           };
           const withoutSearch = Object.keys(tools).filter((name) => name !== 'web_search') as (keyof typeof tools)[];
@@ -239,13 +248,14 @@ export class ChatTurns {
               this.#clock.now(),
               this.#webSearch !== null,
               documents,
+              await this.#commands.names(user),
             ),
             // Every attached file goes in whole, at each answer: the user may ask about any detail, any time.
             messages: await convertToModelMessages(
               await this.#library.expandFiles(
                 user,
                 withoutDocumentBodies(
-                  withNotes(withLatestRequest(withAnsweredQuestions(messages), analysis.rewrittenRequest), [
+                  withNotes(withLatestRequest(withAnsweredQuestions(expanded), analysis.rewrittenRequest), [
                     timeNote(this.#clock.now()),
                     ...restoreNotes(documents),
                   ]),
@@ -555,6 +565,7 @@ function instructions(
   now: Date,
   canSearch: boolean,
   documents: readonly { artifact: Artifact; content: string; restoredFrom: number | null }[],
+  commandNames: readonly string[],
 ): string {
   const today = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeZone: 'Europe/Paris' }).format(now);
   return [
@@ -584,6 +595,12 @@ function instructions(
           '',
           'What you remember about the user, from what they said: preferences to follow unless their latest message asks otherwise, and facts about them to use when they matter:',
           ...rules.map((rule) => `- ${rule.text}`),
+        ]
+      : []),
+    ...(commandNames.length > 0
+      ? [
+          '',
+          `The user's commands, to rewrite with save_command when they ask: ${commandNames.map((name) => `/${name}`).join(', ')}.`,
         ]
       : []),
   ].join('\n');

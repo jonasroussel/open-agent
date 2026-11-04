@@ -1,6 +1,6 @@
 import type { SignedInUser } from '@open-agent/shared';
 import { Link, useMatchRoute } from '@tanstack/react-router';
-import { BookmarkCheck, FolderOpen, Settings2, SquarePen, Users } from 'lucide-react';
+import { BookmarkCheck, FolderOpen, Settings2, SquarePen, SquareSlash, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { BrandIcon } from '@/components/brand-icon.tsx';
@@ -60,6 +60,14 @@ export function AppSidebar({ user }: { user: SignedInUser }) {
                 <Link to='/memory' onClick={closeOnPhone}>
                   <BookmarkCheck />
                   {t('memory.title')}
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild className='h-9' isActive={Boolean(matchRoute({ to: '/commands' }))}>
+                <Link to='/commands' onClick={closeOnPhone}>
+                  <SquareSlash />
+                  {t('commands.title')}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

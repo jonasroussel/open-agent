@@ -47,6 +47,10 @@ export const API_ROUTES = {
   memoryChangeUndo: '/api/memory/changes/:changeId/undo',
   /** POST `RememberMessageBody`: keeps what lasts in one of the user's messages, as `RememberMessageResponse`. */
   memoryRemember: '/api/memory/remember',
+  /** GET: the signed-in user's commands, most used first, as `ListCommandsResponse`. POST `CommandBody`: adds one. */
+  commands: '/api/commands',
+  /** PATCH `CommandBody`: renames it or rewrites its prompt. DELETE: removes it. */
+  command: '/api/commands/:commandId',
   /** GET: the signed-in user's files, newest first. POST multipart, field `file`: uploads one, as `UploadFileResponse`. */
   files: '/api/files',
   /** GET: the file itself, only for its owner. DELETE: removes it from the library. */
@@ -96,6 +100,10 @@ export type ApiError = {
     | 'model_unavailable'
     /** A user has at most `MAX_MEMORY_RULES` rules. */
     | 'memory_full'
+    /** Another of the user's commands has this name. */
+    | 'command_name_taken'
+    /** A user has at most `MAX_COMMANDS` commands. */
+    | 'commands_full'
     /** The rule changed again since, or the change was already undone: undoing it would lose the newer state. */
     | 'memory_changed'
     /** The user spent their monthly quota; it comes back on the 1st, see `QuotaResponse.resetsAt`. */
@@ -136,6 +144,7 @@ export type ChangeEvent =
   | { type: 'conversations' }
   | { type: 'memory' }
   | { type: 'files' }
+  | { type: 'commands' }
   /** A new version of a canvas document. */
   | { type: 'artifact'; id: string };
 
@@ -198,11 +207,15 @@ export type InviteUserResponse = { user: AdminUserDto };
 /** How an answer was made: quick, after thinking, or a question back because the request was ambiguous. */
 export type AnswerRoute = 'fast' | 'reasoning' | 'clarify';
 
-/** Metadata of an assistant message. */
+/**
+ * An assistant message: how it was made. A user message: the command it runs, shown as a badge; the server adds the
+ * command's prompt for the model, by its id.
+ */
 export type ChatMessageMetadata = {
   route?: AnswerRoute;
   /** The clearer request the model answered instead of the user's own words; never shown, kept to check the rewrites. */
   rewrittenRequest?: string;
+  command?: { id: string; name: string };
 };
 
 /** What a memory change looks like in the conversation, under the answer to the remark that caused it. */
@@ -339,6 +352,7 @@ export type ChatTools = {
   create_pdf: { input: CreatePdfInput; output: MadeFileOutput };
   create_chart: { input: CreateChartInput; output: MadeFileOutput };
   create_qr_code: { input: CreateQrCodeInput; output: MadeFileOutput };
+  save_command: { input: { name: string; prompt: string }; output: SaveCommandOutput };
 };
 
 export type ChatMessage = UIMessage<ChatMessageMetadata, ChatDataParts, ChatTools>;
@@ -380,6 +394,17 @@ export type MemoryRuleDto = { id: number; text: string; updatedAt: string };
 export type ListMemoryRulesResponse = { rules: MemoryRuleDto[] };
 
 export type MemoryRuleBody = { text: string };
+
+/** `uses`: how many messages ran it; the composer shows the most used first. */
+export type CommandDto = { id: string; name: string; prompt: string; uses: number; updatedAt: string };
+
+export type ListCommandsResponse = { commands: CommandDto[] };
+
+/** `name` as typed after `/` (see `commandNameOf`). */
+export type CommandBody = { name: string; prompt: string };
+
+/** What `save_command` gives the model, and the answer shows: the command and whether it is new. */
+export type SaveCommandOutput = { id: string; name: string; created: boolean };
 
 export type RememberMessageBody = { conversationId: string; messageId: string };
 /** `notice: null`: the memory already holds it, or nothing in the message lasts. */

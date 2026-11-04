@@ -4,6 +4,7 @@ import {
   API_ROUTES,
   apiPath,
   type AdminUserDto,
+  type CommandDto,
   type ConversationDto,
   type LibraryFileDto,
   type MemoryRuleDto,
@@ -12,6 +13,7 @@ import {
 } from '@open-agent/shared';
 
 import type { Artifact, ArtifactVersion } from '../../domain/artifact.ts';
+import type { Command } from '../../domain/command.ts';
 import type { Conversation } from '../../domain/conversation.ts';
 import { previewOf, type LibraryFile } from '../../domain/library-file.ts';
 import type { MemoryRule } from '../../domain/memory.ts';
@@ -58,6 +60,16 @@ export function toConversationDto(conversation: Conversation): ConversationDto {
 
 export function toMemoryRuleDto(rule: MemoryRule): MemoryRuleDto {
   return { id: rule.id, text: rule.text, updatedAt: rule.updatedAt.toISOString() };
+}
+
+export function toCommandDto(command: Command): CommandDto {
+  return {
+    id: command.id,
+    name: command.name,
+    prompt: command.prompt,
+    uses: command.uses,
+    updatedAt: command.updatedAt.toISOString(),
+  };
 }
 
 export function toLibraryFileDto(file: Omit<LibraryFile, 'content'>): LibraryFileDto {

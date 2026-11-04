@@ -12,6 +12,7 @@ import { hasChat } from './chat/chat-store.ts';
 import { ConversationPage } from './chat/conversation-page.tsx';
 import { conversationQuery, conversationsQuery } from './chat/conversations-query.ts';
 import { NewChatPage } from './chat/new-chat-page.tsx';
+import { CommandsPage } from './commands/commands-page.tsx';
 import { FilesPage } from './files/files-page.tsx';
 import { queryClient } from './lib/query-client.ts';
 import { MemoryPage } from './memory/memory-page.tsx';
@@ -85,6 +86,8 @@ const conversationRoute = createRoute({
 
 const memoryRoute = createRoute({ getParentRoute: () => appRoute, path: '/memory', component: MemoryPage });
 
+const commandsRoute = createRoute({ getParentRoute: () => appRoute, path: '/commands', component: CommandsPage });
+
 const filesRoute = createRoute({ getParentRoute: () => appRoute, path: '/files', component: FilesPage });
 
 const adminUsersRoute = createRoute({
@@ -113,6 +116,7 @@ export const router = createRouter({
       newChatRoute,
       conversationRoute,
       memoryRoute,
+      commandsRoute,
       filesRoute,
       adminUsersRoute,
       adminSettingsRoute,

@@ -4,6 +4,7 @@ import {
   apiPath,
   OWN_KEY_REFUSED,
   type ChatMessage,
+  type CommandDto,
   type LibraryFileDto,
   type MemoryNotice,
   type RememberMessageResponse,
@@ -58,12 +59,14 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
     void addToolOutput({ tool: 'ask_user', toolCallId, output: { answer: text } });
   };
 
-  // While a question waits, what the user types answers it; files make it a new message, the question then unanswered.
-  const send = (text: string, files: LibraryFileDto[]) => {
-    if (pendingQuestion && text && files.length === 0) return answer(pendingQuestion, text);
+  // While a question waits, what the user types answers it; files or a command make it a new message, the question
+  // then unanswered.
+  const send = (text: string, files: LibraryFileDto[], command: CommandDto | null) => {
+    if (pendingQuestion && text && files.length === 0 && !command) return answer(pendingQuestion, text);
     clearError();
     const parts = files.map(toFilePart);
-    void (text ? sendMessage({ text, files: parts }) : sendMessage({ files: parts }));
+    const metadata = command ? { command: { id: command.id, name: command.name } } : undefined;
+    void (text ? sendMessage({ text, files: parts, metadata }) : sendMessage({ files: parts, metadata }));
     onSend?.();
   };
 
@@ -162,11 +165,12 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
                     canEdit={!busy}
                     onEdit={(text) => {
                       clearError();
-                      // The edited message keeps its files.
+                      // The edited message keeps its files and its command.
                       const files = message.parts.filter((part) => part.type === 'file');
+                      const { metadata } = message;
                       void (text
-                        ? sendMessage({ text, files, messageId: message.id })
-                        : sendMessage({ files, messageId: message.id }));
+                        ? sendMessage({ text, files, metadata, messageId: message.id })
+                        : sendMessage({ files, metadata, messageId: message.id }));
                     }}
                     onRemember={busy ? null : () => rememberMessage(message.id)}
                     onUndoMemory={undoMemory}

@@ -58,6 +58,7 @@ export function UserMessage({
   const [remembered, setRemembered] = useState<MemoryNotice | 'pending' | 'known' | 'failed' | null>(null);
   const text = partsText(message, 'text');
   const files = message.parts.flatMap((part) => (part.type === 'file' ? [part] : []));
+  const command = message.metadata?.command;
 
   async function remember() {
     if (!onRemember) return;
@@ -113,8 +114,18 @@ export function UserMessage({
           ))}
         </div>
       )}
-      {text && (
+      {(text || command) && (
         <div className='bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 whitespace-pre-wrap'>
+          {command && (
+            <span
+              className={cn(
+                'bg-primary-foreground/15 inline-flex rounded-full px-2 py-0.5 text-sm font-medium',
+                text && 'mr-1.5',
+              )}
+            >
+              /{command.name}
+            </span>
+          )}
           {text}
         </div>
       )}

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { artifactQuery } from '@/canvas/canvas-query.ts';
 import { refreshAllChats, refreshChat } from '@/chat/chat-store.ts';
 import { conversationQuery, conversationsQuery } from '@/chat/conversations-query.ts';
+import { commandsQuery } from '@/commands/commands-query.ts';
 import { libraryFilesQuery } from '@/files/library.ts';
 import { queryClient } from '@/lib/query-client.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
@@ -27,6 +28,8 @@ async function apply(change: ChangeEvent): Promise<void> {
       return void queryClient.invalidateQueries({ queryKey: memoryRulesQuery.queryKey });
     case 'files':
       return void queryClient.invalidateQueries({ queryKey: libraryFilesQuery.queryKey });
+    case 'commands':
+      return void queryClient.invalidateQueries({ queryKey: commandsQuery.queryKey });
     case 'artifact':
       return void queryClient.invalidateQueries({ queryKey: artifactQuery(change.id).queryKey });
   }
