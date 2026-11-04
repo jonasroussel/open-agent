@@ -44,9 +44,17 @@ export class SqliteLibraryRepository implements LibraryRepository {
     return rows.map(toFile);
   }
 
-  async find(userId: number, id: string): Promise<LibraryFile | null> {
+  find(userId: number, id: string): Promise<LibraryFile | null> {
+    return this.#first({ id, user_id: userId });
+  }
+
+  findById(id: string): Promise<LibraryFile | null> {
+    return this.#first({ id });
+  }
+
+  async #first(where: { id: string; user_id?: number }): Promise<LibraryFile | null> {
     const row: (FileRow & { content: string }) | undefined = await this.#database('library_files')
-      .where({ id, user_id: userId })
+      .where(where)
       .first([...COLUMNS, 'content']);
     return row ? { ...toFile(row), content: JSON.parse(row.content) as FilePiece[] } : null;
   }

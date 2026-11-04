@@ -11,7 +11,20 @@ export type SignInEmail = {
   validForMinutes: number;
 };
 
+/** Someone shared a conversation with the recipient; the link opens the invitation. */
+export type ShareEmail = {
+  to: string;
+  locale: Locale;
+  /** Who shared it, by name. */
+  from: string;
+  /** `null`: not named yet. */
+  title: string | null;
+  link: string;
+};
+
 export interface Mailer {
   /** Throws when the email could not be handed over for delivery. */
   sendSignIn(email: SignInEmail): Promise<void>;
+  /** Throws when the email could not be handed over for delivery. */
+  sendShare(email: ShareEmail): Promise<void>;
 }

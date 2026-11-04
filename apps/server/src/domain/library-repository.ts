@@ -6,5 +6,7 @@ export interface LibraryRepository {
   listOf(userId: number): Promise<Omit<LibraryFile, 'content'>[]>;
   /** Only the user's own file: anyone else's is `null`, as if it did not exist. */
   find(userId: number, id: string): Promise<LibraryFile | null>;
+  /** Whoever owns it: the caller checks they may see it. */
+  findById(id: string): Promise<LibraryFile | null>;
   delete(id: string): Promise<void>;
 }

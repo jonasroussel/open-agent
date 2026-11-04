@@ -1,5 +1,6 @@
 import { fileKindOf, MAX_FILE_BYTES, mediaTypeOf, type FileKind } from '@open-agent/shared';
 
+import type { ConversationRepository } from '../domain/conversation-repository.ts';
 import type { ChatMessage } from '../domain/conversation.ts';
 import {
   cleanFileName,
@@ -36,13 +37,22 @@ const EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/gif': 'g
  */
 export class Library {
   readonly #files: LibraryRepository;
+  readonly #conversations: ConversationRepository;
   readonly #store: FileStore;
   readonly #reader: DocumentReader;
   readonly #clock: Clock;
   readonly #changes: ChangeFeed;
 
-  constructor(files: LibraryRepository, store: FileStore, reader: DocumentReader, clock: Clock, changes: ChangeFeed) {
+  constructor(
+    files: LibraryRepository,
+    conversations: ConversationRepository,
+    store: FileStore,
+    reader: DocumentReader,
+    clock: Clock,
+    changes: ChangeFeed,
+  ) {
     this.#files = files;
+    this.#conversations = conversations;
     this.#store = store;
     this.#reader = reader;
     this.#clock = clock;
@@ -88,18 +98,18 @@ export class Library {
     return this.#files.listOf(user.id);
   }
 
-  /** The original, for its owner only. */
+  /** The original, for its owner and for the other members of a shared conversation it was sent or made in. */
   async open(user: User, id: string): Promise<{ file: LibraryFile; bytes: Uint8Array } | null> {
-    const file = await this.#files.find(user.id, id);
-    const bytes = file && (await this.#store.read(user.id, file.id, ORIGINAL));
+    const file = await this.#visible(user, id);
+    const bytes = file && (await this.#store.read(file.userId, file.id, ORIGINAL));
     return file && bytes ? { file, bytes } : null;
   }
 
-  /** The picture of `previewOf`, for its owner only; `null` for kinds without one. */
+  /** The picture of `previewOf`, for those who may `open` the file; `null` for kinds without one. */
   async preview(user: User, id: string): Promise<{ bytes: Uint8Array; mediaType: string } | null> {
-    const file = await this.#files.find(user.id, id);
+    const file = await this.#visible(user, id);
     const preview = file && previewOf(file);
-    const bytes = preview && (await this.#store.read(user.id, id, preview.name));
+    const bytes = preview && (await this.#store.read(file.userId, id, preview.name));
     return preview && bytes ? { bytes, mediaType: preview.mediaType } : null;
   }
 
@@ -121,15 +131,19 @@ export class Library {
     return { file, text: texts.join('\n\n'), hasPictures: texts.length < file.content.length };
   }
 
-  /** Every `file` part becomes the file's whole content, as text and pictures, between `<file>` tags. */
-  async expandFiles(user: User, messages: readonly ChatMessage[]): Promise<ChatMessage[]> {
+  /**
+   * Every `file` part becomes the file's whole content, as text and pictures, between `<file>` tags. `owners`: the
+   * conversation's participants, whose files it may hold.
+   */
+  async expandFiles(owners: readonly number[], messages: readonly ChatMessage[]): Promise<ChatMessage[]> {
     return await Promise.all(
       messages.map(async (message) => {
         if (!message.parts.some((part) => part.type === 'file')) return message;
         const parts = await Promise.all(
           message.parts.map(async (part) => {
             if (part.type !== 'file') return [part];
-            const file = await this.#files.find(user.id, fileIdOf(part.url) ?? '');
+            const found = await this.#files.findById(fileIdOf(part.url) ?? '');
+            const file = found && owners.includes(found.userId) ? found : null;
             if (!file) {
               const text = `[The file "${part.filename ?? 'file'}" was deleted from the library: its content is no longer available.]`;
               return [{ type: 'text' as const, text }];
@@ -140,6 +154,12 @@ export class Library {
         return { ...message, parts: parts.flat() };
       }),
     );
+  }
+
+  async #visible(user: User, id: string): Promise<LibraryFile | null> {
+    const file = await this.#files.findById(id);
+    if (!file) return null;
+    return file.userId === user.id || (await this.#conversations.sharesFile(user.id, id, file.userId)) ? file : null;
   }
 
   async #modelParts(file: LibraryFile): Promise<ChatMessage['parts']> {

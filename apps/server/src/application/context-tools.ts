@@ -18,6 +18,7 @@ import { cleanSnippet, searchTerms } from '../domain/conversation.ts';
 import { attachedNames, estimatedTokens } from '../domain/library-file.ts';
 import type { User } from '../domain/user.ts';
 import type { Library } from './library.ts';
+import type { Participants } from './participants.ts';
 import { ToolRefusal, type Calculator, type WeatherService, type WebPageReader } from './ports/context-services.ts';
 import { textOf } from './pre-analysis.ts';
 
@@ -53,6 +54,7 @@ const READ_FILE_TOKENS = 50_000;
  */
 export class ContextTools {
   readonly #conversations: ConversationRepository;
+  readonly #participants: Participants;
   readonly #library: Library;
   readonly #calculator: Calculator;
   readonly #pages: WebPageReader;
@@ -60,12 +62,14 @@ export class ContextTools {
 
   constructor(
     conversations: ConversationRepository,
+    participants: Participants,
     library: Library,
     calculator: Calculator,
     pages: WebPageReader,
     weather: WeatherService,
   ) {
     this.#conversations = conversations;
+    this.#participants = participants;
     this.#library = library;
     this.#calculator = calculator;
     this.#pages = pages;
@@ -114,8 +118,8 @@ export class ContextTools {
         execute: async ({ id }): Promise<ReadConversationOutput> => {
           spend('read_conversation');
           if (id === conversationId) throw new ToolRefusal('This is the current conversation: you already have it.');
-          const conversation = await this.#conversations.find(id);
-          if (conversation?.userId !== user.id) throw new ToolRefusal('No conversation with this id.');
+          const access = await this.#participants.access(user, id);
+          if (!access) throw new ToolRefusal('No conversation with this id.');
           const lines = (await this.#conversations.messages(id)).map((message) => {
             const files = attachedNames(message);
             return `${message.role === 'user' ? 'User' : 'Assistant'}: ${textOf(message)}${files ? ` [Attached: ${files}]` : ''}`;
@@ -124,7 +128,7 @@ export class ContextTools {
           const shortened = text.length > CONVERSATION_CHARACTERS;
           return {
             id,
-            title: conversation.title,
+            title: access.conversation.title,
             text: shortened ? `…${text.slice(-CONVERSATION_CHARACTERS)}` : text,
             shortened,
           };

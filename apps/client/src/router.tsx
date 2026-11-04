@@ -58,8 +58,9 @@ const appRoute = createRoute({
   },
   // Behind the loading screen, once: the sidebar's icons, so they do not pop in. A failing list shows in the sidebar.
   loader: async ({ context }) => {
-    const conversations = await context.queryClient.ensureQueryData(conversationsQuery).catch(() => []);
-    await loadIcons(conversations.flatMap((conversation) => conversation.icon ?? []));
+    const list = await context.queryClient.ensureQueryData(conversationsQuery).catch(() => null);
+    const shown = [...(list?.conversations ?? []), ...(list?.invitations ?? [])];
+    await loadIcons(shown.flatMap((conversation) => conversation.icon ?? []));
   },
   staleTime: Infinity,
   component: AppLayout,

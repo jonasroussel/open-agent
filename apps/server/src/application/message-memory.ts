@@ -2,9 +2,11 @@ import type { MemoryNotice } from '@open-agent/shared';
 
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
 import { isExhausted } from '../domain/quota.ts';
+import { authorIdOf } from '../domain/sharing.ts';
 import type { User } from '../domain/user.ts';
 import type { MemoryReconciler } from './memory-reconciler.ts';
 import type { Memory } from './memory.ts';
+import type { Participants } from './participants.ts';
 import { ModelUnavailableError } from './ports/model-catalog.ts';
 import { textOf } from './pre-analysis.ts';
 import type { Quotas } from './quotas.ts';
@@ -17,17 +19,25 @@ export type RememberResult =
   | { ok: false; reason: 'not_found' | 'invalid_request' | 'quota_exceeded' | 'model_unavailable' };
 
 /**
- * "Remember" on one of the user's messages: what lasts in it becomes a rule, even when the analysis of that message
- * kept nothing. `notice: null` when the memory already holds it.
+ * "Remember" on one of the user's own messages: what lasts in it becomes a rule, even when the analysis of that
+ * message kept nothing. `notice: null` when the memory already holds it.
  */
 export class MessageMemory {
   readonly #conversations: ConversationRepository;
+  readonly #participants: Participants;
   readonly #memory: Memory;
   readonly #reconciler: MemoryReconciler;
   readonly #quotas: Quotas;
 
-  constructor(conversations: ConversationRepository, memory: Memory, reconciler: MemoryReconciler, quotas: Quotas) {
+  constructor(
+    conversations: ConversationRepository,
+    participants: Participants,
+    memory: Memory,
+    reconciler: MemoryReconciler,
+    quotas: Quotas,
+  ) {
     this.#conversations = conversations;
+    this.#participants = participants;
     this.#memory = memory;
     this.#reconciler = reconciler;
     this.#quotas = quotas;
@@ -42,10 +52,11 @@ export class MessageMemory {
     if (typeof conversationId !== 'string' || typeof messageId !== 'string') {
       return { ok: false, reason: 'invalid_request' };
     }
-    const conversation = await this.#conversations.find(conversationId);
-    const message =
-      conversation?.userId === user.id ? await this.#conversations.findMessage(conversationId, messageId) : null;
-    if (message?.role !== 'user') return { ok: false, reason: 'not_found' };
+    const access = await this.#participants.access(user, conversationId);
+    const message = access ? await this.#conversations.findMessage(conversationId, messageId) : null;
+    if (message?.role !== 'user' || authorIdOf(message, access!.conversation.userId) !== user.id) {
+      return { ok: false, reason: 'not_found' };
+    }
     const text = textOf(message);
     if (!text) return { ok: false, reason: 'invalid_request' };
     if (isExhausted(await this.#quotas.of(user))) return { ok: false, reason: 'quota_exceeded' };

@@ -1,12 +1,18 @@
-import { API_ROUTES, apiPath, MAX_CONVERSATION_TITLE_LENGTH, type ConversationDto } from '@open-agent/shared';
+import {
+  API_ROUTES,
+  apiPath,
+  MAX_CONVERSATION_TITLE_LENGTH,
+  type ConversationDto,
+  type InvitationDto,
+} from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router';
-import { MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Link, useMatchRoute } from '@tanstack/react-router';
+import { LogOut, MoreHorizontal, Pencil, Pin, PinOff, Trash2, UserPlus, Users } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { forgetChat } from '@/chat/chat-store.ts';
-import { conversationQuery, conversationsQuery, renameConversation } from '@/chat/conversations-query.ts';
+import { sessionQuery } from '@/auth/session.ts';
+import { conversationsQuery, removeFromConversation, renameConversation } from '@/chat/conversations-query.ts';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,30 +43,72 @@ import {
 } from '@/components/ui/sidebar.tsx';
 import { i18n } from '@/i18n/i18n.ts';
 import { api } from '@/lib/api.ts';
+import { MembersDialog, useDropConversation } from '@/sharing/members-dialog.tsx';
 
 import { ConversationIcon } from './conversation-icon.tsx';
 
-/** The user's conversations: pinned ones first, then the others, last updated first. */
+/**
+ * The user's conversations: pinned ones first, then the shared ones with the invitations not answered yet, then the
+ * others, last updated first.
+ */
 export function ConversationList({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useTranslation();
-  const { data: conversations = [] } = useQuery(conversationsQuery);
+  const { data } = useQuery(conversationsQuery);
+  const conversations = data?.conversations ?? [];
+  const invitations = data?.invitations ?? [];
   const [renaming, setRenaming] = useState<ConversationDto | null>(null);
   const [deleting, setDeleting] = useState<ConversationDto | null>(null);
+  const [sharing, setSharing] = useState<ConversationDto | null>(null);
   const pinned = conversations.filter((conversation) => conversation.pinned);
-  const others = conversations.filter((conversation) => !conversation.pinned);
-  const actions = { onNavigate, onRename: setRenaming, onDelete: setDeleting };
+  const shared = conversations.filter((conversation) => !conversation.pinned && conversation.sharing);
+  const others = conversations.filter((conversation) => !conversation.pinned && !conversation.sharing);
+  const actions = { onNavigate, onRename: setRenaming, onDelete: setDeleting, onShare: setSharing };
 
   return (
     <>
       {pinned.length > 0 && <ConversationGroup label={t('conversations.pinned')} conversations={pinned} {...actions} />}
+      {(shared.length > 0 || invitations.length > 0) && (
+        <ConversationGroup label={t('conversations.shared')} conversations={shared} {...actions}>
+          <InvitationRows invitations={invitations} onNavigate={onNavigate} />
+        </ConversationGroup>
+      )}
       <ConversationGroup label={t('app.conversations')} conversations={others} {...actions}>
-        {conversations.length === 0 && (
+        {conversations.length === 0 && invitations.length === 0 && (
           <p className='text-muted-foreground px-2 py-1 text-sm'>{t('app.noConversations')}</p>
         )}
       </ConversationGroup>
       <RenameDialog conversation={renaming} onClose={() => setRenaming(null)} />
       <DeleteDialog conversation={deleting} onClose={() => setDeleting(null)} />
+      <MembersDialog conversation={sharing} onClose={() => setSharing(null)} />
     </>
+  );
+}
+
+/** Each opens its invitation, where the user joins or declines. */
+function InvitationRows({ invitations, onNavigate }: { invitations: InvitationDto[]; onNavigate: () => void }) {
+  const { t } = useTranslation();
+  const matchRoute = useMatchRoute();
+  if (invitations.length === 0) return null;
+  return (
+    <SidebarMenu>
+      {invitations.map((invitation) => (
+        <SidebarMenuItem key={invitation.id}>
+          <SidebarMenuButton
+            asChild
+            className='h-9 pr-20'
+            isActive={Boolean(matchRoute({ to: '/c/$conversationId', params: { conversationId: invitation.id } }))}
+          >
+            <Link to='/c/$conversationId' params={{ conversationId: invitation.id }} onClick={onNavigate}>
+              <ConversationIcon name={invitation.icon} />
+              <span className='truncate'>{invitation.title ?? t('conversations.untitled')}</span>
+            </Link>
+          </SidebarMenuButton>
+          <span className='bg-primary text-primary-foreground pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-full px-2 py-0.5 text-xs'>
+            {t('sharing.invitation')}
+          </span>
+        </SidebarMenuItem>
+      ))}
+    </SidebarMenu>
   );
 }
 
@@ -70,10 +118,11 @@ type GroupProps = {
   onNavigate: () => void;
   onRename: (conversation: ConversationDto) => void;
   onDelete: (conversation: ConversationDto) => void;
+  onShare: (conversation: ConversationDto) => void;
   children?: React.ReactNode;
 };
 
-function ConversationGroup({ label, conversations, onNavigate, onRename, onDelete, children }: GroupProps) {
+function ConversationGroup({ label, conversations, onNavigate, onRename, onDelete, onShare, children }: GroupProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const matchRoute = useMatchRoute();
@@ -92,47 +141,54 @@ function ConversationGroup({ label, conversations, onNavigate, onRename, onDelet
       <SidebarGroupContent>
         {children}
         <SidebarMenu>
-          {conversations.map((conversation) => (
-            <SidebarMenuItem key={conversation.id}>
-              <SidebarMenuButton
-                asChild
-                // On a phone the actions button always shows (no hover): the title leaves room for it and the time.
-                className='h-9 group-has-data-[sidebar=menu-action]/menu-item:pr-20 md:group-has-data-[sidebar=menu-action]/menu-item:pr-14'
-                isActive={Boolean(
-                  matchRoute({ to: '/c/$conversationId', params: { conversationId: conversation.id } }),
-                )}
-              >
-                <Link to='/c/$conversationId' params={{ conversationId: conversation.id }} onClick={onNavigate}>
-                  <ConversationIcon name={conversation.icon} />
-                  <span className='truncate'>{conversation.title ?? t('conversations.untitled')}</span>
-                </Link>
-              </SidebarMenuButton>
-              <span className='text-muted-foreground pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 text-xs group-hover/menu-item:hidden group-has-data-[state=open]/menu-item:hidden md:right-2'>
-                {timeOf(conversation.updatedAt)}
-              </span>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuAction showOnHover aria-label={t('conversations.actions')} className='top-2'>
-                    <MoreHorizontal />
-                  </SidebarMenuAction>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side='right' align='start' className='w-auto min-w-48'>
-                  <DropdownMenuItem onSelect={() => onRename(conversation)}>
-                    <Pencil />
-                    {t('conversations.rename')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void setPinned(conversation, !conversation.pinned)}>
-                    {conversation.pinned ? <PinOff /> : <Pin />}
-                    {conversation.pinned ? t('conversations.unpin') : t('conversations.pin')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem variant='destructive' onSelect={() => onDelete(conversation)}>
-                    <Trash2 />
-                    {t('conversations.delete')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </SidebarMenuItem>
-          ))}
+          {conversations.map((conversation) => {
+            const member = conversation.sharing?.role === 'member';
+            return (
+              <SidebarMenuItem key={conversation.id}>
+                <SidebarMenuButton
+                  asChild
+                  // On a phone the actions button always shows (no hover): the title leaves room for it and the time.
+                  className='h-9 group-has-data-[sidebar=menu-action]/menu-item:pr-20 md:group-has-data-[sidebar=menu-action]/menu-item:pr-14'
+                  isActive={Boolean(
+                    matchRoute({ to: '/c/$conversationId', params: { conversationId: conversation.id } }),
+                  )}
+                >
+                  <Link to='/c/$conversationId' params={{ conversationId: conversation.id }} onClick={onNavigate}>
+                    <ConversationIcon name={conversation.icon} />
+                    <span className='truncate'>{conversation.title ?? t('conversations.untitled')}</span>
+                  </Link>
+                </SidebarMenuButton>
+                <span className='text-muted-foreground pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 text-xs group-hover/menu-item:hidden group-has-data-[state=open]/menu-item:hidden md:right-2'>
+                  {timeOf(conversation.updatedAt)}
+                </span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuAction showOnHover aria-label={t('conversations.actions')} className='top-2'>
+                      <MoreHorizontal />
+                    </SidebarMenuAction>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side='right' align='start' className='w-auto min-w-48'>
+                    <DropdownMenuItem onSelect={() => onRename(conversation)}>
+                      <Pencil />
+                      {t('conversations.rename')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void setPinned(conversation, !conversation.pinned)}>
+                      {conversation.pinned ? <PinOff /> : <Pin />}
+                      {conversation.pinned ? t('conversations.unpin') : t('conversations.pin')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onShare(conversation)}>
+                      {conversation.sharing ? <Users /> : <UserPlus />}
+                      {conversation.sharing ? t('sharing.members') : t('sharing.share')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem variant='destructive' onSelect={() => onDelete(conversation)}>
+                      {member ? <LogOut /> : <Trash2 />}
+                      {member ? t('sharing.leave') : t('conversations.delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </SidebarMenuItem>
+            );
+          })}
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
@@ -194,21 +250,31 @@ function RenameDialog({ conversation, onClose }: { conversation: ConversationDto
   );
 }
 
+/** Its owner deletes it, for everyone it is shared with; a member leaves it. */
 function DeleteDialog({ conversation, onClose }: { conversation: ConversationDto | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const matchRoute = useMatchRoute();
+  const drop = useDropConversation();
+  const me = useQuery(sessionQuery).data;
+  const member = conversation?.sharing?.role === 'member';
+  const title = conversation?.title ?? t('conversations.untitled');
 
   async function remove() {
     if (!conversation) return;
     const { id } = conversation;
-    await api(apiPath(API_ROUTES.conversation, { conversationId: id }), { method: 'DELETE' });
-    // Leave the page before forgetting its chat, so it never renders again without one.
-    if (matchRoute({ to: '/c/$conversationId', params: { conversationId: id } })) await navigate({ to: '/' });
-    forgetChat(id);
-    queryClient.removeQueries({ queryKey: conversationQuery(id).queryKey });
-    await queryClient.invalidateQueries({ queryKey: conversationsQuery.queryKey });
+    if (member) {
+      if (me) await removeFromConversation(queryClient, id, me.id);
+    } else {
+      await api(apiPath(API_ROUTES.conversation, { conversationId: id }), { method: 'DELETE' });
+    }
+    await drop(id);
+  }
+
+  let description = t('conversations.deleteDescription');
+  if (member) {
+    description = t('sharing.leaveDescription', { name: conversation.sharing!.owner.name });
+  } else if (conversation?.sharing) {
+    description = t('conversations.deleteSharedDescription');
   }
 
   return (
@@ -216,14 +282,14 @@ function DeleteDialog({ conversation, onClose }: { conversation: ConversationDto
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {t('conversations.deleteTitle', { title: conversation?.title ?? t('conversations.untitled') })}
+            {member ? t('sharing.leaveTitle', { title }) : t('conversations.deleteTitle', { title })}
           </AlertDialogTitle>
-          <AlertDialogDescription>{t('conversations.deleteDescription')}</AlertDialogDescription>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t('conversations.cancel')}</AlertDialogCancel>
           <AlertDialogAction variant='destructive' onClick={() => void remove()}>
-            {t('conversations.delete')}
+            {member ? t('sharing.leave') : t('conversations.delete')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

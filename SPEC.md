@@ -297,6 +297,32 @@ closing the panel forgets it.
   its API or its cookies (checked: reading `document.cookie` throws). Preview and Code tabs; downloadable `.html`.
 - Other code (Python, etc.) stays in chat code blocks with highlighting and a copy button.
 
+### Shared conversations
+
+A conversation shared with other people of the app, who all write to the assistant in it (`Sharing`,
+`application/sharing.ts`; who may reach it: `Participants`, `application/participants.ts`).
+
+- **Invitation:** only its owner shares it, from the top bar or the sidebar menu, with anyone of the app whose access
+  is not revoked (named by the start of their email), at most 10 people. The invited person gets an email and an
+  « Invitation » row in the sidebar; the conversation stays closed to them until they join (its page offers Join and
+  Decline). Joining shows the **whole history**, the dialog says so before inviting.
+- **Roles:** everyone in it renames it and pins it for themselves; only its owner invites, removes people and deletes
+  it (for everyone). A member leaves it. Shared conversations (the owner's too) sit under « Partagées » in the sidebar.
+- **Who pays, whose memory:** each message is the sender's: their quota or own key, their memory rules and commands.
+  A memory notice shows only to the person whose memory changed; « Remember » works on one's own messages only.
+- **The model knows who writes:** each user message reaches it as « [name] … », and the instructions name everyone in
+  it and the person it answers.
+- **One answer at a time:** the server saves the sender's message at once, tells everyone in it through
+  `/api/events`, and refuses another message while the answer is written (`409 conversation_busy`); the others see the
+  message, the dots, « L'assistant répond à X… », and get the answer once it is done (not streamed). They can type
+  meanwhile and send once it is done.
+- **The server owns the history:** a shared conversation goes on from its saved copy, never from the copy a browser
+  sends. A copy behind the saved one is refused (`409 conversation_changed`); the page reloads the conversation and asks
+  to send again. A member edits or answers again only their own last message, and answers only the questions asked to
+  them.
+- **Files and documents:** a file sent or made in it opens for everyone in it (no other file of theirs), and reaches
+  the model whoever answers; everyone reads and edits its canvas documents.
+
 ### Admin panel
 
 - Invitations: create and revoke access by email. Cost per person for the month and their quota.
@@ -328,8 +354,8 @@ closing the panel forgets it.
 
 ## Out of V1
 
-Voice, code execution, conversation branches, public share links, BYOK for providers other than OpenRouter, global
-spending kill switch in the app.
+Voice, code execution, conversation branches, public share links (shared conversations are for people of the app
+only), BYOK for providers other than OpenRouter, global spending kill switch in the app.
 
 ## Stack
 
@@ -375,7 +401,8 @@ Same layout and tooling as `inscript-carte`.
 | `users` | email, role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default), own OpenRouter key (sealed) and when it was added |
 | `sign_in_requests` | user, token hash, code hash (none for invitations), expiry, used at |
 | `sessions` | token hash, user, expiry |
-| `conversations` | id chosen by the client (UUID), user, title, pinned, created/updated at |
+| `conversations` | id chosen by the client (UUID), user (its owner), title, pinned (by the owner), created/updated at |
+| `conversation_members` | conversation, user, status (`invited` / `member`), pinned (for them), invited at, joined at |
 | `messages` | conversation, id (unique per conversation: the client chooses it), position, role, the whole AI SDK UI message as JSON |
 | `message_search` | FTS5 over the text parts of each message, sharing its `rowid`; filled by triggers on `messages` |
 | `memory_rules` | user, rule text, created/updated at, deleted at (kept so an Undo restores the same rule) |

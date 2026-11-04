@@ -14,6 +14,7 @@ import type { ChangeFeed } from '../../application/ports/change-feed.ts';
 import type { ModelDirectory } from '../../application/ports/model-catalog.ts';
 import type { Quotas } from '../../application/quotas.ts';
 import type { Settings } from '../../application/settings.ts';
+import type { Sharing } from '../../application/sharing.ts';
 import type { UserAccess } from '../../application/user-access.ts';
 import { createAdminRoutes } from './admin-routes.ts';
 import { createAdminSettingsRoutes } from './admin-settings-routes.ts';
@@ -34,6 +35,7 @@ export type HttpDependencies = {
   authentication: Authentication;
   userAccess: UserAccess;
   conversations: Conversations;
+  sharing: Sharing;
   memory: Memory;
   messageMemory: MessageMemory;
   commands: Commands;
@@ -67,6 +69,7 @@ export function createRoutes({
   authentication,
   userAccess,
   conversations,
+  sharing,
   memory,
   messageMemory,
   commands,
@@ -140,7 +143,7 @@ export function createRoutes({
 
     ...createAdminRoutes({ signedInUser, userAccess, quotas }),
     ...createAdminSettingsRoutes({ signedInUser, settings, modelDirectory, userAccess, memory }),
-    ...createChatRoutes({ signedInUser, conversations, chatTurns, quotas }),
+    ...createChatRoutes({ signedInUser, conversations, sharing, chatTurns, quotas }),
     ...createMemoryRoutes({ signedInUser, memory, messageMemory }),
     ...createCommandRoutes({ signedInUser, commands }),
     ...createOwnKeyRoutes({ signedInUser, ownKeys }),

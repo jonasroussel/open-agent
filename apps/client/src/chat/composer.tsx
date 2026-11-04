@@ -47,11 +47,14 @@ type Attachment = {
 
 export function Composer({
   busy,
+  waiting = false,
   onSend,
   onStop,
   placeholder,
 }: {
   busy: boolean;
+  /** The assistant answers someone else in this shared conversation: the user may write, and send once it is done. */
+  waiting?: boolean;
   onSend: (text: string, files: LibraryFileDto[], command: CommandDto | null) => void;
   onStop: () => void;
   placeholder: string;
@@ -77,7 +80,7 @@ export function Composer({
   const uploading = attachments.some((attachment) => !attachment.file && !attachment.error);
   const ready = attachments.flatMap((attachment) => (attachment.file ? [attachment.file] : []));
   const room = MAX_FILES_PER_MESSAGE - attachments.length;
-  const canSend = !busy && !uploading && (text.trim() !== '' || ready.length > 0 || command !== null);
+  const canSend = !busy && !waiting && !uploading && (text.trim() !== '' || ready.length > 0 || command !== null);
 
   const update = (key: string, change: Partial<Attachment>) =>
     setAttachments((current) =>

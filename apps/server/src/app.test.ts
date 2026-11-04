@@ -30,6 +30,7 @@ import type {
   MadeFileOutput,
   CommandDto,
   ListCommandsResponse,
+  ListPeopleResponse,
 } from '@open-agent/shared';
 import { APICallError, simulateReadableStream, type UIMessage } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
@@ -38,7 +39,7 @@ import type { Knex } from 'knex';
 import { createApp } from './app.ts';
 import { PageUnavailable, PlaceNotFound } from './application/ports/context-services.ts';
 import { UnreadableDocument, type PdfPage } from './application/ports/document-reader.ts';
-import type { SignInEmail } from './application/ports/mailer.ts';
+import type { ShareEmail, SignInEmail } from './application/ports/mailer.ts';
 import type { ModelCatalog, ModelInfo } from './application/ports/model-catalog.ts';
 import type { WebSearchRequest } from './application/ports/web-search.ts';
 import { AesSecretBox } from './infrastructure/crypto/aes-secret-box.ts';
@@ -55,6 +56,7 @@ const DEFAULT_QUOTA = 5;
 let database: Knex;
 let server: Bun.Server<undefined>;
 let sent: SignInEmail[];
+let shares: ShareEmail[];
 let mailerDown: boolean;
 const clock = { at: new Date('2026-11-01T10:00:00Z'), now: () => clock.at };
 const advanceMinutes = (minutes: number) => (clock.at = new Date(clock.at.getTime() + minutes * 60_000));
@@ -125,11 +127,14 @@ const FOUND = {
 
 /** Tool calls the fast model makes before it answers, one per call, in order: as a model deciding to use the canvas. */
 let scriptedCalls: { toolName: string; input: unknown }[];
+/** While set, the answering models wait for it before they write: an answer still being written. */
+let answerHeld: Promise<void> | null;
 
 /** Answers, or calls a tool first: the search when it must, or the next scripted call. */
 function answeringModel(cost: number) {
   return new MockLanguageModelV4({
     doStream: async (options) => {
+      await answerHeld;
       const scripted =
         options.toolChoice?.type === 'required'
           ? { toolName: 'web_search', input: { query: 'prix gazole France', recent: true } }
@@ -277,10 +282,12 @@ beforeEach(async () => {
   searches = [];
   searchDown = false;
   scriptedCalls = [];
+  answerHeld = null;
   keysUsed = [];
   keyAccepted = true;
   ownKeyRefused = false;
   sent = [];
+  shares = [];
   mailerDown = false;
   pdfPages = [];
   imageDraws = true;
@@ -291,6 +298,9 @@ beforeEach(async () => {
     sendSignIn: async (email: SignInEmail) => {
       if (mailerDown) throw new Error('down');
       sent.push(email);
+    },
+    sendShare: async (email: ShareEmail) => {
+      shares.push(email);
     },
   };
   server = Bun.serve({
@@ -807,6 +817,158 @@ describe('changes between devices', () => {
   });
 });
 
+const MARIE = 'marie@example.com';
+
+const share = (cookie: string, userIds: number[]) =>
+  call(`/api/conversations/${CONVERSATION}/members`, { method: 'POST', body: { userIds }, cookie });
+const accept = (cookie: string) => call(`/api/conversations/${CONVERSATION}/join`, { method: 'POST', cookie });
+const leave = (cookie: string, userId: number) =>
+  call(`/api/conversations/${CONVERSATION}/members/${userId}`, { method: 'DELETE', cookie });
+const listOf = async (cookie: string) =>
+  (await (await call('/api/conversations', { cookie })).json()) as ListConversationsResponse;
+const sendTurn = (cookie: string, messages: UIMessage[]) =>
+  call('/api/chat', { method: 'POST', body: { id: CONVERSATION, messages }, cookie });
+/** A new message after the saved history, as a browser up to date sends it. */
+async function say(cookie: string, message: UIMessage): Promise<Response> {
+  return chat(cookie, CONVERSATION, [...(await open(cookie, CONVERSATION)).messages, message]);
+}
+
+/** Marie, with her own small quota, invited by the admin; the admin asked one question before sharing. */
+async function withMarie() {
+  const admin = await signIn(ADMIN);
+  const { user } = await invite(admin, MARIE);
+  await call(`/api/admin/users/${user.id}`, { method: 'PATCH', body: { monthlyQuotaUsd: 0.001 }, cookie: admin });
+  const marie = await signIn(MARIE);
+  await chat(admin, CONVERSATION, [userMessage('m1', 'Que faire pour une fuite d’eau chez moi ?')]);
+  return { admin, marie, marieId: user.id };
+}
+
+async function sharedWithMarie() {
+  const people = await withMarie();
+  expect((await share(people.admin, [people.marieId])).status).toBe(204);
+  expect((await accept(people.marie)).status).toBe(204);
+  return people;
+}
+
+describe('shared conversations', () => {
+  test('an invited person reads nothing until they join, then reads the whole history and writes at their own cost', async () => {
+    const { admin, marie, marieId } = await withMarie();
+    const people = (await (await call('/api/people', { cookie: admin })).json()) as ListPeopleResponse;
+    expect(people.people).toEqual([{ id: marieId, name: 'marie', email: MARIE }]);
+
+    expect((await share(admin, [marieId])).status).toBe(204);
+    expect(shares).toMatchObject([{ to: MARIE, from: 'admin', link: `${PUBLIC_URL}/c/${CONVERSATION}` }]);
+    expect(await listOf(marie)).toMatchObject({
+      conversations: [],
+      invitations: [{ id: CONVERSATION, from: { name: 'admin' } }],
+    });
+    expect((await call(`/api/conversations/${CONVERSATION}`, { cookie: marie })).status).toBe(404);
+    expect((await sendTurn(marie, [userMessage('x1', 'Coucou')])).status).toBe(404);
+
+    expect((await accept(marie)).status).toBe(204);
+    const opened = await open(marie, CONVERSATION);
+    expect(opened.messages).toHaveLength(2);
+    expect(opened.conversation.sharing).toMatchObject({
+      role: 'member',
+      owner: { name: 'admin' },
+      members: [{ person: { name: 'marie' }, status: 'member' }],
+    });
+    expect((await quotaOf(marie)).percentUsed).toBe(0);
+
+    const history = [...opened.messages, userMessage('m3', 'Et si le propriétaire ne répond pas ?')];
+    expect((await chat(marie, CONVERSATION, history)).status).toBe(200);
+    const { messages } = await open(admin, CONVERSATION);
+    expect(messages.map((message) => message.metadata?.author?.name ?? null)).toEqual(['admin', null, 'marie', null]);
+    expect((await quotaOf(marie)).percentUsed).toBe(42);
+    const prompt = JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt);
+    expect(prompt).toContain('[admin]');
+    expect(prompt).toContain('[marie]');
+    expect(prompt).toContain('shared between admin, marie');
+
+    const found = (await (await call('/api/search?q=propriétaire', { cookie: marie })).json()) as SearchResponse;
+    expect(found.results.map((result) => result.conversation.id)).toEqual([CONVERSATION]);
+  });
+
+  test('one answer at a time: the others see whose message it answers, and an outdated copy is refused', async () => {
+    const { admin, marie } = await sharedWithMarie();
+    const before = (await open(marie, CONVERSATION)).messages;
+    const { promise, resolve } = Promise.withResolvers<void>();
+    answerHeld = promise;
+    const writing = await sendTurn(admin, [...before, userMessage('m3', 'Je préviens l’assurance ?')]);
+
+    const meanwhile = await open(marie, CONVERSATION);
+    expect(meanwhile.answering).toMatchObject({ name: 'admin' });
+    expect(meanwhile.messages.at(-1)!.id).toBe('m3');
+    expect(await errorOf(await sendTurn(marie, [...meanwhile.messages, userMessage('m4', 'Oui')]))).toBe(
+      'conversation_busy',
+    );
+    resolve();
+    await writing.text();
+    expect((await open(marie, CONVERSATION)).answering).toBeNull();
+
+    // Sent from her copy before the admin's message, hers would erase it.
+    expect(await errorOf(await sendTurn(marie, [...before, userMessage('m4', 'Oui')]))).toBe('conversation_changed');
+    // Nobody edits or answers again someone else's message.
+    const saved = (await open(marie, CONVERSATION)).messages;
+    expect((await sendTurn(marie, saved.slice(0, -1))).status).toBe(400);
+    expect((await open(admin, CONVERSATION)).messages).toHaveLength(4);
+  });
+
+  test("members open the conversation's files and documents, and no other file of each other's", async () => {
+    const { admin, marie } = await sharedWithMarie();
+    const photo = (await (await upload(admin, 'fuite.png', 'image/png', DRAWN)).json()) as UploadFileResponse;
+    const other = (await (await upload(admin, 'autre.png', 'image/png', DRAWN)).json()) as UploadFileResponse;
+    await say(admin, withFile('m3', 'Voici la fuite.', photo.file));
+    expect((await call(`/api/files/${photo.file.id}`, { cookie: marie })).status).toBe(200);
+    expect((await call(`/api/files/${other.file.id}`, { cookie: marie })).status).toBe(404);
+
+    scriptedCalls = [
+      { toolName: 'create_document', input: { kind: 'document', title: 'Lettre', content: 'Brouillon' } },
+    ];
+    await say(marie, userMessage('m5', 'Écris la lettre au propriétaire, avec la photo.'));
+    expect(JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt)).not.toContain('was deleted from the library');
+    const [letter] = await artifactsOf(admin);
+    expect(letter).toMatchObject({ title: 'Lettre', version: 1 });
+    expect((await saveArtifact(marie, letter!.id, 'Corrigée par Marie', 1)).status).toBe(200);
+    expect((await artifactsOf(admin))[0]!.version).toBe(2);
+  });
+
+  test("the sender's memory stays theirs; pins are personal; a member leaves, the owner removes or deletes for all", async () => {
+    const { admin, marie, marieId } = await sharedWithMarie();
+    analysis = plainAnalysis({ feedback: 'Préfère des réponses courtes.' });
+    reconciliation = { operation: 'add', ruleId: null, text: 'Réponses courtes.' };
+    await say(marie, userMessage('m3', 'Réponds plus court, s’il te plaît.'));
+    analysis = plainAnalysis();
+    expect(noticeOf((await open(marie, CONVERSATION)).messages.at(-1)!)).toBeDefined();
+    expect(noticeOf((await open(admin, CONVERSATION)).messages.at(-1)!)).toBeUndefined();
+    expect(await rulesOf(admin)).toEqual([]);
+    const remember = (cookie: string) =>
+      call('/api/memory/remember', { method: 'POST', body: { conversationId: CONVERSATION, messageId: 'm3' }, cookie });
+    expect((await remember(admin)).status).toBe(404);
+
+    await call(`/api/conversations/${CONVERSATION}`, { method: 'PATCH', body: { pinned: true }, cookie: marie });
+    expect((await listOf(marie)).conversations[0]!.pinned).toBe(true);
+    expect((await listOf(admin)).conversations[0]!.pinned).toBe(false);
+    expect((await call(`/api/conversations/${CONVERSATION}`, { method: 'DELETE', cookie: marie })).status).toBe(404);
+
+    expect((await leave(marie, marieId)).status).toBe(204);
+    expect((await call(`/api/conversations/${CONVERSATION}`, { cookie: marie })).status).toBe(404);
+    expect((await listOf(admin)).conversations[0]!.sharing).toBeNull();
+    await share(admin, [marieId]);
+    await accept(marie);
+    expect((await leave(admin, marieId)).status).toBe(204);
+    expect((await call(`/api/conversations/${CONVERSATION}`, { cookie: marie })).status).toBe(404);
+
+    await share(admin, [marieId]);
+    await accept(marie);
+    const marieDevice = await listen(marie);
+    expect((await call(`/api/conversations/${CONVERSATION}`, { method: 'DELETE', cookie: admin })).status).toBe(204);
+    await marieDevice.until((events) => events.some((event) => event.type === 'conversation'));
+    await marieDevice.hangUp();
+    expect(await listOf(marie)).toEqual({ conversations: [], invitations: [] });
+  });
+});
+
 describe('search', () => {
   test("finds the user's own conversations by the start of words, accents aside, and follows edits", async () => {
     const cookie = await signIn(ADMIN);
@@ -1148,7 +1310,10 @@ describe('commands', () => {
     expect(prePasses().at(-1)).toContain('Corrige les fautes du texte.');
 
     const { messages } = await open(cookie, CONVERSATION);
-    expect(messages[0]!.metadata).toEqual({ command: { id: command.id, name: 'corriger' } });
+    expect(messages[0]!.metadata).toEqual({
+      command: { id: command.id, name: 'corriger' },
+      author: { id: 1, name: 'admin', email: ADMIN },
+    });
     expect(textOfMessage(messages[0]!)).toBe('Je suis aller au marcher.');
     expect((await listCommands(cookie))[0]!.uses).toBe(1);
 

@@ -1,4 +1,5 @@
 import type { ChatMessage, Conversation, SearchHit } from './conversation.ts';
+import type { ConversationMember } from './sharing.ts';
 
 export interface ConversationRepository {
   /** The user's conversations, last updated first. */
@@ -16,6 +17,23 @@ export interface ConversationRepository {
   setIcon(id: string, icon: string): Promise<void>;
   setPinned(id: string, pinned: boolean): Promise<void>;
   delete(id: string): Promise<void>;
-  /** The user's conversations whose messages hold every term (or a word starting with it), last updated first. */
+  /** The conversations the user owns or joined whose messages hold every term (or a word starting with it). */
   search(userId: number, terms: readonly string[], limit: number): Promise<SearchHit[]>;
+
+  /** Everyone invited to or in the conversation, besides its owner, first invited first. */
+  members(conversationId: string): Promise<ConversationMember[]>;
+  /** The members of every conversation the user owns. */
+  membersOfOwned(userId: number): Promise<ConversationMember[]>;
+  /** The conversations the user was invited to or joined, with their membership. */
+  memberships(userId: number): Promise<{ conversation: Conversation; member: ConversationMember }[]>;
+  /** Those already invited or in stay as they are. */
+  invite(conversationId: string, userIds: readonly number[], now: Date): Promise<void>;
+  join(conversationId: string, userId: number, now: Date): Promise<void>;
+  removeMember(conversationId: string, userId: number): Promise<void>;
+  setMemberPinned(conversationId: string, userId: number, pinned: boolean): Promise<void>;
+  /**
+   * Whether a conversation the viewer owns or joined, which the file's owner also owns or joined, mentions the file:
+   * a file sent or made in a shared conversation opens for its members, no other file does.
+   */
+  sharesFile(viewerId: number, fileId: string, fileOwnerId: number): Promise<boolean>;
 }

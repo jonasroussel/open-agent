@@ -1,6 +1,7 @@
 import type { ModelRole } from '@open-agent/shared';
 import type { Knex } from 'knex';
 
+import { AnsweringNow } from './application/answering-now.ts';
 import { Artifacts } from './application/artifacts.ts';
 import { Authentication } from './application/authentication.ts';
 import { ChatTurns } from './application/chat-turns.ts';
@@ -14,6 +15,7 @@ import { Memory } from './application/memory.ts';
 import { MessageMemory } from './application/message-memory.ts';
 import { Models } from './application/models.ts';
 import { OwnKeys } from './application/own-keys.ts';
+import { Participants } from './application/participants.ts';
 import type { Clock } from './application/ports/clock.ts';
 import type { WeatherService, WebPageReader } from './application/ports/context-services.ts';
 import type { DocumentReader } from './application/ports/document-reader.ts';
@@ -25,6 +27,7 @@ import type { WebSearch } from './application/ports/web-search.ts';
 import { PreAnalysis } from './application/pre-analysis.ts';
 import { Quotas } from './application/quotas.ts';
 import { Settings } from './application/settings.ts';
+import { Sharing } from './application/sharing.ts';
 import { UsageRecorder } from './application/usage-recorder.ts';
 import { UserAccess } from './application/user-access.ts';
 import { MathjsCalculator } from './infrastructure/context/mathjs-calculator.ts';
@@ -112,11 +115,21 @@ export async function createApp(
   const ledger = new SqliteUsageLedger(database);
   const usage = new UsageRecorder(ledger, models, clock);
   const quotas = new Quotas(ledger, users, clock, options.defaultMonthlyQuotaUsd);
-  // The user's other devices learn of every change through `/api/events`.
+  // The user's other devices, and the other members of a shared conversation, learn of every change through
+  // `/api/events`.
   const changes = new InMemoryChangeFeed();
+  const participants = new Participants(conversations, users, changes);
+  const answering = new AnsweringNow();
   const memory = new Memory(new SqliteMemoryRepository(database), conversations, clock, changes);
-  const library = new Library(new SqliteLibraryRepository(database), fileStore, documents, clock, changes);
-  const artifacts = new Artifacts(new SqliteArtifactRepository(database), clock, changes);
+  const library = new Library(
+    new SqliteLibraryRepository(database),
+    conversations,
+    fileStore,
+    documents,
+    clock,
+    changes,
+  );
+  const artifacts = new Artifacts(new SqliteArtifactRepository(database), clock, participants);
   const commands = new Commands(new SqliteCommandRepository(database), clock, changes);
   const settings = await Settings.load(
     new SqliteSettingsRepository(database),
@@ -143,12 +156,15 @@ export async function createApp(
       options.devSignInCode,
     ),
     userAccess,
-    conversations: new Conversations(conversations, changes),
+    conversations: new Conversations(conversations, participants, users, answering),
+    sharing: new Sharing(conversations, participants, users, mailer, clock, options.publicUrl),
     memory,
-    messageMemory: new MessageMemory(conversations, memory, reconciler, quotas),
+    messageMemory: new MessageMemory(conversations, participants, memory, reconciler, quotas),
     commands,
     chatTurns: new ChatTurns(
       conversations,
+      participants,
+      answering,
       new PreAnalysis(roleModels, usage, settings),
       memory,
       reconciler,
@@ -160,10 +176,9 @@ export async function createApp(
       settings,
       clock,
       webSearch,
-      new ContextTools(conversations, library, new MathjsCalculator(), pages, weather),
+      new ContextTools(conversations, participants, library, new MathjsCalculator(), pages, weather),
       new MakingTools(library, roleModels, usage, new OfficeFileMaker()),
       commands,
-      changes,
     ),
     quotas,
     library,

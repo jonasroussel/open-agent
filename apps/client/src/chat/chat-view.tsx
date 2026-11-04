@@ -3,6 +3,7 @@ import {
   API_ROUTES,
   apiPath,
   OWN_KEY_REFUSED,
+  type ApiError,
   type ChatMessage,
   type CommandDto,
   type LibraryFileDto,
@@ -16,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
 
+import { sessionQuery } from '@/auth/session.ts';
 import { CanvasPanel } from '@/canvas/canvas-panel.tsx';
 import { artifactQuery, liveDocumentOf, writtenDocumentOf } from '@/canvas/canvas-query.ts';
 import { rememberOpenCanvas } from '@/canvas/open-canvas.ts';
@@ -26,6 +28,8 @@ import { api } from '@/lib/api.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
 import { QUOTA_WARNING_PERCENT, quotaQuery, resetMonth } from '@/quota/quota-query.ts';
 
+import { useAnswering } from './answering-store.ts';
+import { refreshChat } from './chat-store.ts';
 import { Composer } from './composer.tsx';
 import { conversationsQuery } from './conversations-query.ts';
 import { Greeting } from './greeting.tsx';
@@ -47,6 +51,28 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
   const exhausted = quota?.exhausted === true;
   const pendingQuestion = pendingQuestionOf(messages.at(-1));
 
+  // Shared, once someone joined: each writes their own messages, one answer at a time.
+  const me = useQuery(sessionQuery).data?.id ?? null;
+  const { data: list } = useQuery(conversationsQuery);
+  const sharing = list?.conversations.find((conversation) => conversation.id === chat.id)?.sharing ?? null;
+  const shared = sharing?.members.some((member) => member.status === 'member') ?? false;
+  const answeringNow = useAnswering(chat.id);
+  const waitingFor = shared && !busy ? answeringNow : null;
+  const locked = busy || waitingFor !== null;
+  // Messages from before the sharing are the owner's.
+  const authorOf = (message: ChatMessage) => message.metadata?.author ?? sharing?.owner ?? null;
+  const mine = (message: ChatMessage) => !shared || authorOf(message)?.id === me;
+  const lastUserIndex = messages.findLastIndex((message) => message.role === 'user');
+  // Answering again, or answering the assistant's questions, is for whoever sent the last message.
+  const ownTurn = lastUserIndex === -1 || mine(messages[lastUserIndex]!);
+
+  const errorCode = codeOf(error);
+  const conflict = errorCode === 'conversation_busy' || errorCode === 'conversation_changed';
+  // Someone else wrote meanwhile: the saved copy shows what they wrote, and the user sends theirs again.
+  useEffect(() => {
+    if (conflict) void refreshChat(chat.id);
+  }, [conflict, chat.id]);
+
   // The server creates the conversation when the answer starts: show it in the sidebar then. The `Chat` refreshes the
   // list again when the answer ends (`chat-store.ts`).
   useEffect(() => {
@@ -60,14 +86,22 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
   };
 
   // While a question waits, what the user types answers it; files or a command make it a new message, the question
-  // then unanswered.
+  // then unanswered. In a shared conversation, only the one it was asked to answers it.
+  const myQuestion = ownTurn ? pendingQuestion : null;
   const send = (text: string, files: LibraryFileDto[], command: CommandDto | null) => {
-    if (pendingQuestion && text && files.length === 0 && !command) return answer(pendingQuestion, text);
+    if (myQuestion && text && files.length === 0 && !command) return answer(myQuestion, text);
     clearError();
     const parts = files.map(toFilePart);
     const metadata = command ? { command: { id: command.id, name: command.name } } : undefined;
     void (text ? sendMessage({ text, files: parts, metadata }) : sendMessage({ files: parts, metadata }));
     onSend?.();
+  };
+
+  const placeholderOf = () => {
+    if (waitingFor) {
+      return waitingFor.id === me ? t('chat.answeringYou') : t('chat.answeringFor', { name: waitingFor.name });
+    }
+    return myQuestion ? t('chat.answerPlaceholder') : t('chat.placeholder');
   };
 
   /**
@@ -162,7 +196,9 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
                   <UserMessage
                     key={message.id}
                     message={message}
-                    canEdit={!busy}
+                    author={mine(message) ? null : (authorOf(message)?.name ?? null)}
+                    // Shared: only the sender's own last message, the answers after it are everyone's.
+                    canEdit={!locked && mine(message) && (!shared || index === lastUserIndex)}
                     onEdit={(text) => {
                       clearError();
                       // The edited message keeps its files and its command.
@@ -172,7 +208,7 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
                         ? sendMessage({ text, files, metadata, messageId: message.id })
                         : sendMessage({ files, metadata, messageId: message.id }));
                     }}
-                    onRemember={busy ? null : () => rememberMessage(message.id)}
+                    onRemember={locked || !mine(message) ? null : () => rememberMessage(message.id)}
                     onUndoMemory={undoMemory}
                   />
                 ) : (
@@ -181,24 +217,24 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
                     message={message}
                     // From its first chunk: the server sends the answer's route before any word.
                     streaming={busy && index === lastIndex}
-                    onRegenerate={!busy && index === lastIndex ? () => void regenerate() : null}
+                    onRegenerate={!locked && ownTurn && index === lastIndex ? () => void regenerate() : null}
                     onUndoMemory={undoMemory}
                     onOpenDocument={openDocument}
-                    onAnswer={!busy && index === lastIndex ? answer : null}
+                    onAnswer={!locked && ownTurn && index === lastIndex ? answer : null}
                   />
                 ),
               )}
               {/* Only until the answer appears: then it takes the dots' place, instead of showing next to them. */}
-              {busy && messages.at(-1)?.role === 'user' && <PendingAnswer />}
+              {(busy || waitingFor) && messages.at(-1)?.role === 'user' && <PendingAnswer />}
               {error && !exhausted && (
                 <div className='flex items-center gap-3 pl-10'>
-                  <p className='text-destructive text-sm'>
-                    {error.message === OWN_KEY_REFUSED ? t('chat.ownKeyRefused') : t('chat.failed')}
-                  </p>
-                  <Button variant='outline' size='sm' onClick={() => void regenerate()}>
-                    <RotateCcw />
-                    {t('app.retry')}
-                  </Button>
+                  <p className='text-destructive text-sm'>{t(errorKeyOf(error, errorCode))}</p>
+                  {!conflict && (
+                    <Button variant='outline' size='sm' onClick={() => void regenerate()}>
+                      <RotateCcw />
+                      {t('app.retry')}
+                    </Button>
+                  )}
                 </div>
               )}
             </StickToBottom.Content>
@@ -219,9 +255,10 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
           ) : (
             <Composer
               busy={busy}
+              waiting={waitingFor !== null}
               onSend={send}
               onStop={() => void stop()}
-              placeholder={pendingQuestion ? t('chat.answerPlaceholder') : t('chat.placeholder')}
+              placeholder={placeholderOf()}
             />
           )}
         </div>
@@ -231,6 +268,22 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
       )}
     </div>
   );
+}
+
+/** The server refuses a turn with `{ "error": code }`, which the chat transport keeps as the error's message. */
+function codeOf(error: Error | undefined): ApiError['error'] | null {
+  if (!error) return null;
+  try {
+    return (JSON.parse(error.message) as Partial<ApiError>).error ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function errorKeyOf(error: Error, code: ApiError['error'] | null) {
+  if (code === 'conversation_busy') return 'errors.conversation_busy';
+  if (code === 'conversation_changed') return 'errors.conversation_changed';
+  return error.message === OWN_KEY_REFUSED ? 'chat.ownKeyRefused' : 'chat.failed';
 }
 
 /** The first question of the last answer still waiting for the user's answer. */

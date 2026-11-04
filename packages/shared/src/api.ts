@@ -28,10 +28,21 @@ export const API_ROUTES = {
    * and keeps it encrypted. DELETE: forgets it.
    */
   ownKey: '/api/own-key',
-  /** GET: the signed-in user's conversations, last updated first. */
+  /**
+   * GET: the signed-in user's conversations, last updated first: their own and those shared with them, as
+   * `ListConversationsResponse`, with the invitations they have not answered.
+   */
   conversations: '/api/conversations',
-  /** GET: one conversation with its messages. PATCH `UpdateConversationBody`. DELETE. */
+  /** GET: one conversation with its messages. PATCH `UpdateConversationBody`. DELETE: the owner deletes it for everyone. */
   conversation: '/api/conversations/:conversationId',
+  /** POST `ShareConversationBody`: the owner invites people. */
+  conversationMembers: '/api/conversations/:conversationId/members',
+  /** DELETE: the owner removes someone; a member leaves, an invited person declines. */
+  conversationMember: '/api/conversations/:conversationId/members/:userId',
+  /** POST: the invited person joins. */
+  conversationJoin: '/api/conversations/:conversationId/join',
+  /** GET: the people a conversation can be shared with, as `ListPeopleResponse`. */
+  people: '/api/people',
   /** GET `?q=`: full-text search in the signed-in user's history, as `SearchResponse`. */
   search: '/api/search',
   /**
@@ -55,9 +66,12 @@ export const API_ROUTES = {
   command: '/api/commands/:commandId',
   /** GET: the signed-in user's files, newest first. POST multipart, field `file`: uploads one, as `UploadFileResponse`. */
   files: '/api/files',
-  /** GET: the file itself, only for its owner. DELETE: removes it from the library. */
+  /**
+   * GET: the file itself, for its owner and the members of a shared conversation it was sent or made in. DELETE:
+   * removes it from the library, for its owner.
+   */
   file: '/api/files/:fileId',
-  /** GET: the picture that shows the file in "My files" (`LibraryFileDto.previewUrl`), only for its owner. */
+  /** GET: the picture that shows the file (`LibraryFileDto.previewUrl`), for those who may get the file. */
   filePreview: '/api/files/:fileId/preview',
   /** GET: the conversation's canvas documents, as `ListArtifactsResponse`. */
   conversationArtifacts: '/api/conversations/:conversationId/artifacts',
@@ -106,6 +120,10 @@ export type ApiError = {
     | 'command_name_taken'
     /** A user has at most `MAX_COMMANDS` commands. */
     | 'commands_full'
+    /** Someone's answer is still being written in this shared conversation: wait for it. */
+    | 'conversation_busy'
+    /** The shared conversation changed since this copy of it: it is reloaded, the message is to send again. */
+    | 'conversation_changed'
     /** The rule changed again since, or the change was already undone: undoing it would lose the newer state. */
     | 'memory_changed'
     /** The user spent their monthly quota; it comes back on the 1st, see `QuotaResponse.resetsAt`. */
@@ -218,6 +236,8 @@ export type ChatMessageMetadata = {
   /** The clearer request the model answered instead of the user's own words; never shown, kept to check the rewrites. */
   rewrittenRequest?: string;
   command?: { id: string; name: string };
+  /** A user message: who sent it. Missing on messages from before sharing: the owner's. */
+  author?: PersonDto;
 };
 
 /** What a memory change looks like in the conversation, under the answer to the remark that caused it. */
@@ -229,6 +249,8 @@ export type MemoryNotice = {
   /** The rule after the change; `null` for a deletion. */
   after: string | null;
   undone: boolean;
+  /** Whose memory changed: only they see the notice in a shared conversation. Missing on old notices: the owner's. */
+  userId?: number;
 };
 
 /** Custom parts of a message: `data-memory` is a `MemoryNotice`. */
@@ -359,21 +381,52 @@ export type ChatTools = {
 
 export type ChatMessage = UIMessage<ChatMessageMetadata, ChatDataParts, ChatTools>;
 
+/** Someone of the app, named by the start of their email ("marie.dupont"). */
+export type PersonDto = { id: number; name: string; email: string };
+
+export type ListPeopleResponse = { people: PersonDto[] };
+
+/** A shared conversation as the user sees it: their role, its owner, everyone invited or in it. */
+export type SharingDto = {
+  role: 'owner' | 'member';
+  owner: PersonDto;
+  members: { person: PersonDto; status: 'invited' | 'member' }[];
+};
+
 export type ConversationDto = {
   id: string;
   /** `null` until it is named after the first answer. */
   title: string | null;
   /** A Lucide icon name (`fuel`), chosen with the title; the client shows a default one when it is `null` or unknown. */
   icon: string | null;
+  /** For the user only: each member pins it for themselves. */
   pinned: boolean;
   updatedAt: string;
+  /** `null`: not shared with anyone. */
+  sharing: SharingDto | null;
 };
 
-export type ListConversationsResponse = { conversations: ConversationDto[] };
+/** A shared conversation the user was invited to and has not joined yet. */
+export type InvitationDto = {
+  id: string;
+  title: string | null;
+  icon: string | null;
+  from: PersonDto;
+  invitedAt: string;
+};
 
-export type ConversationResponse = { conversation: ConversationDto; messages: ChatMessage[] };
+export type ListConversationsResponse = { conversations: ConversationDto[]; invitations: InvitationDto[] };
+
+/** `answering`: whose message the assistant is answering right now, in a shared conversation. */
+export type ConversationResponse = {
+  conversation: ConversationDto;
+  messages: ChatMessage[];
+  answering: PersonDto | null;
+};
 
 export type UpdateConversationBody = { title?: string; pinned?: boolean };
+
+export type ShareConversationBody = { userIds: number[] };
 
 /** A title the user writes: about a sidebar row. */
 export const MAX_CONVERSATION_TITLE_LENGTH = 80;

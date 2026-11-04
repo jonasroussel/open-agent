@@ -1,4 +1,4 @@
-import type { Locale, UserRole, UserStatus } from '@open-agent/shared';
+import { personNameOf, type Locale, type PersonDto, type UserRole, type UserStatus } from '@open-agent/shared';
 
 /** Someone the admin gave access to. Revoking keeps the row (and later their conversations): access can come back. */
 export type User = {
@@ -22,4 +22,9 @@ export type OwnKey = { sealed: string; addedAt: Date };
 export function userStatus(user: User): UserStatus {
   if (user.revokedAt) return 'revoked';
   return user.lastSignInAt ? 'active' : 'invited';
+}
+
+/** How the others see them: in a shared conversation, the people dialog, an email. */
+export function personOf(user: User): PersonDto {
+  return { id: user.id, name: personNameOf(user.email), email: user.email };
 }

@@ -14,6 +14,7 @@ import * as ownKey from './0011-own-key.ts';
 import * as restoredVersions from './0012-restored-versions.ts';
 import * as commands from './0013-commands.ts';
 import * as commandOrder from './0014-command-order.ts';
+import * as conversationMembers from './0015-conversation-members.ts';
 
 /** Listed explicitly so migrations survive `bun build`. Append new ones at the end; never rename. */
 const migrations: Record<string, Knex.Migration> = {
@@ -31,6 +32,7 @@ const migrations: Record<string, Knex.Migration> = {
   '0012-restored-versions': restoredVersions,
   '0013-commands': commands,
   '0014-command-order': commandOrder,
+  '0015-conversation-members': conversationMembers,
 };
 
 export const migrationSource: Knex.MigrationSource<string> = {

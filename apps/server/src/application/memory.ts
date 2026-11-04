@@ -172,5 +172,6 @@ function toNotice(change: MemoryChange): MemoryNotice {
     before: change.before,
     after: change.after,
     undone: false,
+    userId: change.userId,
   };
 }

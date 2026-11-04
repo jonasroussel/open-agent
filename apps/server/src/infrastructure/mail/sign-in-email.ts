@@ -1,6 +1,7 @@
 import type { Locale } from '@open-agent/shared';
 
 import type { SignInEmail } from '../../application/ports/mailer.ts';
+import { emailButton, emailHtml } from './email-layout.ts';
 
 type Texts = {
   subject: Record<SignInEmail['kind'], string>;
@@ -51,22 +52,13 @@ export function renderSignInEmail(email: SignInEmail): { subject: string; html: 
        <p style="margin:0;font-size:32px;font-weight:700;letter-spacing:8px">${email.code}</p>`
     : '';
 
-  const html = `<!doctype html>
-<html lang="${email.locale}">
-  <body style="margin:0;padding:24px;background:#f5f5f5;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#171717">
-    <div style="max-width:480px;margin:0 auto;padding:32px;background:#ffffff;border-radius:16px">
-      <h1 style="margin:0 0 16px;font-size:22px">Open Agent</h1>
-      <p style="margin:0 0 24px;font-size:16px;line-height:1.5">${texts.intro[email.kind]}</p>
-      <a href="${escapeHtml(email.link)}" style="display:inline-block;padding:14px 28px;border-radius:999px;background-color:#2a2c6e;color:#ffffff;font-size:16px;font-weight:600;text-decoration:none">${texts.button}</a>
+  const html = emailHtml(
+    email.locale,
+    `<p style="margin:0 0 24px;font-size:16px;line-height:1.5">${texts.intro[email.kind]}</p>
+      ${emailButton(email.link, texts.button)}
       ${code}
       <p style="margin:24px 0 0;font-size:14px;color:#525252">${texts.validFor(duration)}</p>
-      <p style="margin:8px 0 0;font-size:14px;color:#525252">${texts.ignore}</p>
-    </div>
-  </body>
-</html>`;
+      <p style="margin:8px 0 0;font-size:14px;color:#525252">${texts.ignore}</p>`,
+  );
   return { subject: texts.subject[email.kind], html };
-}
-
-function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }

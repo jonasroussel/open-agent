@@ -38,7 +38,9 @@ import {
 import { attachedNames, attachmentsAreValid } from '../domain/library-file.ts';
 import type { MemoryRule } from '../domain/memory.ts';
 import { isExhausted } from '../domain/quota.ts';
-import type { User } from '../domain/user.ts';
+import { continuedHistory, signedBy, withAuthorNames } from '../domain/sharing.ts';
+import { personOf, type User } from '../domain/user.ts';
+import type { AnsweringNow } from './answering-now.ts';
 import type { Artifacts } from './artifacts.ts';
 import type { Commands } from './commands.ts';
 import type { ContextTools } from './context-tools.ts';
@@ -47,7 +49,7 @@ import type { MakingTools } from './making-tools.ts';
 import type { MemoryReconciler } from './memory-reconciler.ts';
 import type { Memory } from './memory.ts';
 import type { Models } from './models.ts';
-import type { ChangeFeed } from './ports/change-feed.ts';
+import type { Participants } from './participants.ts';
 import type { Clock } from './ports/clock.ts';
 import { ToolRefusal } from './ports/context-services.ts';
 import { ModelUnavailableError } from './ports/model-catalog.ts';
@@ -65,6 +67,7 @@ const dataSchemas = {
     before: z.string().nullable(),
     after: z.string().nullable(),
     undone: z.boolean(),
+    userId: z.number().optional(),
   }),
 };
 
@@ -89,16 +92,28 @@ const KEY_REFUSED: Record<number, true> = { 401: true, 402: true, 403: true };
 
 export type ChatTurnResult =
   | { ok: true; stream: ReadableStream<UIMessageChunk<ChatMessageMetadata>> }
-  | { ok: false; reason: 'invalid_request' | 'not_found' | 'model_unavailable' | 'quota_exceeded' };
+  | {
+      ok: false;
+      reason:
+        | 'invalid_request'
+        | 'not_found'
+        | 'model_unavailable'
+        | 'quota_exceeded'
+        | 'conversation_busy'
+        | 'conversation_changed';
+    };
 
 /**
  * One exchange: the client sends the whole history (its last message is the user's). The pre-analysis picks how to
  * answer; the answer streams back and the history with it is saved when the stream ends, even when the user stops it.
  * A remark about how the assistant should work becomes a rule meanwhile, shown under the answer. A new conversation
- * is named in parallel, from its first message.
+ * is named in parallel, from its first message. In a shared conversation, the sender pays, their memory and commands
+ * apply, and the others wait for the answer to write.
  */
 export class ChatTurns {
   readonly #conversations: ConversationRepository;
+  readonly #participants: Participants;
+  readonly #answering: AnsweringNow;
   readonly #preAnalysis: PreAnalysis;
   readonly #memory: Memory;
   readonly #reconciler: MemoryReconciler;
@@ -113,10 +128,11 @@ export class ChatTurns {
   readonly #contextTools: ContextTools;
   readonly #makingTools: MakingTools;
   readonly #commands: Commands;
-  readonly #changes: ChangeFeed;
 
   constructor(
     conversations: ConversationRepository,
+    participants: Participants,
+    answering: AnsweringNow,
     preAnalysis: PreAnalysis,
     memory: Memory,
     reconciler: MemoryReconciler,
@@ -131,9 +147,10 @@ export class ChatTurns {
     contextTools: ContextTools,
     makingTools: MakingTools,
     commands: Commands,
-    changes: ChangeFeed,
   ) {
     this.#conversations = conversations;
+    this.#participants = participants;
+    this.#answering = answering;
     this.#preAnalysis = preAnalysis;
     this.#memory = memory;
     this.#reconciler = reconciler;
@@ -148,7 +165,6 @@ export class ChatTurns {
     this.#contextTools = contextTools;
     this.#makingTools = makingTools;
     this.#commands = commands;
-    this.#changes = changes;
   }
 
   /**
@@ -159,7 +175,31 @@ export class ChatTurns {
     if (typeof id !== 'string' || !CONVERSATION_ID.test(id)) return { ok: false, reason: 'invalid_request' };
     const validated = await safeValidateUIMessages<ChatMessage>({ messages: rawMessages, dataSchemas });
     if (!validated.success) return { ok: false, reason: 'invalid_request' };
-    const messages = validated.data;
+
+    const existing = await this.#conversations.find(id);
+    const access = existing && (await this.#participants.access(user, id));
+    if (existing && !access) return { ok: false, reason: 'not_found' };
+    const people = access ? await this.#participants.people(access.conversation) : [user];
+    const shared = people.length > 1;
+    const sender = personOf(user);
+    let messages = validated.data;
+    if (access && shared) {
+      const continued = continuedHistory(
+        await this.#conversations.messages(id),
+        messages,
+        sender,
+        access.conversation.userId,
+      );
+      if (!continued.ok) {
+        return {
+          ok: false,
+          reason: continued.reason === 'conversation_changed' ? 'conversation_changed' : 'invalid_request',
+        };
+      }
+      messages = continued.messages;
+    } else if (messages.length > 0) {
+      messages = [...messages.slice(0, -1), signedBy(messages.at(-1)!, sender)];
+    }
     const resumed = answersQuestions(messages) ? messages.at(-1)! : null;
     if (!resumed && messages.at(-1)?.role !== 'user') return { ok: false, reason: 'invalid_request' };
     if (!attachmentsAreValid(messages)) return { ok: false, reason: 'invalid_request' };
@@ -171,23 +211,51 @@ export class ChatTurns {
       throw error;
     }
     if (isExhausted(await this.#quotas.of(user))) return { ok: false, reason: 'quota_exceeded' };
+    if (shared && !this.#answering.take(id, sender)) return { ok: false, reason: 'conversation_busy' };
 
+    try {
+      return await this.#answer(user, id, access?.conversation ?? null, people, messages, resumed, abortSignal);
+    } catch (error) {
+      if (shared) this.#answering.release(id);
+      throw error;
+    }
+  }
+
+  async #answer(
+    user: User,
+    id: string,
+    existing: Conversation | null,
+    people: readonly User[],
+    messages: ChatMessage[],
+    resumed: ChatMessage | null,
+    abortSignal: AbortSignal,
+  ): Promise<ChatTurnResult> {
     const now = this.#clock.now();
-    const existing = await this.#conversations.find(id);
-    if (existing && existing.userId !== user.id) return { ok: false, reason: 'not_found' };
     const conversation = existing ?? (await this.#conversations.create({ id, userId: user.id, now }));
+    const shared = people.length > 1;
+    if (shared) {
+      // The others see the message at once, and that the assistant is answering it.
+      await this.#conversations.replaceMessages(conversation.id, messages, now);
+      await this.#participants.publish(conversation, { type: 'conversation', id: conversation.id });
+      await this.#participants.publish(conversation, { type: 'conversations' });
+    }
     // Conversations from before icons get theirs at their next message; a title, maybe renamed by the user, stays.
     // Each command gets its prompt before the user's words: for the pre-analysis, the title and the model, never in
     // the saved conversation, which keeps the badge.
     const expanded = await this.#commands.expand(user, messages);
     if (!resumed) void this.#commands.recordUse(user, messages.at(-1)!);
     if (!conversation.title || !conversation.icon) void this.#name(user, conversation, expanded[0]!);
+    const named = (history: ChatMessage[]) => (shared ? withAuthorNames(history, personOf(people[0]!).name) : history);
 
     const stream = createUIMessageStream<ChatMessage>({
       originalMessages: messages,
       onEnd: async ({ messages: history }) => {
-        await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
-        this.#changes.publish(user.id, { type: 'conversation', id: conversation.id });
+        try {
+          await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
+        } finally {
+          if (shared) this.#answering.release(conversation.id);
+        }
+        await this.#participants.publish(conversation, { type: 'conversation', id: conversation.id });
       },
       onError: (error) => this.#failure(user, error),
       execute: async ({ writer }) => {
@@ -249,13 +317,14 @@ export class ChatTurns {
               this.#webSearch !== null,
               documents,
               await this.#commands.names(user),
+              shared ? people.map((person) => personOf(person).name) : null,
             ),
             // Every attached file goes in whole, at each answer: the user may ask about any detail, any time.
             messages: await convertToModelMessages(
               await this.#library.expandFiles(
-                user,
+                people.map((person) => person.id),
                 withoutDocumentBodies(
-                  withNotes(withLatestRequest(withAnsweredQuestions(expanded), analysis.rewrittenRequest), [
+                  withNotes(named(withLatestRequest(withAnsweredQuestions(expanded), analysis.rewrittenRequest)), [
                     timeNote(this.#clock.now()),
                     ...restoreNotes(documents),
                   ]),
@@ -440,7 +509,7 @@ export class ChatTurns {
       const icon = cleanIcon(result.output.icon) ?? 'message-square';
       if (title && !conversation.title) await this.#conversations.rename(conversation.id, title);
       await this.#conversations.setIcon(conversation.id, icon);
-      this.#changes.publish(user.id, { type: 'conversations' });
+      await this.#participants.publish(conversation, { type: 'conversations' });
     } catch (error) {
       // A name that did not parse was billed all the same: the quota must see it.
       if (NoObjectGeneratedError.isInstance(error)) {
@@ -566,6 +635,8 @@ function instructions(
   canSearch: boolean,
   documents: readonly { artifact: Artifact; content: string; restoredFrom: number | null }[],
   commandNames: readonly string[],
+  /** In a shared conversation, everyone in it, the owner first; `null` otherwise. */
+  people: readonly string[] | null,
 ): string {
   const today = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeZone: 'Europe/Paris' }).format(now);
   return [
@@ -601,6 +672,12 @@ function instructions(
       ? [
           '',
           `The user's commands, to rewrite with save_command when they ask: ${commandNames.map((name) => `/${name}`).join(', ')}.`,
+        ]
+      : []),
+    ...(people
+      ? [
+          '',
+          `This conversation is shared between ${people.join(', ')}: each user message opens with its writer's name in brackets. You are answering the last one, ${personOf(user).name}: "the user" above and below means them, and what you remember is about them only. Call each person by that name when it helps.`,
         ]
       : []),
   ].join('\n');

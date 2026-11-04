@@ -3,7 +3,7 @@ import { MAX_ARTIFACT_LENGTH, type ArtifactKind } from '@open-agent/shared';
 import type { ArtifactRepository } from '../domain/artifact-repository.ts';
 import { amendsLatest, cleanArtifactTitle, type Artifact, type ArtifactVersion } from '../domain/artifact.ts';
 import type { User } from '../domain/user.ts';
-import type { ChangeFeed } from './ports/change-feed.ts';
+import type { Participants } from './participants.ts';
 import type { Clock } from './ports/clock.ts';
 
 export type SaveResult =
@@ -12,18 +12,18 @@ export type SaveResult =
 
 /**
  * The canvas: documents of a conversation, written by the model with its tools and edited by the user in the panel.
- * Every change is a version; the model always works on the latest one, the user's edits included.
+ * Every change is a version; the model always works on the latest one, the user's edits included. Everyone in a shared
+ * conversation reads and edits its documents.
  */
 export class Artifacts {
   readonly #artifacts: ArtifactRepository;
   readonly #clock: Clock;
+  readonly #participants: Participants;
 
-  readonly #changes: ChangeFeed;
-
-  constructor(artifacts: ArtifactRepository, clock: Clock, changes: ChangeFeed) {
+  constructor(artifacts: ArtifactRepository, clock: Clock, participants: Participants) {
     this.#artifacts = artifacts;
     this.#clock = clock;
-    this.#changes = changes;
+    this.#participants = participants;
   }
 
   /** From the model's `create_document`. Throws when the content is too long: the model is told and can shorten it. */
@@ -45,7 +45,7 @@ export class Artifacts {
       input.content,
       'model',
     );
-    this.#changes.publish(user.id, { type: 'artifact', id: artifact.id });
+    await this.#participants.publish(conversationId, { type: 'artifact', id: artifact.id });
     return artifact;
   }
 
@@ -55,7 +55,7 @@ export class Artifacts {
     const artifact = await this.#artifacts.find(id);
     if (artifact?.conversationId !== conversationId) throw new Error(`No document ${id} in this conversation.`);
     const version = await this.#artifacts.addVersion(id, content, 'model', this.#clock.now());
-    this.#changes.publish(artifact.userId, { type: 'artifact', id });
+    await this.#participants.publish(conversationId, { type: 'artifact', id });
     return { ...artifact, version, updatedAt: this.#clock.now() };
   }
 
@@ -76,22 +76,21 @@ export class Artifacts {
   }
 
   async list(user: User, conversationId: string): Promise<Artifact[]> {
-    const artifacts = await this.#artifacts.listOf(conversationId);
-    return artifacts.filter((artifact) => artifact.userId === user.id);
+    return (await this.#participants.access(user, conversationId)) ? await this.#artifacts.listOf(conversationId) : [];
   }
 
   async open(
     user: User,
     id: string,
   ): Promise<{ artifact: Artifact; content: string; versions: Omit<ArtifactVersion, 'content'>[] } | null> {
-    const artifact = await this.#own(user, id);
+    const artifact = await this.#reachable(user, id);
     if (!artifact) return null;
     const latest = await this.#artifacts.version(id, artifact.version);
     return { artifact, content: latest!.content, versions: await this.#artifacts.versions(id) };
   }
 
   async version(user: User, id: string, number: number): Promise<ArtifactVersion | null> {
-    return (await this.#own(user, id)) ? await this.#artifacts.version(id, number) : null;
+    return (await this.#reachable(user, id)) ? await this.#artifacts.version(id, number) : null;
   }
 
   /**
@@ -109,7 +108,7 @@ export class Artifacts {
     if (typeof content !== 'string' || content.length > MAX_ARTIFACT_LENGTH || typeof baseVersion !== 'number') {
       return { ok: false, reason: 'invalid_request' };
     }
-    const artifact = await this.#own(user, id);
+    const artifact = await this.#reachable(user, id);
     if (!artifact) return { ok: false, reason: 'not_found' };
     if (baseVersion !== artifact.version) return { ok: false, reason: 'artifact_changed' };
     if (restoredFrom !== null && typeof restoredFrom !== 'number') return { ok: false, reason: 'invalid_request' };
@@ -123,17 +122,17 @@ export class Artifacts {
     if (latest.content === content) return { ok: true, artifact };
     if (!restored && amendsLatest(latest, now)) {
       await this.#artifacts.amendVersion(id, latest.number, content, now);
-      this.#changes.publish(user.id, { type: 'artifact', id });
+      await this.#participants.publish(artifact.conversationId, { type: 'artifact', id });
       return { ok: true, artifact: { ...artifact, updatedAt: now } };
     }
     const version = await this.#artifacts.addVersion(id, content, 'user', now, restored?.number ?? null);
-    this.#changes.publish(user.id, { type: 'artifact', id });
+    await this.#participants.publish(artifact.conversationId, { type: 'artifact', id });
     return { ok: true, artifact: { ...artifact, version, updatedAt: now } };
   }
 
-  async #own(user: User, id: string): Promise<Artifact | null> {
+  async #reachable(user: User, id: string): Promise<Artifact | null> {
     const artifact = await this.#artifacts.find(id);
-    return artifact?.userId === user.id ? artifact : null;
+    return artifact && (await this.#participants.access(user, artifact.conversationId)) ? artifact : null;
   }
 }
 

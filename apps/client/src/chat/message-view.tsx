@@ -36,16 +36,19 @@ function partsText(message: ChatMessage, type: 'text' | 'reasoning'): string {
 
 /**
  * The user's message: its files, then an indigo bubble on the right, which can be copied, edited (the answers after
- * it are redone), or remembered.
+ * it are redone), or remembered. Someone else's, in a shared conversation, sits on the left under their name.
  */
 export function UserMessage({
   message,
+  author = null,
   canEdit,
   onEdit,
   onRemember,
   onUndoMemory,
 }: {
   message: ChatMessage;
+  /** Someone else's message: their name. */
+  author?: string | null;
   canEdit: boolean;
   onEdit: (text: string) => void;
   /** `null` back: the memory already holds it. Only once the message is saved, so not while its answer streams. */
@@ -100,10 +103,12 @@ export function UserMessage({
     );
   }
 
+  const theirs = author !== null;
   return (
-    <div className='group flex flex-col items-end gap-1'>
+    <div className={cn('group flex flex-col gap-1', theirs ? 'items-start' : 'items-end')}>
+      {theirs && <p className='text-muted-foreground px-1 text-sm font-medium'>{author}</p>}
       {files.length > 0 && (
-        <div className='flex max-w-[85%] flex-wrap justify-end gap-2'>
+        <div className={cn('flex max-w-[85%] flex-wrap gap-2', theirs ? 'justify-start' : 'justify-end')}>
           {files.map((file) => (
             <FileChip
               key={file.url}
@@ -115,11 +120,17 @@ export function UserMessage({
         </div>
       )}
       {(text || command) && (
-        <div className='bg-primary text-primary-foreground max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 whitespace-pre-wrap'>
+        <div
+          className={cn(
+            'max-w-[85%] rounded-2xl px-4 py-2.5 whitespace-pre-wrap',
+            theirs ? 'bg-muted rounded-bl-md' : 'bg-primary text-primary-foreground rounded-br-md',
+          )}
+        >
           {command && (
             <span
               className={cn(
-                'bg-primary-foreground/15 inline-flex rounded-full px-2 py-0.5 text-sm font-medium',
+                'inline-flex rounded-full px-2 py-0.5 text-sm font-medium',
+                theirs ? 'bg-foreground/10' : 'bg-primary-foreground/15',
                 text && 'mr-1.5',
               )}
             >

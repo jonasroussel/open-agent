@@ -9,6 +9,7 @@ import { queryClient } from '@/lib/query-client.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
 import { quotaQuery } from '@/quota/quota-query.ts';
 
+import { setAnswering } from './answering-store.ts';
 import { conversationsQuery } from './conversations-query.ts';
 
 const transport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat });
@@ -80,8 +81,8 @@ function idle(chat: Chat<ChatMessage>): boolean {
 }
 
 /**
- * The saved copy replaces a conversation kept here, after it changed on another device. A conversation deleted there
- * is forgotten; its page then finds it gone and leaves.
+ * The saved copy replaces a conversation kept here, after it changed on another device or, shared, by someone else. A
+ * conversation deleted there, or left, is forgotten; its page then finds it gone and leaves.
  */
 export async function refreshChat(id: string): Promise<void> {
   const chat = chats.get(id);
@@ -91,6 +92,7 @@ export async function refreshChat(id: string): Promise<void> {
     if (result.error === 'not_found') forgetChat(id);
     return;
   }
+  setAnswering(id, result.data.answering);
   // A message sent here meanwhile wins: its answer brings the saved copy.
   if (idle(chat)) chat.messages = result.data.messages;
 }

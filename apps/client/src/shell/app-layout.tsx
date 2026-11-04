@@ -8,6 +8,7 @@ import { sessionQuery } from '@/auth/session.ts';
 import { preloadMarkdown } from '@/chat/markdown-loader.ts';
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar.tsx';
 import { TooltipProvider } from '@/components/ui/tooltip.tsx';
+import { SharingButton } from '@/sharing/sharing-button.tsx';
 
 import { AppSidebar } from './app-sidebar.tsx';
 import { useChangeFeed } from './change-feed.ts';
@@ -56,6 +57,7 @@ function TopBar({ title }: { title: PageTitle | null }) {
       ) : (
         title && <h1 className='truncate px-1 font-semibold'>{title.text}</h1>
       )}
+      {title?.conversationId && <SharingButton key={title.conversationId} conversationId={title.conversationId} />}
     </header>
   );
 }
