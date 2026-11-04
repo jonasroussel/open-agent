@@ -387,7 +387,7 @@ Same layout and tooling as `inscript-carte`.
 | LLM | Vercel AI SDK with the OpenRouter provider |
 | Client | Vite, React 19, TanStack Router, TanStack Query, i18next, Tailwind v4, shadcn (`radix-vega` style) |
 | Shared | `packages/shared`: `API_ROUTES`, request and response types, `ApiError` codes |
-| Email | Plunk API |
+| Email | Any SMTP server (nodemailer); Proton Mail in production |
 | Web search | Tavily, then self-hosted SearXNG |
 | Lint, format | oxlint, oxfmt |
 | Tests | `bun test`, co-located `*.test.ts` |
@@ -450,7 +450,9 @@ Same layout and tooling as `inscript-carte`.
 | `IMAGE_MODEL` | Images the user asks for; default `google/gemini-3.1-flash-lite-image` |
 | `TAVILY_API_KEY` | First web search service (optional) |
 | `SEARXNG_URL` | Our SearXNG, e.g. `http://open-agent-searxng:8080` (default `http://localhost:8888` in development) |
-| `PLUNK_API_KEY` | Sign-in emails (unset in development: links and codes go to the server log) |
-| `MAIL_FROM` | Sender address; its domain must be verified in Plunk |
+| `SMTP_HOST` | SMTP server of the emails (required in production; unset in development: links and codes go to the server log). Proton Mail: `smtp.protonmail.ch` |
+| `SMTP_PORT` | 587 (STARTTLS, the default) or 465 (TLS from the start) |
+| `SMTP_USER`, `SMTP_PASSWORD` | Sign-in to the server, both or neither; with them, STARTTLS is required. Proton Mail: the sending address and an SMTP token |
+| `MAIL_FROM` | Sender address, when it is not `SMTP_USER`; the server must allow it |
 | `ENCRYPTION_KEY` | Encrypts the users' own OpenRouter keys at rest (required in production; changing it means they enter their keys again) |
 | `SEARXNG_SECRET` | Secret of the SearXNG container (required: it refuses to start with its default one) |

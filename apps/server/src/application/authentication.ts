@@ -36,7 +36,7 @@ export class Authentication {
   readonly #sessions: SessionStore;
   readonly #signInRequests: SignInRequestStore;
   readonly #mailer: Mailer;
-  /** Emails sent per address and per network address: stops anyone from flooding an inbox (and the Plunk bill). */
+  /** Emails sent per address and per network address: stops anyone from flooding an inbox (and our sender from spam lists). */
   readonly #requestLimiter: LoginAttemptLimiter;
   /** Wrong codes: a 6-digit code must not be guessable within its 15 minutes. */
   readonly #codeLimiter: LoginAttemptLimiter;

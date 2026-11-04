@@ -13,10 +13,8 @@ export const config = {
   publicUrl: Bun.env.PUBLIC_URL ?? (isProduction ? required('PUBLIC_URL') : 'http://localhost:5173'),
   /** Made admin at every boot: the first admin needs no invitation. */
   adminEmail: Bun.env.ADMIN_EMAIL || null,
-  /** Never logged. Unset in development: emails go to the server log. */
-  plunkApiKey: Bun.env.PLUNK_API_KEY || (isProduction ? required('PLUNK_API_KEY') : null),
-  /** The sender; its domain (jonasroussel.com) is the one verified in Plunk. */
-  mailFrom: Bun.env.MAIL_FROM ?? 'hello@jonasroussel.com',
+  /** The SMTP server that sends the emails. Unset in development: emails go to the server log. */
+  smtp: smtpSettings(),
   /** Signs any invited user in with this code, to test on other devices. Never in production, whatever the env. */
   devSignInCode: isProduction ? null : (Bun.env.DEV_SIGN_IN_CODE ?? '123456'),
   /** USD per calendar month for users whose quota the admin did not set. The user chose 5 $ on 2026-11-01. */
@@ -43,4 +41,16 @@ export const config = {
 
 function required(name: string): never {
   throw new Error(`${name} must be set in production.`);
+}
+
+/** `SMTP_USER` and `SMTP_PASSWORD` go together; the sender is `SMTP_USER` unless `MAIL_FROM` says otherwise. */
+function smtpSettings() {
+  const host = Bun.env.SMTP_HOST || (isProduction ? required('SMTP_HOST') : null);
+  if (!host) return null;
+  const user = Bun.env.SMTP_USER || null;
+  const password = Bun.env.SMTP_PASSWORD || null;
+  if (Boolean(user) !== Boolean(password)) throw new Error('SMTP_USER and SMTP_PASSWORD are set together, or neither.');
+  const from = Bun.env.MAIL_FROM || user;
+  if (!from) throw new Error('MAIL_FROM must be set when SMTP_USER is not.');
+  return { host, port: Number(Bun.env.SMTP_PORT ?? 587), user, password, from };
 }

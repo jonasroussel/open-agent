@@ -30,7 +30,7 @@ OPENROUTER_API_KEY=… ADMIN_EMAIL=you@example.com bun run dev
 ```
 
 `bun run dev` starts SearXNG (`compose.yaml`, on `localhost:8888`), the server on port 3427 and Vite on
-[localhost:5173](http://localhost:5173). Without `PLUNK_API_KEY`, sign-in links and codes go to the server log, and
+[localhost:5173](http://localhost:5173). Without `SMTP_HOST`, sign-in links and codes go to the server log, and
 the code `123456` signs in any invited address. `TAVILY_API_KEY` is optional.
 
 ```sh
@@ -45,7 +45,8 @@ bun run format
 One image serves the API and the built client on port 3427; a second one is SearXNG with our settings.
 
 1. Create the stack once from [deploy/compose.yaml](deploy/compose.yaml) (e.g. in Portainer) and set its variables:
-   `ADMIN_EMAIL`, `PLUNK_API_KEY`, `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, and two random secrets,
+   `ADMIN_EMAIL`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` (Proton Mail: `smtp.protonmail.ch`, the sending address
+   and an SMTP token), `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, and two random secrets,
    `ENCRYPTION_KEY` and `SEARXNG_SECRET` (`openssl rand -base64 32`). Never change `ENCRYPTION_KEY` afterwards: it
    encrypts the users' own OpenRouter keys.
 2. Then, for each release: `PORTAINER_API_KEY=… bun run deploy` builds both images, pushes them to

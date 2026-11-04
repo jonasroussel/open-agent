@@ -12,7 +12,7 @@ import { PopplerMammothReader } from './infrastructure/files/document-reader.ts'
 import { OpenRouterKeyChecker, OpenRouterModelCatalog } from './infrastructure/llm/openrouter-model-catalog.ts';
 import { OpenRouterModelDirectory } from './infrastructure/llm/openrouter-model-directory.ts';
 import { ConsoleMailer } from './infrastructure/mail/console-mailer.ts';
-import { PlunkMailer } from './infrastructure/mail/plunk-mailer.ts';
+import { SmtpMailer } from './infrastructure/mail/smtp-mailer.ts';
 import { SystemClock } from './infrastructure/system-clock.ts';
 import { FallbackWebSearch } from './infrastructure/web-search/fallback-web-search.ts';
 import { SearxngSearch } from './infrastructure/web-search/searxng-search.ts';
@@ -24,8 +24,12 @@ const [, appliedMigrations] = await database.migrate.latest();
 if (appliedMigrations.length > 0) console.log(`Applied migrations: ${appliedMigrations.join(', ')}`);
 
 const version = await appVersion();
-const mailer = config.plunkApiKey ? new PlunkMailer(config.plunkApiKey, config.mailFrom) : new ConsoleMailer();
-if (!config.plunkApiKey) console.log('PLUNK_API_KEY is not set: sign-in emails go to this log.');
+const mailer = config.smtp ? new SmtpMailer(config.smtp) : new ConsoleMailer();
+if (config.smtp) {
+  console.log(`Emails leave from ${config.smtp.from} through ${config.smtp.host}:${config.smtp.port}.`);
+} else {
+  console.log('SMTP_HOST is not set: emails go to this log.');
+}
 if (!config.adminEmail) console.log('ADMIN_EMAIL is not set: no admin is created at boot.');
 if (!config.openRouterApiKey) console.log('OPENROUTER_API_KEY is not set: the chat cannot answer.');
 if (config.devSignInCode) console.log(`Development: the code ${config.devSignInCode} signs in any invited user.`);
