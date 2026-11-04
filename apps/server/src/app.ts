@@ -156,7 +156,7 @@ export async function createApp(
       options.devSignInCode,
     ),
     userAccess,
-    conversations: new Conversations(conversations, participants, users, answering),
+    conversations: new Conversations(conversations, participants, users, answering, clock),
     sharing: new Sharing(conversations, participants, users, mailer, clock, options.publicUrl),
     memory,
     messageMemory: new MessageMemory(conversations, participants, memory, reconciler, quotas),

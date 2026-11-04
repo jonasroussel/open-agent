@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { sessionQuery } from '@/auth/session.ts';
+import { EphemeralBadge, EphemeralSwitch } from '@/chat/ephemeral.tsx';
 import { preloadMarkdown } from '@/chat/markdown-loader.ts';
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar.tsx';
 import { TooltipProvider } from '@/components/ui/tooltip.tsx';
@@ -58,6 +59,8 @@ function TopBar({ title }: { title: PageTitle | null }) {
         title && <h1 className='truncate px-1 font-semibold'>{title.text}</h1>
       )}
       {title?.conversationId && <SharingButton key={title.conversationId} conversationId={title.conversationId} />}
+      {title?.setEphemeral && <EphemeralSwitch on={title.ephemeral ?? false} set={title.setEphemeral} />}
+      {title?.ephemeral && !title.setEphemeral && <EphemeralBadge />}
     </header>
   );
 }

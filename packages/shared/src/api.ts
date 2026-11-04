@@ -46,8 +46,9 @@ export const API_ROUTES = {
   /** GET `?q=`: full-text search in the signed-in user's history, as `SearchResponse`. */
   search: '/api/search',
   /**
-   * POST, the AI SDK chat transport: `{ id, messages }` with the whole history; creates the conversation on its first
-   * message. Answers a UI message stream.
+   * POST, the AI SDK chat transport: `{ id, messages, ephemeral? }` with the whole history; creates the conversation
+   * on its first message, ephemeral when `ephemeral` is `true` (outside the history, deleted with DELETE on the
+   * conversation when its page is left). Answers a UI message stream.
    */
   chat: '/api/chat',
   /** GET: the signed-in user's rules, as `ListMemoryRulesResponse`. POST `MemoryRuleBody`: adds one. */

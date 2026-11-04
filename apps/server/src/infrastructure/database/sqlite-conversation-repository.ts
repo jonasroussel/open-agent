@@ -10,11 +10,12 @@ type ConversationRow = {
   title: string | null;
   icon: string | null;
   pinned: 0 | 1;
+  ephemeral: 0 | 1;
   created_at: string;
   updated_at: string;
 };
 
-const COLUMNS = ['id', 'user_id', 'title', 'icon', 'pinned', 'created_at', 'updated_at'] as const;
+const COLUMNS = ['id', 'user_id', 'title', 'icon', 'pinned', 'ephemeral', 'created_at', 'updated_at'] as const;
 
 type MemberRow = {
   conversation_id: string;
@@ -38,7 +39,7 @@ export class SqliteConversationRepository implements ConversationRepository {
 
   async listOf(userId: number): Promise<Conversation[]> {
     const rows: ConversationRow[] = await this.#database('conversations')
-      .where({ user_id: userId })
+      .where({ user_id: userId, ephemeral: false })
       .select(COLUMNS)
       .orderBy('updated_at', 'desc');
     return rows.map(toConversation);
@@ -70,10 +71,27 @@ export class SqliteConversationRepository implements ConversationRepository {
       .update({ content: JSON.stringify(message) });
   }
 
-  async create({ id, userId, now }: { id: string; userId: number; now: Date }): Promise<Conversation> {
+  async create({
+    id,
+    userId,
+    ephemeral,
+    now,
+  }: {
+    id: string;
+    userId: number;
+    ephemeral: boolean;
+    now: Date;
+  }): Promise<Conversation> {
     const at = now.toISOString();
-    await this.#database('conversations').insert({ id, user_id: userId, created_at: at, updated_at: at });
-    return { id, userId, title: null, icon: null, pinned: false, createdAt: now, updatedAt: now };
+    await this.#database('conversations').insert({ id, user_id: userId, ephemeral, created_at: at, updated_at: at });
+    return { id, userId, title: null, icon: null, pinned: false, ephemeral, createdAt: now, updatedAt: now };
+  }
+
+  async deleteEphemeralBefore(before: Date): Promise<void> {
+    await this.#database('conversations')
+      .where({ ephemeral: true })
+      .andWhere('updated_at', '<', before.toISOString())
+      .delete();
   }
 
   async replaceMessages(id: string, messages: readonly ChatMessage[], now: Date): Promise<void> {
@@ -122,7 +140,7 @@ export class SqliteConversationRepository implements ConversationRepository {
         FROM message_search
         JOIN messages m ON m.rowid = message_search.rowid
         JOIN conversations c ON c.id = m.conversation_id
-        WHERE message_search MATCH ? AND ${TAKES_PART}
+        WHERE message_search MATCH ? AND c.ephemeral = 0 AND ${TAKES_PART}
         ORDER BY bm25(message_search)
         LIMIT 500`,
       [match, userId, userId],
@@ -253,6 +271,7 @@ function toConversation(row: ConversationRow): Conversation {
     title: row.title,
     icon: row.icon,
     pinned: row.pinned === 1,
+    ephemeral: row.ephemeral === 1,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };

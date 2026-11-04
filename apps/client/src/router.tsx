@@ -15,7 +15,7 @@ import { sessionQuery } from './auth/session.ts';
 import { SignInPage } from './auth/sign-in-page.tsx';
 import { VerifyLinkPage } from './auth/verify-link-page.tsx';
 import { openCanvasOf } from './canvas/open-canvas.ts';
-import { hasChat } from './chat/chat-store.ts';
+import { discardEphemeral, hasChat, isEphemeral } from './chat/chat-store.ts';
 import { ConversationPage } from './chat/conversation-page.tsx';
 import { conversationQuery, conversationsQuery } from './chat/conversations-query.ts';
 import { NewChatPage } from './chat/new-chat-page.tsx';
@@ -135,6 +135,14 @@ export const router = createRouter({
     ]),
   ]),
   context: { queryClient },
+});
+
+const conversationIdOf = (pathname: string) => /^\/c\/([^/]+)/.exec(pathname)?.[1] ?? null;
+
+// An ephemeral conversation goes once its page is left; opening its canvas (`?doc=`) is not leaving it.
+router.subscribe('onResolved', ({ fromLocation, toLocation }) => {
+  const left = fromLocation ? conversationIdOf(fromLocation.pathname) : null;
+  if (left && left !== conversationIdOf(toLocation.pathname) && isEphemeral(left)) discardEphemeral(left);
 });
 
 declare module '@tanstack/react-router' {

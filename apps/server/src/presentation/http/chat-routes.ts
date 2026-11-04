@@ -133,7 +133,7 @@ export function createChatRoutes({ signedInUser, conversations, sharing, chatTur
           const body = await readJson(request);
           // A thinking model can be silent for longer than Bun's 10 s idle timeout.
           server.timeout(request, 0);
-          const result = await chatTurns.start(user, body?.id, body?.messages, request.signal);
+          const result = await chatTurns.start(user, body?.id, body?.messages, request.signal, body?.ephemeral);
           if (!result.ok) return error(result.reason, CHAT_STATUS[result.reason]);
           // Reading a copy to the end lets the history be saved when the user stops or the phone drops the connection.
           return createUIMessageStreamResponse({ stream: result.stream, consumeSseStream: consumeStream });

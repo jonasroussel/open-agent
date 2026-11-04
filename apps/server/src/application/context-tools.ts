@@ -119,7 +119,7 @@ export class ContextTools {
           spend('read_conversation');
           if (id === conversationId) throw new ToolRefusal('This is the current conversation: you already have it.');
           const access = await this.#participants.access(user, id);
-          if (!access) throw new ToolRefusal('No conversation with this id.');
+          if (!access || access.conversation.ephemeral) throw new ToolRefusal('No conversation with this id.');
           const lines = (await this.#conversations.messages(id)).map((message) => {
             const files = attachedNames(message);
             return `${message.role === 'user' ? 'User' : 'Assistant'}: ${textOf(message)}${files ? ` [Attached: ${files}]` : ''}`;

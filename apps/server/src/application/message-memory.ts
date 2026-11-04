@@ -53,7 +53,11 @@ export class MessageMemory {
       return { ok: false, reason: 'invalid_request' };
     }
     const access = await this.#participants.access(user, conversationId);
-    const message = access ? await this.#conversations.findMessage(conversationId, messageId) : null;
+    // Nothing said in an ephemeral conversation is learned.
+    const message =
+      access && !access.conversation.ephemeral
+        ? await this.#conversations.findMessage(conversationId, messageId)
+        : null;
     if (message?.role !== 'user' || authorIdOf(message, access!.conversation.userId) !== user.id) {
       return { ok: false, reason: 'not_found' };
     }

@@ -297,6 +297,13 @@ export const fr: Translation = {
       'La conversation et tous ses messages sont supprimés pour de bon, pour toutes les personnes avec qui elle est partagée.',
     cancel: 'Annuler',
   },
+  ephemeral: {
+    switch: 'Éphémère',
+    title: 'Chat éphémère',
+    description:
+      'Il n’apparaît pas dans votre historique et l’assistant n’en retient rien. Il disparaît dès que vous quittez la page.',
+    hint: 'Chat éphémère : il disparaît quand vous quittez la page.',
+  },
   sharing: {
     share: 'Partager',
     members: 'Participants',

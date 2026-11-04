@@ -992,6 +992,51 @@ describe('shared conversations', () => {
   });
 });
 
+describe('ephemeral conversations', () => {
+  test('outside the history: listed and found nowhere, never learned from nor shared, gone a day after being left', async () => {
+    const cookie = await signIn(ADMIN);
+    const { user: ana } = await invite(cookie, 'ana@example.com');
+    await call('/api/memory/rules', { method: 'POST', body: { text: 'Réponses courtes.' }, cookie });
+    await chat(cookie, 'kept-conversation-id', [userMessage('k1', 'Bonjour')]);
+    analysis = plainAnalysis({ feedback: 'Préfère le tutoiement.' });
+    reconciliation = { operation: 'add', ruleId: null, text: 'Tutoyer.' };
+    const first = [userMessage('m1', 'Ma Freebox ne capte plus.')];
+    const response = await call('/api/chat', {
+      method: 'POST',
+      body: { id: CONVERSATION, messages: first, ephemeral: true },
+      cookie,
+    });
+    await response.text();
+    analysis = plainAnalysis();
+
+    // It follows the memory and teaches it nothing.
+    expect(JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt)).toContain('Réponses courtes.');
+    expect((await rulesOf(cookie)).map((rule) => rule.text)).toEqual(['Réponses courtes.']);
+    const opened = await open(cookie, CONVERSATION);
+    expect(opened.messages).toHaveLength(2);
+    const remember = await call('/api/memory/remember', {
+      method: 'POST',
+      body: { conversationId: CONVERSATION, messageId: 'm1' },
+      cookie,
+    });
+    expect(remember.status).toBe(404);
+    expect((await share(cookie, [ana.id])).status).toBe(400);
+
+    // Its next messages keep it ephemeral, whatever the browser says.
+    await chat(cookie, CONVERSATION, [...opened.messages, userMessage('m3', 'Et maintenant ?')]);
+    expect((await listOf(cookie)).conversations.map((conversation) => conversation.id)).toEqual([
+      'kept-conversation-id',
+    ]);
+    const found = (await (await call('/api/search?q=Freebox', { cookie })).json()) as SearchResponse;
+    expect(found.results).toEqual([]);
+
+    // Its page closed without a word: a day later it is gone, the other conversations stay.
+    advanceMinutes(24 * 60 + 1);
+    expect((await listOf(cookie)).conversations).toHaveLength(1);
+    expect((await call(`/api/conversations/${CONVERSATION}`, { cookie })).status).toBe(404);
+  });
+});
+
 describe('search', () => {
   test("finds the user's own conversations by the start of words, accents aside, and follows edits", async () => {
     const cookie = await signIn(ADMIN);

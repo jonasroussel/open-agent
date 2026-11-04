@@ -12,7 +12,7 @@ import {
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ArrowDown, RotateCcw } from 'lucide-react';
+import { ArrowDown, MessageCircleDashed, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
@@ -37,9 +37,17 @@ import { AssistantMessage, PendingAnswer, type UndoOutcome, UserMessage } from '
 
 /**
  * A conversation: its messages, kept scrolled to the newest while it streams, the composer under them, and the canvas
- * beside them when a document is open (`?doc=`) or being written.
+ * beside them when a document is open (`?doc=`) or being written. An ephemeral one says so, and remembers nothing.
  */
-export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: () => void }) {
+export function ChatView({
+  chat,
+  ephemeral = false,
+  onSend,
+}: {
+  chat: Chat<ChatMessage>;
+  ephemeral?: boolean;
+  onSend?: () => void;
+}) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const { messages, status, error, sendMessage, regenerate, stop, clearError, setMessages, addToolOutput } = useChat({
@@ -188,12 +196,22 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
   return (
     <div className='flex min-h-0 flex-1'>
       <div className='flex min-h-0 min-w-0 flex-1 flex-col'>
-        {messages.length === 0 ? (
+        {messages.length === 0 && ephemeral && (
+          <div className='flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center'>
+            <div className='bg-muted flex size-14 items-center justify-center rounded-2xl'>
+              <MessageCircleDashed className='size-7' />
+            </div>
+            <h2 className='text-2xl font-semibold'>{t('ephemeral.title')}</h2>
+            <p className='text-muted-foreground max-w-md'>{t('ephemeral.description')}</p>
+          </div>
+        )}
+        {messages.length === 0 && !ephemeral && (
           <div className='flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center'>
             <BrandIcon className='size-14' />
             <Greeting />
           </div>
-        ) : (
+        )}
+        {messages.length > 0 && (
           <StickToBottom className='relative min-h-0 flex-1' resize='instant' initial='instant'>
             <StickToBottom.Content className='mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6'>
               {messages.map((message, index) =>
@@ -213,7 +231,7 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
                         ? sendMessage({ text, files, metadata, messageId: message.id })
                         : sendMessage({ files, metadata, messageId: message.id }));
                     }}
-                    onRemember={locked || !mine(message) ? null : () => rememberMessage(message.id)}
+                    onRemember={locked || ephemeral || !mine(message) ? null : () => rememberMessage(message.id)}
                     onUndoMemory={undoMemory}
                   />
                 ) : (
@@ -248,6 +266,12 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
           </StickToBottom>
         )}
         <div className='mx-auto w-full max-w-3xl px-4 pb-3'>
+          {ephemeral && messages.length > 0 && (
+            <p className='text-muted-foreground mb-2 flex items-center justify-center gap-1.5 text-sm'>
+              <MessageCircleDashed className='size-4' />
+              {t('ephemeral.hint')}
+            </p>
+          )}
           {quota && !quota.unlimited && !exhausted && quota.percentUsed >= QUOTA_WARNING_PERCENT && (
             <p className='text-muted-foreground mb-2 text-center text-sm'>
               {t('quota.nearLimit', { percent: quota.percentUsed })}

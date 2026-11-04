@@ -10,6 +10,8 @@ export type Conversation = {
   /** A Lucide icon name chosen with the title, e.g. `fuel`; `null` until then. The client checks it exists. */
   icon: string | null;
   pinned: boolean;
+  /** Outside the history: listed nowhere, found by no search, never learned from; deleted once its page is left. */
+  ephemeral: boolean;
   createdAt: Date;
   updatedAt: Date;
 };

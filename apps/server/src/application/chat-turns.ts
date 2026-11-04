@@ -169,9 +169,15 @@ export class ChatTurns {
 
   /**
    * A new message from the user, or their answers to the questions ending the assistant's last message: that message
-   * then goes on.
+   * then goes on. `ephemeral` only counts for a new conversation: it stays what it was created as.
    */
-  async start(user: User, id: unknown, rawMessages: unknown, abortSignal: AbortSignal): Promise<ChatTurnResult> {
+  async start(
+    user: User,
+    id: unknown,
+    rawMessages: unknown,
+    abortSignal: AbortSignal,
+    ephemeral: unknown = false,
+  ): Promise<ChatTurnResult> {
     if (typeof id !== 'string' || !CONVERSATION_ID.test(id)) return { ok: false, reason: 'invalid_request' };
     const validated = await safeValidateUIMessages<ChatMessage>({ messages: rawMessages, dataSchemas });
     if (!validated.success) return { ok: false, reason: 'invalid_request' };
@@ -214,7 +220,8 @@ export class ChatTurns {
     if (shared && !this.#answering.take(id, sender)) return { ok: false, reason: 'conversation_busy' };
 
     try {
-      return await this.#answer(user, id, access?.conversation ?? null, people, messages, resumed, abortSignal);
+      const conversation = access?.conversation ?? { ephemeral: ephemeral === true };
+      return await this.#answer(user, id, conversation, people, messages, resumed, abortSignal);
     } catch (error) {
       if (shared) this.#answering.release(id);
       throw error;
@@ -224,14 +231,19 @@ export class ChatTurns {
   async #answer(
     user: User,
     id: string,
-    existing: Conversation | null,
+    /** A new one: only whether it is ephemeral. */
+    existing: Conversation | { ephemeral: boolean },
     people: readonly User[],
     messages: ChatMessage[],
     resumed: ChatMessage | null,
     abortSignal: AbortSignal,
   ): Promise<ChatTurnResult> {
     const now = this.#clock.now();
-    const conversation = existing ?? (await this.#conversations.create({ id, userId: user.id, now }));
+    const conversation =
+      'id' in existing
+        ? existing
+        : await this.#conversations.create({ id, userId: user.id, ephemeral: existing.ephemeral, now });
+    const { ephemeral } = conversation;
     const shared = people.length > 1;
     if (shared) {
       // The others see the message at once, and that the assistant is answering it.
@@ -244,7 +256,8 @@ export class ChatTurns {
     // the saved conversation, which keeps the badge.
     const expanded = await this.#commands.expand(user, messages);
     if (!resumed) void this.#commands.recordUse(user, messages.at(-1)!);
-    if (!conversation.title || !conversation.icon) void this.#name(user, conversation, expanded[0]!);
+    // Listed nowhere, an ephemeral conversation needs no name.
+    if (!ephemeral && (!conversation.title || !conversation.icon)) void this.#name(user, conversation, expanded[0]!);
     const names = new Map(people.map((person) => [person.id, nameOf(person)]));
     const named = (history: ChatMessage[]) => (shared ? withAuthorNames(history, conversation.userId, names) : history);
 
@@ -252,7 +265,10 @@ export class ChatTurns {
       originalMessages: messages,
       onEnd: async ({ messages: history }) => {
         try {
-          await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
+          // An ephemeral conversation may be deleted already: its page was left while the answer was stopping.
+          if (!ephemeral || (await this.#conversations.find(conversation.id))) {
+            await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
+          }
         } finally {
           if (shared) this.#answering.release(conversation.id);
         }
@@ -263,9 +279,10 @@ export class ChatTurns {
         const rules = await this.#memory.rules(user);
         const analysis = await this.#analysis(user, conversation.id, expanded, resumed, rules, abortSignal);
         const messageId = resumed?.id ?? crypto.randomUUID();
-        // An answer to a question is a choice, not a remark about how the assistant works.
+        // An answer to a question is a choice, not a remark about how the assistant works. An ephemeral conversation
+        // follows the memory, and teaches it nothing.
         const remembering =
-          analysis.feedback && !resumed
+          analysis.feedback && !resumed && !ephemeral
             ? this.#remember(
                 user,
                 analysis.feedback,

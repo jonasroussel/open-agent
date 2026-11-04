@@ -16,6 +16,7 @@ import * as commands from './0013-commands.ts';
 import * as commandOrder from './0014-command-order.ts';
 import * as conversationMembers from './0015-conversation-members.ts';
 import * as userName from './0016-user-name.ts';
+import * as ephemeralConversations from './0017-ephemeral-conversations.ts';
 
 /** Listed explicitly so migrations survive `bun build`. Append new ones at the end; never rename. */
 const migrations: Record<string, Knex.Migration> = {
@@ -35,6 +36,7 @@ const migrations: Record<string, Knex.Migration> = {
   '0014-command-order': commandOrder,
   '0015-conversation-members': conversationMembers,
   '0016-user-name': userName,
+  '0017-ephemeral-conversations': ephemeralConversations,
 };
 
 export const migrationSource: Knex.MigrationSource<string> = {

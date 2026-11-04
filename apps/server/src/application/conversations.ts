@@ -13,8 +13,11 @@ import type { UserRepository } from '../domain/user-repository.ts';
 import type { User } from '../domain/user.ts';
 import type { AnsweringNow } from './answering-now.ts';
 import type { Participants } from './participants.ts';
+import type { Clock } from './ports/clock.ts';
 
 const SEARCH_RESULTS = 20;
+/** An ephemeral conversation whose page was closed without a word (a crash, a dead phone) goes after a day. */
+const EPHEMERAL_MS = 24 * 60 * 60 * 1000;
 
 export type ConversationUpdate = { title?: unknown; pinned?: unknown };
 
@@ -41,21 +44,29 @@ export class Conversations {
   readonly #participants: Participants;
   readonly #users: UserRepository;
   readonly #answering: AnsweringNow;
+  readonly #clock: Clock;
 
   constructor(
     conversations: ConversationRepository,
     participants: Participants,
     users: UserRepository,
     answering: AnsweringNow,
+    clock: Clock,
   ) {
     this.#conversations = conversations;
     this.#participants = participants;
     this.#users = users;
     this.#answering = answering;
+    this.#clock = clock;
   }
 
-  /** Last updated first, with the invitations they have not answered. */
+  /**
+   * Last updated first, with the invitations they have not answered. Ephemeral conversations are never listed; those
+   * left behind are deleted here, everyone's: the list loads each time someone opens the app.
+   */
   async list(user: User): Promise<{ conversations: ConversationView[]; invitations: Invitation[] }> {
+    await this.#conversations.deleteEphemeralBefore(new Date(this.#clock.now().getTime() - EPHEMERAL_MS));
+
     const [owned, ownedMembers, memberships, people] = await Promise.all([
       this.#conversations.listOf(user.id),
       this.#conversations.membersOfOwned(user.id),

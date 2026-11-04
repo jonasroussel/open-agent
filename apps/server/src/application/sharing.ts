@@ -47,6 +47,8 @@ export class Sharing {
   async invite(user: User, id: string, userIds: unknown): Promise<SharingResult> {
     const access = await this.#participants.access(user, id);
     if (access?.role !== 'owner') return { ok: false, reason: 'not_found' };
+    // An ephemeral conversation is nobody else's business, and goes when its page is left.
+    if (access.conversation.ephemeral) return { ok: false, reason: 'invalid_request' };
     if (!Array.isArray(userIds) || userIds.length === 0 || !userIds.every(Number.isInteger)) {
       return { ok: false, reason: 'invalid_request' };
     }

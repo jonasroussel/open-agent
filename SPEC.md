@@ -297,6 +297,20 @@ closing the panel forgets it.
   its API or its cookies (checked: reading `document.cookie` throws). Preview and Code tabs; downloadable `.html`.
 - Other code (Python, etc.) stays in chat code blocks with highlighting and a copy button.
 
+### Ephemeral chats
+
+A conversation outside the history, like ChatGPT's temporary chat: « Éphémère » in the top bar of a new conversation.
+
+- **Nowhere afterwards:** not in the sidebar, the search, nor `read_conversation`; no title is made; it cannot be
+  shared. The top bar and a line above the composer say it is ephemeral.
+- **Memory:** the assistant follows the rules it knows, and learns nothing: no remark is turned into a rule, and
+  « Remember » is refused. Commands, the canvas and the tools work as usual; files attached or made stay in « Mes
+  fichiers » (they are uploaded or made before anything else). It counts in the quota like any message.
+- **Gone once its page is left:** the client deletes it when the address leaves it (opening its canvas is not leaving)
+  and when the tab closes or reloads (`pagehide`, `keepalive`). One whose tab died without a word is deleted a day
+  after its last message, when anyone's conversation list loads. The flag is set at creation: later messages cannot
+  change it.
+
 ### Shared conversations
 
 A conversation shared with other people of the app, who all write to the assistant in it (`Sharing`,
@@ -404,7 +418,7 @@ Same layout and tooling as `inscript-carte`.
 | `users` | email, name given by the admin (`null`: the start of the email), role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default), own OpenRouter key (sealed) and when it was added |
 | `sign_in_requests` | user, token hash, code hash (none for invitations), expiry, used at |
 | `sessions` | token hash, user, expiry |
-| `conversations` | id chosen by the client (UUID), user (its owner), title, pinned (by the owner), created/updated at |
+| `conversations` | id chosen by the client (UUID), user (its owner), title, pinned (by the owner), ephemeral, created/updated at |
 | `conversation_members` | conversation, user, status (`invited` / `member`), pinned (for them), invited at, joined at |
 | `messages` | conversation, id (unique per conversation: the client chooses it), position, role, the whole AI SDK UI message as JSON |
 | `message_search` | FTS5 over the text parts of each message, sharing its `rowid`; filled by triggers on `messages` |

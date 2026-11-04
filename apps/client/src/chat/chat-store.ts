@@ -13,6 +13,8 @@ import { setAnswering } from './answering-store.ts';
 import { conversationsQuery } from './conversations-query.ts';
 
 const transport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat });
+/** The server creates the conversation ephemeral; its later messages stay so whatever is sent. */
+const ephemeralTransport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat, body: { ephemeral: true } });
 
 /**
  * The user answered every question that ended the last answer: the server goes on from there. Only the last step
@@ -31,14 +33,17 @@ function questionsAnswered({ messages }: { messages: ChatMessage[] }): boolean {
  * streaming after the address changes to the conversation's own, and going back to a conversation shows it at once.
  */
 const chats = new Map<string, Chat<ChatMessage>>();
+/** Ephemeral conversations, known only here: their page left, they are deleted (`discardEphemeral`). */
+const ephemeralIds = new Set<string>();
 
-export function chatFor(id: string, messages: ChatMessage[] = []): Chat<ChatMessage> {
+export function chatFor(id: string, messages: ChatMessage[] = [], { ephemeral = false } = {}): Chat<ChatMessage> {
   let chat = chats.get(id);
   if (!chat) {
+    if (ephemeral) ephemeralIds.add(id);
     chat = new Chat({
       id,
       messages,
-      transport,
+      transport: ephemeral ? ephemeralTransport : transport,
       generateId: () => crypto.randomUUID(),
       sendAutomaticallyWhen: questionsAnswered,
       // A new conversation got its title meanwhile, every answer moves its conversation to the top, may have changed
@@ -63,6 +68,30 @@ export function chatFor(id: string, messages: ChatMessage[] = []): Chat<ChatMess
 
 export function hasChat(id: string): boolean {
   return chats.has(id);
+}
+
+export function isEphemeral(id: string): boolean {
+  return ephemeralIds.has(id);
+}
+
+/**
+ * An ephemeral conversation whose page is left: gone here, and on the server, even while the tab closes (`keepalive`).
+ * One never sent to exists only here.
+ */
+export function discardEphemeral(id: string): void {
+  if (!ephemeralIds.delete(id)) return;
+  const sent = (chats.get(id)?.messages.length ?? 0) > 0;
+  forgetChat(id);
+  if (sent) {
+    void fetch(apiPath(API_ROUTES.conversation, { conversationId: id }), { method: 'DELETE', keepalive: true });
+  }
+}
+
+// Closing or reloading the tab leaves the page too. The server deletes those it never heard of a day later.
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    for (const id of ephemeralIds) discardEphemeral(id);
+  });
 }
 
 export function forgetChat(id: string): void {

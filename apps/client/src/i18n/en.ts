@@ -280,6 +280,13 @@ export const en = {
       'The conversation and all its messages are deleted for good, for everyone it is shared with.',
     cancel: 'Cancel',
   },
+  ephemeral: {
+    switch: 'Ephemeral',
+    title: 'Ephemeral chat',
+    description:
+      'It stays out of your history and the assistant learns nothing from it. It disappears as soon as you leave the page.',
+    hint: 'Ephemeral chat: it disappears when you leave the page.',
+  },
   sharing: {
     share: 'Share',
     members: 'People',
