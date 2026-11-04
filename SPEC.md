@@ -303,7 +303,7 @@ A conversation shared with other people of the app, who all write to the assista
 `application/sharing.ts`; who may reach it: `Participants`, `application/participants.ts`).
 
 - **Invitation:** only its owner shares it, from the top bar or the sidebar menu, with anyone of the app whose access
-  is not revoked (named by the start of their email), at most 10 people. The invited person gets an email and an
+  is not revoked (by their name, see the admin panel), at most 10 people. The invited person gets an email and an
   « Invitation » row in the sidebar; the conversation stays closed to them until they join (its page offers Join and
   Decline). Joining shows the **whole history**, the dialog says so before inviting.
 - **Roles:** everyone in it renames it and pins it for themselves; only its owner invites, removes people and deletes
@@ -326,6 +326,9 @@ A conversation shared with other people of the app, who all write to the assista
 ### Admin panel
 
 - Invitations: create and revoke access by email. Cost per person for the month and their quota.
+- **Names:** the admin names each person, themselves included (40 characters at most); without one, the start of the
+  email names them. The name shows in shared conversations (old messages too: they are looked up by the writer's id),
+  in what the model reads there, in share emails and in the user's menu.
 - **Models (Settings page):** the OpenRouter model of each role, changed at runtime, for the next message. The
   picker lists OpenRouter's models (kept an hour by the server, `:batch` variants left out), cheapest first, with
   their prices, and only those that can take the role: text and pictures in, tools, and thinking that can be turned
@@ -398,7 +401,7 @@ Same layout and tooling as `inscript-carte`.
 
 | Table | Holds |
 | --- | --- |
-| `users` | email, role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default), own OpenRouter key (sealed) and when it was added |
+| `users` | email, name given by the admin (`null`: the start of the email), role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default), own OpenRouter key (sealed) and when it was added |
 | `sign_in_requests` | user, token hash, code hash (none for invitations), expiry, used at |
 | `sessions` | token hash, user, expiry |
 | `conversations` | id chosen by the client (UUID), user (its owner), title, pinned (by the owner), created/updated at |

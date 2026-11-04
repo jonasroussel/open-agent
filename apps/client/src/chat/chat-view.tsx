@@ -59,8 +59,13 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
   const answeringNow = useAnswering(chat.id);
   const waitingFor = shared && !busy ? answeringNow : null;
   const locked = busy || waitingFor !== null;
-  // Messages from before the sharing are the owner's.
-  const authorOf = (message: ChatMessage) => message.metadata?.author ?? sharing?.owner ?? null;
+  // Messages from before the sharing are the owner's. Each shows under its writer's current name: the admin may have
+  // renamed them since; someone who left keeps the name they had.
+  const people = sharing ? [sharing.owner, ...sharing.members.map((member) => member.person)] : [];
+  const authorOf = (message: ChatMessage) => {
+    const author = message.metadata?.author ?? sharing?.owner ?? null;
+    return people.find((person) => person.id === author?.id) ?? author;
+  };
   const mine = (message: ChatMessage) => !shared || authorOf(message)?.id === me;
   const lastUserIndex = messages.findLastIndex((message) => message.role === 'user');
   // Answering again, or answering the assistant's questions, is for whoever sent the last message.

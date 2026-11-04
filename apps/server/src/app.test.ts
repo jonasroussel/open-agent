@@ -933,6 +933,29 @@ describe('shared conversations', () => {
     expect((await artifactsOf(admin))[0]!.version).toBe(2);
   });
 
+  test('the name the admin gives shows everywhere, on old messages too; an empty one gives the email back', async () => {
+    const { admin, marie, marieId } = await sharedWithMarie();
+    const rename = (name: unknown, cookie = admin) =>
+      call(`/api/admin/users/${marieId}`, { method: 'PATCH', body: { name }, cookie });
+    expect(((await (await rename('  Marie   Dupont ')).json()) as AdminUserDto).name).toBe('Marie Dupont');
+    expect(await errorOf(await rename('x'.repeat(41)))).toBe('invalid_request');
+    expect(await errorOf(await rename('Moi', marie))).toBe('not_admin');
+    const session = (await (await call('/api/session', { cookie: marie })).json()) as SessionResponse;
+    expect(session.user.name).toBe('Marie Dupont');
+    expect((await listOf(admin)).conversations[0]!.sharing!.members[0]!.person.name).toBe('Marie Dupont');
+
+    await say(marie, userMessage('m3', 'Je m’en occupe demain.'));
+    await rename('Mamie');
+    await say(admin, userMessage('m5', 'Merci !'));
+    const prompt = JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt);
+    expect(prompt).toContain('[Mamie]');
+    expect(prompt).not.toContain('Marie Dupont');
+    expect(prompt).toContain('shared between admin, Mamie');
+
+    expect(((await (await rename('  ')).json()) as AdminUserDto).name).toBeNull();
+    expect((await listOf(admin)).conversations[0]!.sharing!.members[0]!.person.name).toBe('marie');
+  });
+
   test("the sender's memory stays theirs; pins are personal; a member leaves, the owner removes or deletes for all", async () => {
     const { admin, marie, marieId } = await sharedWithMarie();
     analysis = plainAnalysis({ feedback: 'Préfère des réponses courtes.' });

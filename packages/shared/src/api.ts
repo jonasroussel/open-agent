@@ -170,7 +170,8 @@ export type ChangeEvent =
 
 export type UserRole = 'user' | 'admin';
 
-export type SignedInUser = { id: number; email: string; role: UserRole };
+/** `name`: the one the others see (`PersonDto.name`). */
+export type SignedInUser = { id: number; email: string; name: string; role: UserRole };
 
 export type SessionResponse = { user: SignedInUser };
 
@@ -184,6 +185,8 @@ export type UserStatus = 'invited' | 'active' | 'revoked';
 export type AdminUserDto = {
   id: number;
   email: string;
+  /** Given by the admin; `null`: the start of the email names them. */
+  name: string | null;
   role: UserRole;
   status: UserStatus;
   invitedAt: string;
@@ -199,7 +202,11 @@ export type AdminUserDto = {
 /** The admin page refuses more: a typo should not open the budget. */
 export const MAX_MONTHLY_QUOTA_USD = 100;
 
-export type UpdateAdminUserBody = { monthlyQuotaUsd: number };
+/** A name, not a sentence: it shows beside messages and in the sidebar's menus. */
+export const MAX_PERSON_NAME_LENGTH = 40;
+
+/** One change at a time. `name`: empty or `null` gives the email's back. */
+export type UpdateAdminUserBody = { monthlyQuotaUsd: number } | { name: string | null };
 
 /** Users see a share of their quota, never dollars. */
 export type QuotaResponse = {

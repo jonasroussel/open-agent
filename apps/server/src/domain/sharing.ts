@@ -74,16 +74,20 @@ export function continuedHistory(
   return { ok: true, messages: [...saved.slice(0, index), signedBy(last, sender)] };
 }
 
-/** For the model only, in a shared conversation: each user message opens with its writer's name. */
-export function withAuthorNames(messages: readonly ChatMessage[], ownerName: string): ChatMessage[] {
-  return messages.map((message) =>
-    message.role === 'user'
-      ? {
-          ...message,
-          parts: [{ type: 'text', text: `[${message.metadata?.author?.name ?? ownerName}]` }, ...message.parts],
-        }
-      : message,
-  );
+/**
+ * For the model only, in a shared conversation: each user message opens with its writer's current name (`names`, by
+ * id), whatever it was when they wrote it. Someone who left keeps the name they had.
+ */
+export function withAuthorNames(
+  messages: readonly ChatMessage[],
+  ownerId: number,
+  names: ReadonlyMap<number, string>,
+): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.role !== 'user') return message;
+    const name = names.get(authorIdOf(message, ownerId)) ?? message.metadata?.author?.name ?? '?';
+    return { ...message, parts: [{ type: 'text', text: `[${name}]` }, ...message.parts] };
+  });
 }
 
 /** A memory notice tells what changed in someone's memory: in a shared conversation, only they see it. */

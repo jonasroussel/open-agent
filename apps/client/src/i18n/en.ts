@@ -361,6 +361,11 @@ export const en = {
     monthCost: 'This month: {{cost}} of {{quota}}',
     monthCostUnlimited: 'This month: {{cost}}, no limit',
     setQuota: 'Change the quota',
+    rename: 'Rename',
+    renameTitle: 'Name of {{email}}',
+    renameDescription:
+      'The name the others see in shared conversations and invitation emails. Empty: the start of the email.',
+    nameLabel: 'Name',
     quotaTitle: 'Monthly quota for {{email}}',
     quotaDescription: 'In dollars per month. The change applies at once, this month included.',
     quotaLabel: 'Quota in $',

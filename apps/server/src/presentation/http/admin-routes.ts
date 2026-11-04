@@ -53,7 +53,11 @@ export function createAdminRoutes({ signedInUser, userAccess, quotas }: AdminHtt
           const userId = Number(request.params.userId);
           if (!Number.isInteger(userId)) return error('not_found', 404);
           const body = await readJson(request);
-          const result = await quotas.setLimit(userId, body?.monthlyQuotaUsd);
+          // One change at a time: the name, or the quota.
+          const result =
+            body && 'name' in body
+              ? await userAccess.rename(userId, body.name)
+              : await quotas.setLimit(userId, body?.monthlyQuotaUsd);
           if (!result.ok) return error(result.reason, result.reason === 'not_found' ? 404 : 400);
           return Response.json(await adminUserDto(result.user));
         }),

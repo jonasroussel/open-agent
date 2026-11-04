@@ -1,7 +1,7 @@
 import { normalizeEmail, type Locale } from '@open-agent/shared';
 
 import type { UserRepository } from '../domain/user-repository.ts';
-import type { User } from '../domain/user.ts';
+import { cleanPersonName, type User } from '../domain/user.ts';
 import { signInLink } from './authentication.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Mailer } from './ports/mailer.ts';
@@ -18,6 +18,8 @@ export type InviteResult =
   | { ok: false; reason: 'email_failed'; user: User };
 
 export type RevokeResult = { ok: true } | { ok: false; reason: 'not_found' | 'cannot_revoke_self' };
+
+export type RenameResult = { ok: true; user: User } | { ok: false; reason: 'not_found' | 'invalid_request' };
 
 /** Who may use the app: the admin invites by email and can revoke. */
 export class UserAccess {
@@ -94,6 +96,16 @@ export class UserAccess {
     if (!user.revokedAt) await this.#users.revoke(user.id, this.#clock.now());
     await this.#sessions.deleteAllOf(user.id);
     return { ok: true };
+  }
+
+  /** The name everyone sees, the admin included; an empty one gives the start of the email back. */
+  async rename(userId: number, rawName: unknown): Promise<RenameResult> {
+    const cleaned = cleanPersonName(rawName);
+    if (!cleaned.ok) return { ok: false, reason: 'invalid_request' };
+    const user = await this.#users.findById(userId);
+    if (!user) return { ok: false, reason: 'not_found' };
+    await this.#users.setName(user.id, cleaned.name);
+    return { ok: true, user: { ...user, name: cleaned.name } };
   }
 
   /** At boot, from `ADMIN_EMAIL`: the first admin exists without anyone inviting them. */

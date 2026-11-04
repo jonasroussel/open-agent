@@ -19,16 +19,17 @@ import type { Command } from '../../domain/command.ts';
 import { previewOf, type LibraryFile } from '../../domain/library-file.ts';
 import type { MemoryRule } from '../../domain/memory.ts';
 import { isExhausted, percentUsed, type Quota } from '../../domain/quota.ts';
-import { personOf, userStatus, type User } from '../../domain/user.ts';
+import { nameOf, personOf, userStatus, type User } from '../../domain/user.ts';
 
 export function toSignedInUser(user: User): SignedInUser {
-  return { id: user.id, email: user.email, role: user.role };
+  return { id: user.id, email: user.email, name: nameOf(user), role: user.role };
 }
 
 export function toAdminUserDto(user: User, quota: Quota): AdminUserDto {
   return {
     id: user.id,
     email: user.email,
+    name: user.name,
     role: user.role,
     status: userStatus(user),
     invitedAt: user.invitedAt.toISOString(),

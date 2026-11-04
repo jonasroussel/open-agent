@@ -1,8 +1,6 @@
-import { personNameOf } from '@open-agent/shared';
-
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
 import type { UserRepository } from '../domain/user-repository.ts';
-import type { User } from '../domain/user.ts';
+import { nameOf, type User } from '../domain/user.ts';
 import type { Participants } from './participants.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Mailer } from './ports/mailer.ts';
@@ -70,7 +68,7 @@ export class Sharing {
         .sendShare({
           to: person.email,
           locale: person.locale,
-          from: personNameOf(user.email),
+          from: nameOf(user),
           title: access.conversation.title,
           link: `${this.#publicUrl}/c/${id}`,
         })

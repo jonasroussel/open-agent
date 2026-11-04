@@ -39,7 +39,7 @@ import { attachedNames, attachmentsAreValid } from '../domain/library-file.ts';
 import type { MemoryRule } from '../domain/memory.ts';
 import { isExhausted } from '../domain/quota.ts';
 import { continuedHistory, signedBy, withAuthorNames } from '../domain/sharing.ts';
-import { personOf, type User } from '../domain/user.ts';
+import { nameOf, personOf, type User } from '../domain/user.ts';
 import type { AnsweringNow } from './answering-now.ts';
 import type { Artifacts } from './artifacts.ts';
 import type { Commands } from './commands.ts';
@@ -245,7 +245,8 @@ export class ChatTurns {
     const expanded = await this.#commands.expand(user, messages);
     if (!resumed) void this.#commands.recordUse(user, messages.at(-1)!);
     if (!conversation.title || !conversation.icon) void this.#name(user, conversation, expanded[0]!);
-    const named = (history: ChatMessage[]) => (shared ? withAuthorNames(history, personOf(people[0]!).name) : history);
+    const names = new Map(people.map((person) => [person.id, nameOf(person)]));
+    const named = (history: ChatMessage[]) => (shared ? withAuthorNames(history, conversation.userId, names) : history);
 
     const stream = createUIMessageStream<ChatMessage>({
       originalMessages: messages,
@@ -317,7 +318,7 @@ export class ChatTurns {
               this.#webSearch !== null,
               documents,
               await this.#commands.names(user),
-              shared ? people.map((person) => personOf(person).name) : null,
+              shared ? people.map(nameOf) : null,
             ),
             // Every attached file goes in whole, at each answer: the user may ask about any detail, any time.
             messages: await convertToModelMessages(
@@ -677,7 +678,7 @@ function instructions(
     ...(people
       ? [
           '',
-          `This conversation is shared between ${people.join(', ')}: each user message opens with its writer's name in brackets. You are answering the last one, ${personOf(user).name}: "the user" above and below means them, and what you remember is about them only. Call each person by that name when it helps.`,
+          `This conversation is shared between ${people.join(', ')}: each user message opens with its writer's name in brackets. You are answering the last one, ${nameOf(user)}: "the user" above and below means them, and what you remember is about them only. Call each person by that name when it helps.`,
         ]
       : []),
   ].join('\n');

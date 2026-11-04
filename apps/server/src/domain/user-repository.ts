@@ -18,6 +18,8 @@ export interface UserRepository {
   /** Clears a revocation. */
   restore(id: number): Promise<void>;
   setMonthlyQuota(id: number, usd: number): Promise<void>;
+  /** `null`: the start of the email names them again. */
+  setName(id: number, name: string | null): Promise<void>;
   /** `null` forgets it. */
   setOwnKey(id: number, ownKey: OwnKey | null): Promise<void>;
 }

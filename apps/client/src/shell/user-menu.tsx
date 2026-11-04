@@ -37,7 +37,7 @@ export function UserMenu({ user }: { user: SignedInUser }) {
   const navigate = useNavigate();
   const theme = useTheme();
   const ThemeIcon = THEME_ICONS[theme];
-  const name = user.email.split('@')[0]!;
+  const { name } = user;
   const { data: quota } = useQuery(quotaQuery);
   const [ownKeyOpen, setOwnKeyOpen] = useState(false);
 

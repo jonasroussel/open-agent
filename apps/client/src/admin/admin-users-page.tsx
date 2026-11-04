@@ -2,7 +2,9 @@ import {
   API_ROUTES,
   apiPath,
   MAX_MONTHLY_QUOTA_USD,
+  MAX_PERSON_NAME_LENGTH,
   normalizeEmail,
+  personNameOf,
   type AdminUserDto,
   type InviteUserResponse,
   type ListAdminUsersResponse,
@@ -10,7 +12,7 @@ import {
   type UpdateAdminUserBody,
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkCheck, Gauge, MoreHorizontal, Send, Trash2, UserX } from 'lucide-react';
+import { BookmarkCheck, Gauge, MoreHorizontal, Pencil, Send, Trash2, UserX } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -69,6 +71,7 @@ export function AdminUsersPage() {
   const [toRevoke, setToRevoke] = useState<AdminUserDto | null>(null);
   const [quotaOf, setQuotaOf] = useState<AdminUserDto | null>(null);
   const [memoryOf, setMemoryOf] = useState<AdminUserDto | null>(null);
+  const [renaming, setRenaming] = useState<AdminUserDto | null>(null);
 
   async function invite(address: string) {
     setPending(true);
@@ -136,21 +139,23 @@ export function AdminUsersPage() {
       <ul className='divide-y rounded-lg border'>
         {users.data?.map((user) => {
           const isMe = user.id === me?.id;
+          const name = user.name ?? personNameOf(user.email);
           return (
             <li key={user.id} className='hover:bg-muted/60 flex items-center gap-3 px-4 py-3'>
               <Avatar className='size-10'>
                 <AvatarFallback className='bg-secondary text-secondary-foreground font-semibold'>
-                  {user.email[0]!.toUpperCase()}
+                  {name[0]!.toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className='grid min-w-0 flex-1 gap-1'>
                 <div className='flex flex-wrap items-center gap-x-2 gap-y-1'>
-                  <span className='min-w-0 truncate font-medium'>{user.email}</span>
+                  <span className='min-w-0 truncate font-medium'>{name}</span>
                   {isMe && <span className='text-muted-foreground text-sm'>({t('admin.you')})</span>}
                   {user.role === 'admin' && <Badge>{t('admin.adminBadge')}</Badge>}
                   {user.ownKey && <Badge variant='outline'>{t('admin.ownKeyBadge')}</Badge>}
                   <Badge variant={STATUS_VARIANT[user.status]}>{t(`admin.status.${user.status}`)}</Badge>
                 </div>
+                <span className='text-muted-foreground truncate text-sm'>{user.email}</span>
                 <span className='text-muted-foreground text-sm'>
                   {user.lastSignInAt
                     ? t('admin.lastSignIn', { date: dateFormat.format(new Date(user.lastSignInAt)) })
@@ -162,41 +167,43 @@ export function AdminUsersPage() {
                     : t('admin.monthCost', { cost: money(user.monthCostUsd), quota: money(user.monthlyQuotaUsd) })}
                 </span>
               </div>
-              {isMe ? (
-                <span className='size-9' />
-              ) : (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant='ghost' size='icon' aria-label={t('admin.actions', { email: user.email })}>
-                      <MoreHorizontal />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align='end' className='w-auto min-w-48'>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant='ghost' size='icon' aria-label={t('admin.actions', { email: user.email })}>
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align='end' className='w-auto min-w-48'>
+                  <DropdownMenuItem onSelect={() => setRenaming(user)}>
+                    <Pencil />
+                    {t('admin.rename')}
+                  </DropdownMenuItem>
+                  {!isMe && (
                     <DropdownMenuItem onSelect={() => setMemoryOf(user)}>
                       <BookmarkCheck />
                       {t('admin.seeMemory')}
                     </DropdownMenuItem>
-                    {user.monthlyQuotaUsd !== null && (
-                      <DropdownMenuItem onSelect={() => setQuotaOf(user)}>
-                        <Gauge />
-                        {t('admin.setQuota')}
-                      </DropdownMenuItem>
-                    )}
-                    {user.status !== 'active' && (
-                      <DropdownMenuItem onSelect={() => void invite(user.email)}>
-                        <Send />
-                        {t('admin.reinvite')}
-                      </DropdownMenuItem>
-                    )}
-                    {user.status !== 'revoked' && (
-                      <DropdownMenuItem variant='destructive' onSelect={() => setToRevoke(user)}>
-                        <UserX />
-                        {t('admin.revoke')}
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+                  )}
+                  {!isMe && user.monthlyQuotaUsd !== null && (
+                    <DropdownMenuItem onSelect={() => setQuotaOf(user)}>
+                      <Gauge />
+                      {t('admin.setQuota')}
+                    </DropdownMenuItem>
+                  )}
+                  {!isMe && user.status !== 'active' && (
+                    <DropdownMenuItem onSelect={() => void invite(user.email)}>
+                      <Send />
+                      {t('admin.reinvite')}
+                    </DropdownMenuItem>
+                  )}
+                  {!isMe && user.status !== 'revoked' && (
+                    <DropdownMenuItem variant='destructive' onSelect={() => setToRevoke(user)}>
+                      <UserX />
+                      {t('admin.revoke')}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </li>
           );
         })}
@@ -219,6 +226,7 @@ export function AdminUsersPage() {
 
       <QuotaDialog user={quotaOf} onClose={() => setQuotaOf(null)} />
       <MemoryDialog user={memoryOf} onClose={() => setMemoryOf(null)} />
+      <RenameDialog user={renaming} onClose={() => setRenaming(null)} />
     </div>
   );
 }
@@ -335,6 +343,67 @@ function QuotaDialog({ user, onClose }: { user: AdminUserDto | null; onClose: ()
             <Button type='submit' disabled={!valid}>
               {t('admin.save')}
             </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The name everyone sees, in shared conversations and their emails; empty gives the start of the email back. */
+function RenameDialog({ user, onClose }: { user: AdminUserDto | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!user) return;
+    const result = await api(apiPath(API_ROUTES.adminUser, { userId: user.id }), {
+      method: 'PATCH',
+      body: { name: value.trim() || null } satisfies UpdateAdminUserBody,
+    });
+    if (!result.ok) return setError(t(`errors.${result.error}`));
+    await queryClient.invalidateQueries({ queryKey: usersQueryKey });
+    // Their name shows in the shared conversations, and in the sidebar's menu when it is the admin's own.
+    await queryClient.invalidateQueries({ queryKey: sessionQuery.queryKey });
+    await queryClient.invalidateQueries({ queryKey: [API_ROUTES.conversations] });
+    onClose();
+  }
+
+  return (
+    <Dialog open={user !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        onOpenAutoFocus={() => {
+          setValue(user?.name ?? '');
+          setError(null);
+        }}
+        className='sm:max-w-md'
+      >
+        <form onSubmit={save} className='grid gap-4'>
+          <DialogHeader>
+            <DialogTitle>{t('admin.renameTitle', { email: user?.email })}</DialogTitle>
+            <DialogDescription>{t('admin.renameDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className='grid gap-2'>
+            <Label htmlFor='person-name'>{t('admin.nameLabel')}</Label>
+            <Input
+              id='person-name'
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder={user ? personNameOf(user.email) : ''}
+              maxLength={MAX_PERSON_NAME_LENGTH}
+              autoComplete='off'
+              autoFocus
+            />
+          </div>
+          {error && <AlertMessage text={error} />}
+          <DialogFooter>
+            <Button type='button' variant='outline' onClick={onClose}>
+              {t('admin.cancel')}
+            </Button>
+            <Button type='submit'>{t('admin.save')}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

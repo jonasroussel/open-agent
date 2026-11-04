@@ -7,6 +7,7 @@ import type { OwnKey, User } from '../../domain/user.ts';
 type UserRow = {
   id: number;
   email: string;
+  name: string | null;
   role: UserRole;
   locale: Locale;
   invited_at: string;
@@ -20,6 +21,7 @@ type UserRow = {
 const COLUMNS = [
   'id',
   'email',
+  'name',
   'role',
   'locale',
   'invited_at',
@@ -60,7 +62,15 @@ export class SqliteUserRepository implements UserRepository {
       invited_by: user.invitedBy,
       invited_at: user.invitedAt.toISOString(),
     });
-    return { ...user, id: id!, lastSignInAt: null, revokedAt: null, monthlyQuotaUsd: null, ownKey: null };
+    return {
+      ...user,
+      id: id!,
+      name: null,
+      lastSignInAt: null,
+      revokedAt: null,
+      monthlyQuotaUsd: null,
+      ownKey: null,
+    };
   }
 
   async setRole(id: number, role: UserRole): Promise<void> {
@@ -87,6 +97,10 @@ export class SqliteUserRepository implements UserRepository {
     await this.#database('users').where({ id }).update({ monthly_quota_usd: usd });
   }
 
+  async setName(id: number, name: string | null): Promise<void> {
+    await this.#database('users').where({ id }).update({ name });
+  }
+
   async setOwnKey(id: number, ownKey: OwnKey | null): Promise<void> {
     await this.#database('users')
       .where({ id })
@@ -98,6 +112,7 @@ function toUser(row: UserRow): User {
   return {
     id: row.id,
     email: row.email,
+    name: row.name,
     role: row.role,
     locale: row.locale,
     invitedAt: new Date(row.invited_at),
