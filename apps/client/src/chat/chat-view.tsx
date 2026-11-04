@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
 
 import { CanvasPanel } from '@/canvas/canvas-panel.tsx';
-import { artifactQuery, liveDocumentOf } from '@/canvas/canvas-query.ts';
+import { artifactQuery, liveDocumentOf, writtenDocumentOf } from '@/canvas/canvas-query.ts';
 import { rememberOpenCanvas } from '@/canvas/open-canvas.ts';
 import { BrandIcon } from '@/components/brand-icon.tsx';
 import { Button } from '@/components/ui/button.tsx';
@@ -104,35 +104,44 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
   // Opening, switching or closing the document, here or by the model: remembered for when the user comes back.
   useEffect(() => rememberOpenCanvas(chat.id, doc ?? null), [chat.id, doc]);
   const answering = busy ? messages.at(-1) : undefined;
-  const live = liveDocumentOf(answering);
+  const writing = liveDocumentOf(answering);
   // Closing the canvas while the model writes keeps it closed for that answer only.
   const [closedDuring, setClosedDuring] = useState<string | null>(null);
   const liveClosed = answering !== undefined && closedDuring === answering.id;
   // A document written during this answer opens once saved; one only seen in the history does not.
   const followLive = useRef(false);
+  // From the end of the writing until its saved version is loaded, the canvas keeps the document as written: closing
+  // for a frame, then "Loading…", flashed on a phone.
+  const [handingOff, setHandingOff] = useState(false);
   const openDocument = useCallback(
     (id: string | null) =>
       void navigate({ to: '/c/$conversationId', params: { conversationId: chat.id }, search: id ? { doc: id } : {} }),
     [navigate, chat.id],
   );
 
+  // Set while rendering: the panel must hold the document from the very render the writing ends in.
+  if (writing && !liveClosed && !handingOff) setHandingOff(true);
   useEffect(() => {
-    if (live && !liveClosed) followLive.current = true;
-  }, [live, liveClosed]);
-  const written = lastWrittenDocument(messages.at(-1));
+    if (writing && !liveClosed) followLive.current = true;
+  }, [writing, liveClosed]);
+  const written = writtenDocumentOf(messages.at(-1));
+  const writtenId = written?.id ?? null;
   useEffect(() => {
-    if (!written || !followLive.current) return;
+    if (!writtenId || !followLive.current) return;
     followLive.current = false;
-    void queryClient.invalidateQueries({ queryKey: artifactQuery(written).queryKey });
-    openDocument(written);
-  }, [written, queryClient, openDocument]);
+    void queryClient.invalidateQueries({ queryKey: artifactQuery(writtenId).queryKey });
+    openDocument(writtenId);
+  }, [writtenId, queryClient, openDocument]);
+  const liveSaved = useCallback(() => setHandingOff(false), []);
 
   const closeCanvas = () => {
     followLive.current = false;
+    setHandingOff(false);
     if (answering) setClosedDuring(answering.id);
     openDocument(null);
   };
-  const canvasOpen = (live !== null && !liveClosed) || doc !== undefined;
+  const live = (writing && !liveClosed ? writing : null) ?? (handingOff ? written : null);
+  const canvasOpen = live !== null || doc !== undefined;
 
   return (
     <div className='flex min-h-0 flex-1'>
@@ -213,18 +222,11 @@ export function ChatView({ chat, onSend }: { chat: Chat<ChatMessage>; onSend?: (
           )}
         </div>
       </div>
-      {canvasOpen && <CanvasPanel documentId={doc ?? null} live={liveClosed ? null : live} onClose={closeCanvas} />}
+      {canvasOpen && (
+        <CanvasPanel documentId={doc ?? live?.id ?? null} live={live} onLiveSaved={liveSaved} onClose={closeCanvas} />
+      )}
     </div>
   );
-}
-
-/** The document saved by the last tool call of an answer, once saved. */
-function lastWrittenDocument(message: ChatMessage | undefined): string | null {
-  if (message?.role !== 'assistant') return null;
-  const part = message.parts.findLast(
-    (candidate) => candidate.type === 'tool-create_document' || candidate.type === 'tool-update_document',
-  );
-  return part?.state === 'output-available' ? part.output.id : null;
 }
 
 /** The first question of the last answer still waiting for the user's answer. */

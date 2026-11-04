@@ -248,8 +248,9 @@ closing the panel forgets it.
 - **The model's tools:** `create_document` (kind `document` or `html`, title, whole content) and `update_document`
   (id, whole new content). It writes any text to keep, send or print there, never in the chat, then answers in one
   or two sentences. A card in the answer ("Lettre de résiliation · Version 3") opens the document.
-- **Live:** the panel opens as soon as the model starts writing and shows the text as it comes (read-only), then
-  the saved document.
+- **Live:** the panel opens as soon as the model starts writing and shows the text as it comes, read-only in the same
+  editor as the saved document (whose code loads meanwhile). Once written, that text stays on screen until its saved
+  version is loaded, then the saved document takes its place: no closed frame, no "Loading…", never the old version.
 - **The model always works on the latest version:** the instructions hold the latest content of every document of
   the conversation, the user's own edits included; past versions in tool calls are left out of the history so a long
   document is not paid for again at every version.

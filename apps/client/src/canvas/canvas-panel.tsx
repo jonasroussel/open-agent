@@ -22,8 +22,9 @@ import { cn } from '@/lib/utils.ts';
 import { artifactQuery, artifactVersionQuery, saveArtifact, type LiveDocument } from './canvas-query.ts';
 import { downloadHtml, downloadWord, printDocument } from './export.ts';
 
-const DocumentEditor = lazy(() => import('./document-editor.tsx'));
-const Markdown = lazy(() => import('@/chat/markdown.tsx'));
+const loadEditor = () => import('./document-editor.tsx');
+const DocumentEditor = lazy(loadEditor);
+const noop = () => {};
 
 /** Typing pauses this long before the edit is saved. */
 const SAVE_DELAY_MS = 1200;
@@ -35,14 +36,25 @@ const SAVE_DELAY_MS = 1200;
 export function CanvasPanel({
   documentId,
   live,
+  onLiveSaved,
   onClose,
 }: {
   documentId: string | null;
   live: LiveDocument | null;
+  /** The document just written is now loaded at its saved version: the canvas shows that one from now on. */
+  onLiveSaved: () => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const showLive = live !== null && (live.id === null || live.id === documentId || documentId === null);
+  const saved = useQuery({ ...artifactQuery(documentId ?? ''), enabled: documentId !== null });
+  const liveSaved = live?.version !== undefined && (saved.data?.artifact.version ?? 0) >= live.version;
+  const showLive = live !== null && !liveSaved && (live.id === null || live.id === documentId || documentId === null);
+
+  // Fetched while the model writes, so the saved document does not wait for it.
+  useEffect(() => void loadEditor(), []);
+  useEffect(() => {
+    if (liveSaved) onLiveSaved();
+  }, [liveSaved, onLiveSaved]);
 
   return (
     <aside className='bg-background fixed inset-0 z-50 flex flex-col md:static md:z-auto md:w-[52%] md:max-w-3xl md:min-w-0 md:border-l'>
@@ -85,7 +97,10 @@ function PanelHeader({
   );
 }
 
-/** While the model writes: read-only, following the text as it comes. */
+/**
+ * While the model writes: read-only, in the same editor as the saved document, so the end of the writing changes
+ * nothing on screen. Then, until its saved version is loaded, the document as written.
+ */
 function LiveView({ live, onClose }: { live: LiveDocument; onClose: () => void }) {
   const { t } = useTranslation();
   const html = live.kind === 'html';
@@ -94,18 +109,16 @@ function LiveView({ live, onClose }: { live: LiveDocument; onClose: () => void }
       <PanelHeader
         icon={html ? <AppWindow className='size-4' /> : <FileText className='size-4' />}
         title={live.title ?? t('canvas.untitled')}
-        status={<span className='animate-pulse'>{t('canvas.writing')}</span>}
+        status={<span className='animate-pulse'>{live.version ? t('canvas.saving') : t('canvas.writing')}</span>}
         onClose={onClose}
       />
       <div className='min-h-0 flex-1 overflow-y-auto'>
         {html ? (
           <pre className='p-4 font-mono text-xs whitespace-pre-wrap'>{live.content}</pre>
         ) : (
-          <div className='px-6 py-6 md:px-10'>
-            <Suspense fallback={<p className='whitespace-pre-wrap'>{live.content}</p>}>
-              <Markdown text={live.content} streaming />
-            </Suspense>
-          </div>
+          <Suspense fallback={<p className='px-6 py-6 whitespace-pre-wrap md:px-10'>{live.content}</p>}>
+            <DocumentEditor markdown={live.content} editable={false} onChange={noop} onReady={noop} />
+          </Suspense>
         )}
       </div>
     </>
@@ -129,8 +142,11 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [htmlTab, setHtmlTab] = useState<'preview' | 'code'>('preview');
   const [copied, setCopied] = useState(false);
-  // What the editor holds: the version it was loaded from, and the text the user typed since.
-  const [loaded, setLoaded] = useState<{ version: number; content: string } | null>(null);
+  // What the editor holds: the version it was loaded from, and the text the user typed since. Taken from the cache at
+  // once when it is there, so a document opens without a "Loading…" frame.
+  const [loaded, setLoaded] = useState<{ version: number; content: string } | null>(() =>
+    opened.data ? { version: opened.data.artifact.version, content: opened.data.content } : null,
+  );
   const draft = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
