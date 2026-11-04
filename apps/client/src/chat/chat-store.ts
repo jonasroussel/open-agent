@@ -2,6 +2,8 @@ import { Chat } from '@ai-sdk/react';
 import { API_ROUTES, apiPath, type ChatMessage, type ConversationResponse } from '@open-agent/shared';
 import { DefaultChatTransport } from 'ai';
 
+import { commandsQuery } from '@/commands/commands-query.ts';
+import { libraryFilesQuery } from '@/files/library.ts';
 import { api } from '@/lib/api.ts';
 import { queryClient } from '@/lib/query-client.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
@@ -39,10 +41,13 @@ export function chatFor(id: string, messages: ChatMessage[] = []): Chat<ChatMess
       generateId: () => crypto.randomUUID(),
       sendAutomaticallyWhen: questionsAnswered,
       // A new conversation got its title meanwhile, every answer moves its conversation to the top, may have changed
-      // the memory, and spent some of the quota.
+      // the memory, saved a command or made files, and spent some of the quota. Done here at once, not only through
+      // `/api/events`: the device that asked must not wait for, or depend on, that stream.
       onFinish: () => {
         void queryClient.invalidateQueries({ queryKey: conversationsQuery.queryKey });
         void queryClient.invalidateQueries({ queryKey: memoryRulesQuery.queryKey });
+        void queryClient.invalidateQueries({ queryKey: commandsQuery.queryKey });
+        void queryClient.invalidateQueries({ queryKey: libraryFilesQuery.queryKey });
         void queryClient.invalidateQueries({ queryKey: quotaQuery.queryKey });
         // The model may have rewritten the open document.
         void queryClient.invalidateQueries({ queryKey: [API_ROUTES.artifact] });
