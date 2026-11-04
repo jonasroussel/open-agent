@@ -123,7 +123,7 @@ export const en = {
   commands: {
     title: 'My commands',
     description:
-      'Your usual requests, run without typing them again: type / and the name before your text, or tap the command in the message field, next to the paperclip. To make one, ask me, for example “Make me a command that fixes the mistakes in my texts”.',
+      'Your usual requests, run without typing them again: type / and the name before your text, or tap the command in the message field, next to the paperclip, where they show in this order (drag one by its handle to move it). To make one, ask me, for example “Make me a command that fixes the mistakes in my texts”.',
     empty: 'No commands yet. Ask me to make one in a conversation, or add it here.',
     add: 'New command',
     name: 'Name',
@@ -133,6 +133,7 @@ export const en = {
     save: 'Save',
     cancel: 'Cancel',
     edit: 'Edit “/{{name}}”',
+    move: 'Move “/{{name}}”',
     delete: 'Delete “/{{name}}”',
     uses_one: 'Used once',
     uses_other: 'Used {{count}} times',

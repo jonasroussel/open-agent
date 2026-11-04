@@ -309,7 +309,7 @@ export function Composer({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {/* Most used first, between the paperclip and the send button; scrolled sideways when they do not fit. */}
+        {/* In the user's order, between the paperclip and the send button; scrolled sideways when they do not fit. */}
         <div className='flex min-w-0 flex-1 [scrollbar-width:none] gap-1.5 overflow-x-auto'>
           {commands.map((candidate) => (
             <button

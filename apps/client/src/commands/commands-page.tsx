@@ -1,4 +1,21 @@
 import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   API_ROUTES,
   apiPath,
   commandNameOf,
@@ -6,9 +23,10 @@ import {
   MAX_COMMAND_PROMPT_LENGTH,
   type CommandBody,
   type CommandDto,
+  type CommandOrderBody,
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, SquareSlash, Trash2 } from 'lucide-react';
+import { GripVertical, Pencil, Plus, SquareSlash, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -17,6 +35,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { Textarea } from '@/components/ui/textarea.tsx';
 import { api, type ApiErrorCode } from '@/lib/api.ts';
+import { cn } from '@/lib/utils.ts';
 import { usePageTitle } from '@/shell/page-title.tsx';
 
 import { commandsQuery } from './commands-query.ts';
@@ -37,6 +56,26 @@ export function CommandsPage() {
     await queryClient.invalidateQueries({ queryKey: commandsQuery.queryKey });
     return result.ok;
   };
+
+  // A grip moves a row with the mouse, a finger (the grip does not scroll the page) or the keyboard (space, arrows).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // Shown in the new order at once; the server's list comes back after.
+  async function move({ active, over }: DragEndEvent) {
+    const list = commands.data;
+    if (!list || !over || active.id === over.id) return;
+    const ordered = arrayMove(
+      list,
+      list.findIndex((command) => command.id === active.id),
+      list.findIndex((command) => command.id === over.id),
+    );
+    queryClient.setQueryData(commandsQuery.queryKey, ordered);
+    const body: CommandOrderBody = { ids: ordered.map((command) => command.id) };
+    await changed(await api(API_ROUTES.commandOrder, { method: 'PUT', body }));
+  }
 
   return (
     <div className='mx-auto grid w-full max-w-3xl gap-6 px-4 pt-6 pb-12 md:px-8'>
@@ -69,11 +108,15 @@ export function CommandsPage() {
         </div>
       )}
       {commands.data && commands.data.length > 0 && (
-        <ul className='divide-y rounded-lg border'>
-          {commands.data.map((command) => (
-            <CommandRow key={command.id} command={command} onChanged={changed} />
-          ))}
-        </ul>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={(event) => void move(event)}>
+          <SortableContext items={commands.data.map((command) => command.id)} strategy={verticalListSortingStrategy}>
+            <ul className='divide-y rounded-lg border'>
+              {commands.data.map((command) => (
+                <CommandRow key={command.id} command={command} onChanged={changed} />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   );
@@ -83,10 +126,16 @@ function CommandRow({ command, onChanged }: { command: CommandDto; onChanged: Ch
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const path = apiPath(API_ROUTES.command, { commandId: command.id });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id: command.id,
+    disabled: editing,
+  });
+  // Up and down only: the row never leaves its column.
+  const style = { transform: CSS.Translate.toString(transform && { ...transform, x: 0 }), transition };
 
   if (editing) {
     return (
-      <li className='p-3'>
+      <li ref={setNodeRef} style={style} className='p-3'>
         <CommandForm
           initial={command}
           onCancel={() => setEditing(false)}
@@ -99,8 +148,26 @@ function CommandRow({ command, onChanged }: { command: CommandDto; onChanged: Ch
   }
 
   return (
-    <li className='hover:bg-muted/60 flex items-start gap-3 px-4 py-3'>
-      <SquareSlash className='text-secondary-foreground mt-1 size-4 shrink-0' />
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'bg-background hover:bg-muted/60 relative flex items-start gap-2 py-3 pr-4 pl-2',
+        isDragging && 'z-10 rounded-lg shadow-lg',
+      )}
+    >
+      <button
+        type='button'
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={t('commands.move', { name: command.name })}
+        title={t('commands.move', { name: command.name })}
+        className='text-muted-foreground hover:text-foreground mt-0.5 cursor-grab touch-none rounded-md p-1 active:cursor-grabbing'
+      >
+        <GripVertical className='size-4' />
+      </button>
+      <SquareSlash className='text-secondary-foreground mt-1.5 size-4 shrink-0' />
       <div className='grid min-w-0 flex-1 gap-1'>
         <span className='font-medium'>/{command.name}</span>
         <p className='text-muted-foreground line-clamp-3 text-sm whitespace-pre-wrap'>{command.prompt}</p>

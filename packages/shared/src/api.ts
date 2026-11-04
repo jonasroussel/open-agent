@@ -47,8 +47,10 @@ export const API_ROUTES = {
   memoryChangeUndo: '/api/memory/changes/:changeId/undo',
   /** POST `RememberMessageBody`: keeps what lasts in one of the user's messages, as `RememberMessageResponse`. */
   memoryRemember: '/api/memory/remember',
-  /** GET: the signed-in user's commands, most used first, as `ListCommandsResponse`. POST `CommandBody`: adds one. */
+  /** GET: the signed-in user's commands, in their order, as `ListCommandsResponse`. POST `CommandBody`: adds one, first. */
   commands: '/api/commands',
+  /** PUT `CommandOrderBody`: the user's new order. */
+  commandOrder: '/api/commands/order',
   /** PATCH `CommandBody`: renames it or rewrites its prompt. DELETE: removes it. */
   command: '/api/commands/:commandId',
   /** GET: the signed-in user's files, newest first. POST multipart, field `file`: uploads one, as `UploadFileResponse`. */
@@ -395,13 +397,16 @@ export type ListMemoryRulesResponse = { rules: MemoryRuleDto[] };
 
 export type MemoryRuleBody = { text: string };
 
-/** `uses`: how many messages ran it; the composer shows the most used first. */
+/** `uses`: how many messages ran it, shown in "My commands". */
 export type CommandDto = { id: string; name: string; prompt: string; uses: number; updatedAt: string };
 
 export type ListCommandsResponse = { commands: CommandDto[] };
 
 /** `name` as typed after `/` (see `commandNameOf`). */
 export type CommandBody = { name: string; prompt: string };
+
+/** Every one of the user's commands, each once, in the order they want. */
+export type CommandOrderBody = { ids: string[] };
 
 /** What `save_command` gives the model, and the answer shows: the command and whether it is new. */
 export type SaveCommandOutput = { id: string; name: string; created: boolean };

@@ -251,9 +251,11 @@ A user's usual requests, run again without retyping them (`Commands`, `applicati
   prompt.
 - **Running one:** `/cor` at the start of the field lists the commands it may start (arrows, Enter or Tab, or a tap),
   `/corriger ` typed in full picks it too, or a tap on its button in the field, between the paperclip and the send
-  button (most used first, scrolled sideways when they do not fit). The field then shows a badge; Backspace in an empty
-  field or its cross removes it. A command
-  alone, without text, applies to the conversation so far.
+  button (in the user's order, scrolled sideways when they do not fit). The field then shows a badge; Backspace in an
+  empty field or its cross removes it. A command alone, without text, applies to the conversation so far.
+- **Order:** the user's own, dragged by a handle in "My commands" (mouse, finger or keyboard), shown at once and saved
+  whole (`PUT /api/commands/order`: every command once, or refused). A new command comes first, made by hand or by the
+  model. Commands made before the order existed kept the one they showed in (most used first).
 - **What is sent:** the message keeps the user's words and `metadata.command` (`id`, `name`), shown as a badge in
   their bubble. At each answer the server puts the command's current prompt before those words, for the model, the
   pre-analysis and the title; never in the saved conversation. A command deleted since is said so. Each message
@@ -383,7 +385,7 @@ Same layout and tooling as `inscript-carte`.
 | `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), created at, the version it brought back (`restored_from`) |
 | `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter, paid by the user's own key |
 | `settings` | key (`model.fast`, `prompt.assistant`…), value, updated at; a missing key means the default |
-| `commands` | id (UUID), user, name (unique per user), prompt, uses, created/updated at |
+| `commands` | id (UUID), user, name (unique per user), prompt, uses, position (the user's order), created/updated at |
 
 ## Configuration
 

@@ -138,7 +138,7 @@ export const fr: Translation = {
   commands: {
     title: 'Mes commandes',
     description:
-      'Vos demandes habituelles, à lancer sans les retaper : tapez / suivi du nom avant votre texte, ou touchez la commande dans la zone de saisie, à côté du trombone. Pour en créer une, demandez-le-moi, par exemple « Fais-moi une commande qui corrige les fautes de mes textes ».',
+      'Vos demandes habituelles, à lancer sans les retaper : tapez / suivi du nom avant votre texte, ou touchez la commande dans la zone de saisie, à côté du trombone, où elles s’affichent dans cet ordre (faites-en glisser une par sa poignée pour la déplacer). Pour en créer une, demandez-le-moi, par exemple « Fais-moi une commande qui corrige les fautes de mes textes ».',
     empty: 'Aucune commande pour l’instant. Demandez-moi d’en créer une dans une conversation, ou ajoutez-la ici.',
     add: 'Nouvelle commande',
     name: 'Nom',
@@ -148,6 +148,7 @@ export const fr: Translation = {
     save: 'Enregistrer',
     cancel: 'Annuler',
     edit: 'Modifier « /{{name}} »',
+    move: 'Déplacer « /{{name}} »',
     delete: 'Supprimer « /{{name}} »',
     uses_one: 'Utilisée une fois',
     uses_other: 'Utilisée {{count}} fois',

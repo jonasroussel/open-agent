@@ -54,7 +54,8 @@ export class Commands {
     const valid = validated(name, prompt);
     if (!valid.ok) return valid;
     if (await this.#commands.findByName(user.id, valid.name)) return { ok: false, reason: 'command_name_taken' };
-    if ((await this.#commands.listOf(user.id)).length >= MAX_COMMANDS) return { ok: false, reason: 'commands_full' };
+    const existing = await this.#commands.listOf(user.id);
+    if (existing.length >= MAX_COMMANDS) return { ok: false, reason: 'commands_full' };
     const now = this.#clock.now();
     const command: Command = {
       id: crypto.randomUUID(),
@@ -62,6 +63,8 @@ export class Commands {
       name: valid.name,
       prompt: valid.prompt,
       uses: 0,
+      // A new command goes first: it is the one the user is about to try.
+      position: (existing[0]?.position ?? 1) - 1,
       createdAt: now,
       updatedAt: now,
     };
@@ -81,6 +84,20 @@ export class Commands {
     await this.#commands.update(id, valid.name, valid.prompt, now);
     this.#changes.publish(user.id, { type: 'commands' });
     return { ok: true, command: { ...command, name: valid.name, prompt: valid.prompt, updatedAt: now } };
+  }
+
+  /** `ids`: every one of the user's commands, each once, in the order they want. */
+  async reorder(user: User, ids: unknown): Promise<boolean> {
+    const current = new Set((await this.#commands.listOf(user.id)).map((command) => command.id));
+    const valid =
+      Array.isArray(ids) &&
+      ids.length === current.size &&
+      new Set(ids).size === ids.length &&
+      ids.every((id) => typeof id === 'string' && current.has(id));
+    if (!valid) return false;
+    await this.#commands.reorder(user.id, ids);
+    this.#changes.publish(user.id, { type: 'commands' });
+    return true;
   }
 
   async delete(user: User, id: string): Promise<boolean> {
@@ -105,7 +122,7 @@ export class Commands {
     });
   }
 
-  /** Counted once per message sent, so the composer offers the most used first. */
+  /** Counted once per message sent, shown in "My commands". */
   async recordUse(user: User, message: ChatMessage): Promise<void> {
     const ran = commandOf(message);
     const command = ran && (await this.#commands.find(user.id, ran.id));

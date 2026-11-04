@@ -1077,6 +1077,8 @@ const addCommand = (cookie: string, name: string, prompt: string) =>
 const listCommands = async (cookie: string) =>
   ((await (await call('/api/commands', { cookie })).json()) as ListCommandsResponse).commands;
 
+const orderOf = async (cookie: string) => (await listCommands(cookie)).map((command) => command.name);
+
 describe('commands', () => {
   test('a user keeps their own commands under names they can type after a slash', async () => {
     const cookie = await signIn(ADMIN);
@@ -1103,6 +1105,30 @@ describe('commands', () => {
     expect((await call(`/api/commands/${created.id}`, { method: 'DELETE', cookie: ana })).status).toBe(404);
     expect((await call(`/api/commands/${created.id}`, { method: 'DELETE', cookie })).status).toBe(204);
     expect(await listCommands(cookie)).toEqual([]);
+  });
+
+  test('a new command comes first, and the user orders them as they like', async () => {
+    const cookie = await signIn(ADMIN);
+    const ids: Record<string, string> = {};
+    for (const name of ['corriger', 'resumer', 'traduire']) {
+      ids[name] = ((await (await addCommand(cookie, name, 'Fais-le.')).json()) as CommandDto).id;
+    }
+    expect(await orderOf(cookie)).toEqual(['traduire', 'resumer', 'corriger']);
+
+    const reorder = (body: unknown, as = cookie) => call('/api/commands/order', { method: 'PUT', body, cookie: as });
+    expect((await reorder({ ids: [ids.corriger, ids.traduire, ids.resumer] })).status).toBe(204);
+    expect(await orderOf(cookie)).toEqual(['corriger', 'traduire', 'resumer']);
+
+    // Every command once, and only the user's own: anything else would lose or duplicate one.
+    expect((await reorder({ ids: [ids.corriger, ids.traduire] })).status).toBe(400);
+    expect((await reorder({ ids: [ids.corriger, ids.corriger, ids.resumer] })).status).toBe(400);
+    await invite(cookie, 'ana@example.com');
+    const ana = await signIn('ana@example.com');
+    await addCommand(ana, 'poli', 'Rends-le poli.');
+    expect((await reorder({ ids: [ids.corriger] }, ana)).status).toBe(400);
+
+    await addCommand(cookie, 'plus-court', 'Raccourcis.');
+    expect(await orderOf(cookie)).toEqual(['plus-court', 'corriger', 'traduire', 'resumer']);
   });
 
   test("a message running a command gives the model the command's prompt, while the conversation keeps the badge", async () => {

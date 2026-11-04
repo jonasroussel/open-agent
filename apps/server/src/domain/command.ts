@@ -6,6 +6,8 @@ export type Command = {
   prompt: string;
   /** How many messages ran it. */
   uses: number;
+  /** Where the user put it: the smallest first. */
+  position: number;
   createdAt: Date;
   updatedAt: Date;
 };

@@ -37,6 +37,16 @@ export function createCommandRoutes({ signedInUser, commands }: CommandHttpDepen
         }),
     },
 
+    [API_ROUTES.commandOrder]: {
+      PUT: (request: BunRequest) =>
+        withUser(request, async (user) => {
+          const body = await readJson(request);
+          return (await commands.reorder(user, body?.ids))
+            ? new Response(null, { status: 204 })
+            : error('invalid_request', 400);
+        }),
+    },
+
     [API_ROUTES.command]: {
       PATCH: (request: BunRequest<typeof API_ROUTES.command>) =>
         withUser(request, async (user) => {

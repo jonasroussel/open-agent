@@ -3,7 +3,7 @@ import { queryOptions } from '@tanstack/react-query';
 
 import { apiOrThrow } from '@/lib/api.ts';
 
-/** The user's commands, most used first: the composer's buttons and "/" list follow this order. */
+/** The user's commands, in their order: the composer's buttons and "/" list follow it. */
 export const commandsQuery = queryOptions({
   queryKey: [API_ROUTES.commands],
   queryFn: async () => (await apiOrThrow<ListCommandsResponse>(API_ROUTES.commands)).commands,
