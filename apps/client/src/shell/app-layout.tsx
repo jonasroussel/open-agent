@@ -1,10 +1,11 @@
 import { MAX_CONVERSATION_TITLE_LENGTH } from '@open-agent/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Outlet } from '@tanstack/react-router';
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { sessionQuery } from '@/auth/session.ts';
+import { preloadMarkdown } from '@/chat/markdown-loader.ts';
 import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar.tsx';
 import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 
@@ -20,6 +21,8 @@ export function AppLayout() {
   const { data: user } = useQuery(sessionQuery);
   const [title, setTitle] = useState<PageTitle | null>(null);
   useChangeFeed();
+  // Every page here is near a conversation: its Markdown renderer loads now, not at the first message.
+  useEffect(() => void preloadMarkdown(), []);
   // Signing out clears the session just before leaving for the sign-in page.
   if (!user) return null;
 

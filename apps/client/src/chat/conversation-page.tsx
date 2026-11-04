@@ -8,6 +8,7 @@ import { usePageTitle } from '@/shell/page-title.tsx';
 import { chatFor, hasChat } from './chat-store.ts';
 import { ChatView } from './chat-view.tsx';
 import { conversationQuery, conversationsQuery, renameConversation } from './conversations-query.ts';
+import { useMarkdownReady } from './markdown-loader.ts';
 
 export function ConversationPage() {
   const { t } = useTranslation();
@@ -24,9 +25,11 @@ export function ConversationPage() {
   // Just started from the empty page, or already opened: the `Chat` in memory is the freshest copy.
   const inMemory = hasChat(conversationId);
   const opened = useQuery({ ...conversationQuery(conversationId), enabled: !inMemory });
+  // Shown once, as Markdown: plain text first, then Markdown, changed the height and scrolled the page.
+  const markdownReady = useMarkdownReady();
 
   if (inMemory) return <ChatView key={conversationId} chat={chatFor(conversationId)} />;
   if (opened.isError) return <Navigate to='/' replace />;
-  if (!opened.data) return null;
+  if (!opened.data || !markdownReady) return null;
   return <ChatView key={conversationId} chat={chatFor(conversationId, opened.data.messages)} />;
 }

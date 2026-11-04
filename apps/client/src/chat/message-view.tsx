@@ -14,7 +14,7 @@ import {
   Pencil,
   RotateCcw,
 } from 'lucide-react';
-import { lazy, Suspense, useState, type ReactNode } from 'react';
+import { Suspense, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { BrandIcon } from '@/components/brand-icon.tsx';
@@ -25,8 +25,7 @@ import { cn } from '@/lib/utils.ts';
 
 import { ContextToolLine, isContextToolPart } from './context-tool-line.tsx';
 import { isMadeFilePart, MadeFile } from './made-file.tsx';
-
-const Markdown = lazy(() => import('./markdown.tsx'));
+import { Markdown } from './markdown-loader.ts';
 
 function partsText(message: ChatMessage, type: 'text' | 'reasoning'): string {
   return message.parts
