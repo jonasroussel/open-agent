@@ -96,7 +96,8 @@ function ConversationGroup({ label, conversations, onNavigate, onRename, onDelet
             <SidebarMenuItem key={conversation.id}>
               <SidebarMenuButton
                 asChild
-                className='h-9 group-has-data-[sidebar=menu-action]/menu-item:pr-14'
+                // On a phone the actions button always shows (no hover): the title leaves room for it and the time.
+                className='h-9 group-has-data-[sidebar=menu-action]/menu-item:pr-20 md:group-has-data-[sidebar=menu-action]/menu-item:pr-14'
                 isActive={Boolean(
                   matchRoute({ to: '/c/$conversationId', params: { conversationId: conversation.id } }),
                 )}
@@ -106,7 +107,7 @@ function ConversationGroup({ label, conversations, onNavigate, onRename, onDelet
                   <span className='truncate'>{conversation.title ?? t('conversations.untitled')}</span>
                 </Link>
               </SidebarMenuButton>
-              <span className='text-muted-foreground pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs group-hover/menu-item:hidden group-has-data-[state=open]/menu-item:hidden'>
+              <span className='text-muted-foreground pointer-events-none absolute top-1/2 right-8 -translate-y-1/2 text-xs group-hover/menu-item:hidden group-has-data-[state=open]/menu-item:hidden md:right-2'>
                 {timeOf(conversation.updatedAt)}
               </span>
               <DropdownMenu>
