@@ -35,6 +35,16 @@ import { cn } from '@/lib/utils.ts';
 /** On a touch screen, Enter adds a line, like in a text message; the button sends. */
 const touchScreen = window.matchMedia('(pointer: coarse)').matches;
 
+/**
+ * The text with the request to make a command at its start: kept as it is when it has it, completed when the user cut
+ * its end (« Crée une comm »), else put before what was typed.
+ */
+function withCommandStart(text: string, start: string): string {
+  if (text.startsWith(start)) return text;
+  if (text.trim() !== '' && start.startsWith(text.trimEnd())) return start;
+  return `${start}${text}`;
+}
+
 /** A file of the message being written: uploading, ready in the library, or refused. */
 type Attachment = {
   key: string;
@@ -148,9 +158,8 @@ export function Composer({
 
   // The assistant makes commands (`save_command`): the request is started here, the user says what it should do.
   function startNewCommand() {
-    const start = t('commands.newPrompt');
     setCommand(null);
-    setText((current) => (current.startsWith(start) ? current : `${start}${current}`));
+    setText((current) => withCommandStart(current, t('commands.newPrompt')));
     field.current?.focus();
     // After React wrote the text: the cursor goes to its end.
     requestAnimationFrame(() => {
