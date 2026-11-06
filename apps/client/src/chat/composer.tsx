@@ -7,7 +7,7 @@ import {
   type LibraryFileDto,
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Camera, FolderOpen, Paperclip, Square, SquareSlash, Upload, X } from 'lucide-react';
+import { ArrowUp, Camera, FolderOpen, Paperclip, Plus, Square, SquareSlash, Upload, X } from 'lucide-react';
 import {
   useRef,
   useState,
@@ -144,6 +144,19 @@ export function Composer({
     if (typedName !== null) setText('');
     setHighlighted(0);
     field.current?.focus();
+  }
+
+  // The assistant makes commands (`save_command`): the request is started here, the user says what it should do.
+  function startNewCommand() {
+    const start = t('commands.newPrompt');
+    setCommand(null);
+    setText((current) => (current.startsWith(start) ? current : `${start}${current}`));
+    field.current?.focus();
+    // After React wrote the text: the cursor goes to its end.
+    requestAnimationFrame(() => {
+      const end = field.current?.value.length ?? 0;
+      field.current?.setSelectionRange(end, end);
+    });
   }
 
   // "/corriger " typed in full, then a space: the command is picked as if from the list.
@@ -330,6 +343,15 @@ export function Composer({
               {candidate.name}
             </button>
           ))}
+          <button
+            type='button'
+            onClick={startNewCommand}
+            aria-label={t('commands.new')}
+            className='text-muted-foreground hover:text-foreground hover:bg-muted flex shrink-0 items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-xs transition-colors'
+          >
+            <Plus className='size-3.5' />
+            {t('commands.newShort')}
+          </button>
         </div>
         <input
           ref={deviceInput}
