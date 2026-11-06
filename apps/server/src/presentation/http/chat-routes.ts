@@ -7,7 +7,7 @@ import {
   type QuotaResponse,
   type SearchResponse,
 } from '@open-agent/shared';
-import { consumeStream, createUIMessageStreamResponse } from 'ai';
+import { createUIMessageStreamResponse } from 'ai';
 import type { BunRequest } from 'bun';
 
 import type { ChatTurns } from '../../application/chat-turns.ts';
@@ -133,11 +133,30 @@ export function createChatRoutes({ signedInUser, conversations, sharing, chatTur
           const body = await readJson(request);
           // A thinking model can be silent for longer than Bun's 10 s idle timeout.
           server.timeout(request, 0);
-          const result = await chatTurns.start(user, body?.id, body?.messages, request.signal, body?.ephemeral);
+          const result = await chatTurns.start(user, body?.id, body?.messages, body?.ephemeral);
           if (!result.ok) return error(result.reason, CHAT_STATUS[result.reason]);
-          // Reading a copy to the end lets the history be saved when the user stops or the phone drops the connection.
-          return createUIMessageStreamResponse({ stream: result.stream, consumeSseStream: consumeStream });
+          // The browser may leave at any time: the answer goes on, and `chatStream` gives it back.
+          return createUIMessageStreamResponse({ stream: result.stream });
         }),
+    },
+
+    [API_ROUTES.chatStream]: {
+      GET: (request: BunRequest<typeof API_ROUTES.chatStream>, server: ServerHandle) =>
+        withUser(request, async (user) => {
+          server.timeout(request, 0);
+          const result = await chatTurns.follow(user, request.params.conversationId);
+          if (!result.ok) return error('not_found', 404);
+          // 204: nothing being written; the AI SDK then keeps the saved conversation.
+          return result.stream
+            ? createUIMessageStreamResponse({ stream: result.stream })
+            : new Response(null, { status: 204 });
+        }),
+      DELETE: (request: BunRequest<typeof API_ROUTES.chatStream>) =>
+        withUser(request, async (user) =>
+          (await chatTurns.stop(user, request.params.conversationId))
+            ? new Response(null, { status: 204 })
+            : error('not_found', 404),
+        ),
     },
 
     [API_ROUTES.quota]: {

@@ -11,7 +11,7 @@ import {
 import { visibleTo, type ConversationAccess, type ConversationMember, type MemberStatus } from '../domain/sharing.ts';
 import type { UserRepository } from '../domain/user-repository.ts';
 import type { User } from '../domain/user.ts';
-import type { AnsweringNow } from './answering-now.ts';
+import type { AnswerRuns } from './answer-runs.ts';
 import type { Participants } from './participants.ts';
 import type { Clock } from './ports/clock.ts';
 
@@ -43,20 +43,20 @@ export class Conversations {
   readonly #conversations: ConversationRepository;
   readonly #participants: Participants;
   readonly #users: UserRepository;
-  readonly #answering: AnsweringNow;
+  readonly #runs: AnswerRuns;
   readonly #clock: Clock;
 
   constructor(
     conversations: ConversationRepository,
     participants: Participants,
     users: UserRepository,
-    answering: AnsweringNow,
+    runs: AnswerRuns,
     clock: Clock,
   ) {
     this.#conversations = conversations;
     this.#participants = participants;
     this.#users = users;
-    this.#answering = answering;
+    this.#runs = runs;
     this.#clock = clock;
   }
 
@@ -114,7 +114,7 @@ export class Conversations {
     const access = await this.#participants.access(user, id);
     if (!access) return null;
     const messages = await this.#conversations.messages(id);
-    const answering = this.#answering.who(id);
+    const answering = this.#runs.who(id);
     return {
       view: await this.#view(user, access),
       messages: visibleTo(messages, user.id, access.conversation.userId),
@@ -170,6 +170,8 @@ export class Conversations {
     if (access?.role !== 'owner') return false;
     // Read before: the members go with the conversation. Invited people lose their invitation.
     const everyone = [user.id, ...(await this.#conversations.members(id)).map((member) => member.userId)];
+    // An answer being written stops: it would be saved into a conversation that no longer exists.
+    this.#runs.stop(id);
     await this.#conversations.delete(id);
     this.#participants.tell(everyone, { type: 'conversation', id });
     this.#participants.tell(everyone, { type: 'conversations' });

@@ -43,5 +43,6 @@ export function ConversationPage() {
   // Invited, not joined yet: the conversation stays closed until they join.
   if (opened.isError) return invitation ? <InvitationView invitation={invitation} /> : <Navigate to='/' replace />;
   if (!opened.data || !markdownReady) return null;
-  return <ChatView key={conversationId} chat={chatFor(conversationId, opened.data.messages)} />;
+  const chat = chatFor(conversationId, opened.data.messages, { answering: opened.data.answering });
+  return <ChatView key={conversationId} chat={chat} />;
 }

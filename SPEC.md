@@ -112,6 +112,13 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
 ### Chat
 
 - Streaming answers (Vercel AI SDK UI message stream).
+- **The server owns each answer** (`AnswerRuns`, `application/answer-runs.ts`): it is written to its end and saved
+  whatever the browser does (another page, a reload, a phone put away, a lost connection); only Stop ends it early
+  (`DELETE /api/chat/:id/stream`), and deleting the conversation. The user's message is saved as it is sent. A page
+  that opens the conversation, reloads, comes back to the foreground or online follows the answer again from its start
+  (`GET /api/chat/:id/stream`, the AI SDK's `resumeStream`), as do the user's other devices. One answer at a time per
+  conversation (`409 conversation_busy`); an answer running past 10 minutes is stopped. In memory: a server restart
+  ends the answers being written.
 - Regenerate an answer; edit a sent message and resend (the later messages are replaced, no branches).
 - Automatic conversation titles (background model); pin conversations.
 - **Search in the history** ("Search" in the sidebar, ⌘K / Ctrl+K): SQLite FTS5 on the text of every message,
@@ -326,7 +333,7 @@ A conversation shared with other people of the app, who all write to the assista
   A memory notice shows only to the person whose memory changed; « Remember » works on one's own messages only.
 - **The model knows who writes:** each user message reaches it as « [name] … », and the instructions name everyone in
   it and the person it answers.
-- **One answer at a time:** the server saves the sender's message at once, tells everyone in it through
+- **One answer at a time** (as in every conversation): the server saves the sender's message at once, tells everyone in it through
   `/api/events`, and refuses another message while the answer is written (`409 conversation_busy`); the others see the
   message, the dots, « L'assistant répond à X… », and get the answer once it is done (not streamed). They can type
   meanwhile and send once it is done.

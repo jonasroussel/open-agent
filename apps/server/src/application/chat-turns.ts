@@ -20,7 +20,6 @@ import {
   tool,
   toUIMessageStream,
   type InferUIMessageChunk,
-  type UIMessageChunk,
 } from 'ai';
 import { z } from 'zod';
 
@@ -40,7 +39,7 @@ import type { MemoryRule } from '../domain/memory.ts';
 import { isExhausted } from '../domain/quota.ts';
 import { continuedHistory, signedBy, withAuthorNames } from '../domain/sharing.ts';
 import { nameOf, personOf, type User } from '../domain/user.ts';
-import type { AnsweringNow } from './answering-now.ts';
+import type { AnswerRuns } from './answer-runs.ts';
 import type { Artifacts } from './artifacts.ts';
 import type { Commands } from './commands.ts';
 import type { ContextTools } from './context-tools.ts';
@@ -91,7 +90,7 @@ const INVALID_INPUT = 'AI_InvalidToolInputError: ';
 const KEY_REFUSED: Record<number, true> = { 401: true, 402: true, 403: true };
 
 export type ChatTurnResult =
-  | { ok: true; stream: ReadableStream<UIMessageChunk<ChatMessageMetadata>> }
+  | { ok: true; stream: ReadableStream<InferUIMessageChunk<ChatMessage>> }
   | {
       ok: false;
       reason:
@@ -113,7 +112,7 @@ export type ChatTurnResult =
 export class ChatTurns {
   readonly #conversations: ConversationRepository;
   readonly #participants: Participants;
-  readonly #answering: AnsweringNow;
+  readonly #runs: AnswerRuns;
   readonly #preAnalysis: PreAnalysis;
   readonly #memory: Memory;
   readonly #reconciler: MemoryReconciler;
@@ -132,7 +131,7 @@ export class ChatTurns {
   constructor(
     conversations: ConversationRepository,
     participants: Participants,
-    answering: AnsweringNow,
+    runs: AnswerRuns,
     preAnalysis: PreAnalysis,
     memory: Memory,
     reconciler: MemoryReconciler,
@@ -150,7 +149,7 @@ export class ChatTurns {
   ) {
     this.#conversations = conversations;
     this.#participants = participants;
-    this.#answering = answering;
+    this.#runs = runs;
     this.#preAnalysis = preAnalysis;
     this.#memory = memory;
     this.#reconciler = reconciler;
@@ -169,15 +168,10 @@ export class ChatTurns {
 
   /**
    * A new message from the user, or their answers to the questions ending the assistant's last message: that message
-   * then goes on. `ephemeral` only counts for a new conversation: it stays what it was created as.
+   * then goes on. `ephemeral` only counts for a new conversation: it stays what it was created as. The answer is the
+   * server's: it goes on to its end whatever the browser does, which follows it with `AnswerRuns.follow`.
    */
-  async start(
-    user: User,
-    id: unknown,
-    rawMessages: unknown,
-    abortSignal: AbortSignal,
-    ephemeral: unknown = false,
-  ): Promise<ChatTurnResult> {
+  async start(user: User, id: unknown, rawMessages: unknown, ephemeral: unknown = false): Promise<ChatTurnResult> {
     if (typeof id !== 'string' || !CONVERSATION_ID.test(id)) return { ok: false, reason: 'invalid_request' };
     const validated = await safeValidateUIMessages<ChatMessage>({ messages: rawMessages, dataSchemas });
     if (!validated.success) return { ok: false, reason: 'invalid_request' };
@@ -217,15 +211,39 @@ export class ChatTurns {
       throw error;
     }
     if (isExhausted(await this.#quotas.of(user))) return { ok: false, reason: 'quota_exceeded' };
-    if (shared && !this.#answering.take(id, sender)) return { ok: false, reason: 'conversation_busy' };
+    // One answer at a time in a conversation: two would each answer a history without the other's message, and the
+    // last saved would erase the other, even on the same person's two devices.
+    const signal = this.#runs.begin(id, sender);
+    if (!signal) return { ok: false, reason: 'conversation_busy' };
 
     try {
       const conversation = access?.conversation ?? { ephemeral: ephemeral === true };
-      return await this.#answer(user, id, conversation, people, messages, resumed, abortSignal);
+      const stream = await this.#answer(user, id, conversation, people, messages, resumed, signal);
+      this.#runs.feed(id, stream);
+      return { ok: true, stream: this.#runs.follow(id)! };
     } catch (error) {
-      if (shared) this.#answering.release(id);
+      this.#runs.end(id);
       throw error;
     }
+  }
+
+  /**
+   * The answer to the user's own message there, from its start, while it is being written: their page came back.
+   * `null` when none is (anymore). The others in a shared conversation get the answer once it is saved.
+   */
+  async follow(
+    user: User,
+    id: string,
+  ): Promise<{ ok: true; stream: ReadableStream<InferUIMessageChunk<ChatMessage>> | null } | { ok: false }> {
+    if (!(await this.#participants.access(user, id))) return { ok: false };
+    return { ok: true, stream: this.#runs.who(id)?.id === user.id ? this.#runs.follow(id) : null };
+  }
+
+  /** The user's Stop: their answer ends as it is, and is saved so. Nobody stops someone else's. */
+  async stop(user: User, id: string): Promise<boolean> {
+    if (!(await this.#participants.access(user, id))) return false;
+    if (this.#runs.who(id)?.id === user.id) this.#runs.stop(id);
+    return true;
   }
 
   async #answer(
@@ -237,7 +255,7 @@ export class ChatTurns {
     messages: ChatMessage[],
     resumed: ChatMessage | null,
     abortSignal: AbortSignal,
-  ): Promise<ChatTurnResult> {
+  ): Promise<ReadableStream<InferUIMessageChunk<ChatMessage>>> {
     const now = this.#clock.now();
     const conversation =
       'id' in existing
@@ -245,12 +263,11 @@ export class ChatTurns {
         : await this.#conversations.create({ id, userId: user.id, ephemeral: existing.ephemeral, now });
     const { ephemeral } = conversation;
     const shared = people.length > 1;
-    if (shared) {
-      // The others see the message at once, and that the assistant is answering it.
-      await this.#conversations.replaceMessages(conversation.id, messages, now);
-      await this.#participants.publish(conversation, { type: 'conversation', id: conversation.id });
-      await this.#participants.publish(conversation, { type: 'conversations' });
-    }
+    // Saved at once: a page opened or reloaded meanwhile shows the message, then follows its answer. The others in a
+    // shared conversation see that the assistant is answering it.
+    await this.#conversations.replaceMessages(conversation.id, messages, now);
+    await this.#participants.publish(conversation, { type: 'conversation', id: conversation.id });
+    await this.#participants.publish(conversation, { type: 'conversations' });
     // Conversations from before icons get theirs at their next message; a title, maybe renamed by the user, stays.
     // Each command gets its prompt before the user's words: for the pre-analysis, the title and the model, never in
     // the saved conversation, which keeps the badge.
@@ -270,7 +287,7 @@ export class ChatTurns {
             await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
           }
         } finally {
-          if (shared) this.#answering.release(conversation.id);
+          this.#runs.end(conversation.id);
         }
         await this.#participants.publish(conversation, { type: 'conversation', id: conversation.id });
       },
@@ -384,7 +401,7 @@ export class ChatTurns {
         writer.write({ type: 'finish' });
       },
     });
-    return { ok: true, stream };
+    return stream;
   }
 
   /**

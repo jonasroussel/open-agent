@@ -1,7 +1,7 @@
 import type { ModelRole } from '@open-agent/shared';
 import type { Knex } from 'knex';
 
-import { AnsweringNow } from './application/answering-now.ts';
+import { AnswerRuns } from './application/answer-runs.ts';
 import { Artifacts } from './application/artifacts.ts';
 import { Authentication } from './application/authentication.ts';
 import { ChatTurns } from './application/chat-turns.ts';
@@ -119,7 +119,8 @@ export async function createApp(
   // `/api/events`.
   const changes = new InMemoryChangeFeed();
   const participants = new Participants(conversations, users, changes);
-  const answering = new AnsweringNow();
+  // The answers being written: the server's own, whatever the browsers do.
+  const runs = new AnswerRuns();
   const memory = new Memory(new SqliteMemoryRepository(database), conversations, clock, changes);
   const library = new Library(
     new SqliteLibraryRepository(database),
@@ -156,7 +157,7 @@ export async function createApp(
       options.devSignInCode,
     ),
     userAccess,
-    conversations: new Conversations(conversations, participants, users, answering, clock),
+    conversations: new Conversations(conversations, participants, users, runs, clock),
     sharing: new Sharing(conversations, participants, users, mailer, clock, options.publicUrl),
     memory,
     messageMemory: new MessageMemory(conversations, participants, memory, reconciler, quotas),
@@ -164,7 +165,7 @@ export async function createApp(
     chatTurns: new ChatTurns(
       conversations,
       participants,
-      answering,
+      runs,
       new PreAnalysis(roleModels, usage, settings),
       memory,
       reconciler,

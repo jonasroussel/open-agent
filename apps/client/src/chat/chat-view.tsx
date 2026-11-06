@@ -29,7 +29,7 @@ import { memoryRulesQuery } from '@/memory/memory-query.ts';
 import { QUOTA_WARNING_PERCENT, quotaQuery, resetMonth } from '@/quota/quota-query.ts';
 
 import { useAnswering } from './answering-store.ts';
-import { refreshChat } from './chat-store.ts';
+import { refreshChat, stopAnswer } from './chat-store.ts';
 import { Composer } from './composer.tsx';
 import { conversationsQuery } from './conversations-query.ts';
 import { Greeting } from './greeting.tsx';
@@ -50,7 +50,7 @@ export function ChatView({
 }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
-  const { messages, status, error, sendMessage, regenerate, stop, clearError, setMessages, addToolOutput } = useChat({
+  const { messages, status, error, sendMessage, regenerate, clearError, setMessages, addToolOutput } = useChat({
     chat,
   });
   const busy = status === 'submitted' || status === 'streaming';
@@ -65,7 +65,8 @@ export function ChatView({
   const sharing = list?.conversations.find((conversation) => conversation.id === chat.id)?.sharing ?? null;
   const shared = sharing?.members.some((member) => member.status === 'member') ?? false;
   const answeringNow = useAnswering(chat.id);
-  const waitingFor = shared && !busy ? answeringNow : null;
+  // An answer the server writes that this page does not follow: someone else's, or one sent from another device.
+  const waitingFor = busy ? null : answeringNow;
   const locked = busy || waitingFor !== null;
   // Messages from before the sharing are the owner's. Each shows under its writer's current name: the admin may have
   // renamed them since; someone who left keeps the name they had.
@@ -286,7 +287,7 @@ export function ChatView({
               busy={busy}
               waiting={waitingFor !== null}
               onSend={send}
-              onStop={() => void stop()}
+              onStop={() => stopAnswer(chat.id)}
               placeholder={placeholderOf()}
             />
           )}

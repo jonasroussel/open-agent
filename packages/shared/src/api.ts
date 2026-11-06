@@ -48,9 +48,15 @@ export const API_ROUTES = {
   /**
    * POST, the AI SDK chat transport: `{ id, messages, ephemeral? }` with the whole history; creates the conversation
    * on its first message, ephemeral when `ephemeral` is `true` (outside the history, deleted with DELETE on the
-   * conversation when its page is left). Answers a UI message stream.
+   * conversation when its page is left). Answers a UI message stream. The answer is the server's: leaving the page or
+   * losing the connection stops nothing.
    */
   chat: '/api/chat',
+  /**
+   * GET: the answer being written to the user's own message, from its start then live (the AI SDK's `resumeStream`);
+   * 204 when none is. DELETE: stops it, the answer is saved as it is.
+   */
+  chatStream: '/api/chat/:conversationId/stream',
   /** GET: the signed-in user's rules, as `ListMemoryRulesResponse`. POST `MemoryRuleBody`: adds one. */
   memoryRules: '/api/memory/rules',
   /** PATCH `MemoryRuleBody`: rewrites the rule. DELETE: forgets it. */

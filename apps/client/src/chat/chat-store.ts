@@ -1,7 +1,8 @@
 import { Chat } from '@ai-sdk/react';
-import { API_ROUTES, apiPath, type ChatMessage, type ConversationResponse } from '@open-agent/shared';
+import { API_ROUTES, apiPath, type ChatMessage, type ConversationResponse, type PersonDto } from '@open-agent/shared';
 import { DefaultChatTransport } from 'ai';
 
+import { sessionQuery } from '@/auth/session.ts';
 import { commandsQuery } from '@/commands/commands-query.ts';
 import { libraryFilesQuery } from '@/files/library.ts';
 import { api } from '@/lib/api.ts';
@@ -36,7 +37,15 @@ const chats = new Map<string, Chat<ChatMessage>>();
 /** Ephemeral conversations, known only here: their page left, they are deleted (`discardEphemeral`). */
 const ephemeralIds = new Set<string>();
 
-export function chatFor(id: string, messages: ChatMessage[] = [], { ephemeral = false } = {}): Chat<ChatMessage> {
+/**
+ * `answering`: whose message the server is answering there, from the saved copy: when it is the user's, the page
+ * follows that answer from its start (`/api/chat/:id/stream`).
+ */
+export function chatFor(
+  id: string,
+  messages: ChatMessage[] = [],
+  { ephemeral = false, answering = null }: { ephemeral?: boolean; answering?: PersonDto | null } = {},
+): Chat<ChatMessage> {
   let chat = chats.get(id);
   if (!chat) {
     if (ephemeral) ephemeralIds.add(id);
@@ -50,6 +59,8 @@ export function chatFor(id: string, messages: ChatMessage[] = [], { ephemeral = 
       // the memory, saved a command or made files, and spent some of the quota. Done here at once, not only through
       // `/api/events`: the device that asked must not wait for, or depend on, that stream.
       onFinish: () => {
+        // Its answer is written: the conversation takes a new message.
+        setAnswering(id, null);
         void queryClient.invalidateQueries({ queryKey: conversationsQuery.queryKey });
         void queryClient.invalidateQueries({ queryKey: memoryRulesQuery.queryKey });
         void queryClient.invalidateQueries({ queryKey: commandsQuery.queryKey });
@@ -62,8 +73,21 @@ export function chatFor(id: string, messages: ChatMessage[] = [], { ephemeral = 
       onError: () => void queryClient.invalidateQueries({ queryKey: quotaQuery.queryKey }),
     });
     chats.set(id, chat);
+    followIfMine(chat, answering);
   }
   return chat;
+}
+
+/** The server goes on writing an answer whatever the page does: the user's own is followed again here. */
+function followIfMine(chat: Chat<ChatMessage>, answering: PersonDto | null): void {
+  const me = queryClient.getQueryData(sessionQuery.queryKey)?.id;
+  if (answering && answering.id === me) void chat.resumeStream();
+}
+
+/** The Stop button: the server ends the answer and saves it as it is; leaving the page would stop nothing. */
+export function stopAnswer(id: string): void {
+  void chats.get(id)?.stop();
+  void api(apiPath(API_ROUTES.chatStream, { conversationId: id }), { method: 'DELETE' });
 }
 
 export function hasChat(id: string): boolean {
@@ -94,6 +118,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
+/** Leaves the server's answer alone: it goes on, and is saved. */
 export function forgetChat(id: string): void {
   void chats.get(id)?.stop();
   chats.delete(id);
@@ -110,8 +135,9 @@ function idle(chat: Chat<ChatMessage>): boolean {
 }
 
 /**
- * The saved copy replaces a conversation kept here, after it changed on another device or, shared, by someone else. A
- * conversation deleted there, or left, is forgotten; its page then finds it gone and leaves.
+ * The saved copy replaces a conversation kept here, after it changed on another device or, shared, by someone else;
+ * an answer to the user still being written is followed again. A conversation deleted there, or left, is forgotten;
+ * its page then finds it gone and leaves.
  */
 export async function refreshChat(id: string): Promise<void> {
   const chat = chats.get(id);
@@ -123,7 +149,20 @@ export async function refreshChat(id: string): Promise<void> {
   }
   setAnswering(id, result.data.answering);
   // A message sent here meanwhile wins: its answer brings the saved copy.
-  if (idle(chat)) chat.messages = result.data.messages;
+  if (!idle(chat)) return;
+  chat.messages = result.data.messages;
+  followIfMine(chat, result.data.answering);
+}
+
+// The connection to the answer broke (a phone put away, the network gone): coming back follows it again.
+if (typeof window !== 'undefined') {
+  const resumeBroken = () => {
+    for (const [id, chat] of chats) if (chat.status === 'error') void refreshChat(id);
+  };
+  window.addEventListener('online', resumeBroken);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') resumeBroken();
+  });
 }
 
 export async function refreshAllChats(): Promise<void> {
