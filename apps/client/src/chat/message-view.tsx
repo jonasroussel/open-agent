@@ -122,7 +122,8 @@ export function UserMessage({
       {(text || command) && (
         <div
           className={cn(
-            'max-w-[85%] rounded-2xl px-4 py-2.5 whitespace-pre-wrap',
+            // A long sum or link without a space breaks instead of widening the page.
+            'max-w-[85%] rounded-2xl px-4 py-2.5 whitespace-pre-wrap wrap-break-word',
             theirs ? 'bg-muted rounded-bl-md' : 'bg-primary text-primary-foreground rounded-br-md',
           )}
         >
@@ -162,7 +163,10 @@ export function UserMessage({
   );
 }
 
-/** The assistant's answer: Markdown in a grey bubble, next to the app's icon, and what it remembered under it. */
+/**
+ * The assistant's answer: Markdown in a grey bubble, next to the app's icon, and what it remembered under it. On a
+ * phone the icon goes: the bubble takes the whole width.
+ */
 export function AssistantMessage({
   message,
   streaming,
@@ -201,10 +205,11 @@ export function AssistantMessage({
   const asking = questions.some((part) => part.state !== 'output-available');
   return (
     <div className='group flex gap-3'>
-      <BrandIcon className='mt-1 size-7' />
+      <BrandIcon className='mt-1 hidden size-7 md:block' />
       <div className='flex min-w-0 flex-1 flex-col items-start gap-2'>
-        {/* `grid-cols-1` is `minmax(0, 1fr)`: a long code line scrolls in its block instead of widening the bubble. */}
-        <div className='bg-muted grid max-w-full min-w-0 grid-cols-1 gap-2 rounded-2xl rounded-tl-md px-4 py-3'>
+        {/* `grid-cols-1` is `minmax(0, 1fr)`: a long code line scrolls in its block instead of widening the bubble. A
+            long word (a sum without spaces, a link) breaks. */}
+        <div className='bg-muted grid max-w-full min-w-0 grid-cols-1 gap-2 rounded-2xl rounded-tl-md px-4 py-3 wrap-break-word'>
           {/* A question comes before the work its answer led to. */}
           {questions.map((part) => (
             <Question key={part.toolCallId} part={part} onAnswer={onAnswer} />
@@ -476,7 +481,7 @@ function Dots() {
 export function PendingAnswer() {
   return (
     <div className='flex gap-3'>
-      <BrandIcon className='mt-1 size-7' />
+      <BrandIcon className='mt-1 hidden size-7 md:block' />
       <div className='bg-muted rounded-2xl rounded-tl-md px-4 py-2.5'>
         <Dots />
       </div>

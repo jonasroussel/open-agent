@@ -24,6 +24,7 @@ import { rememberOpenCanvas } from '@/canvas/open-canvas.ts';
 import { BrandIcon } from '@/components/brand-icon.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { toFilePart } from '@/files/library.ts';
+import { useIsMobile } from '@/hooks/use-mobile.ts';
 import { api } from '@/lib/api.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
 import { QUOTA_WARNING_PERCENT, quotaQuery, resetMonth } from '@/quota/quota-query.ts';
@@ -155,7 +156,9 @@ export function ChatView({
   // Opening, switching or closing the document, here or by the model: remembered for when the user comes back.
   useEffect(() => rememberOpenCanvas(chat.id, doc ?? null), [chat.id, doc]);
   const answering = busy ? messages.at(-1) : undefined;
-  const writing = liveDocumentOf(answering);
+  // On a phone the canvas covers the whole screen: it opens only when the user taps a document, never by itself.
+  const followsWriting = !useIsMobile();
+  const writing = followsWriting ? liveDocumentOf(answering) : null;
   // Closing the canvas while the model writes keeps it closed for that answer only.
   const [closedDuring, setClosedDuring] = useState<string | null>(null);
   const liveClosed = answering !== undefined && closedDuring === answering.id;
@@ -251,7 +254,7 @@ export function ChatView({
               {/* Only until the answer appears: then it takes the dots' place, instead of showing next to them. */}
               {(busy || waitingFor) && messages.at(-1)?.role === 'user' && <PendingAnswer />}
               {error && !exhausted && (
-                <div className='flex items-center gap-3 pl-10'>
+                <div className='flex items-center gap-3 md:pl-10'>
                   <p className='text-destructive text-sm'>{t(errorKeyOf(error, errorCode))}</p>
                   {!conflict && (
                     <Button variant='outline' size='sm' onClick={() => void regenerate()}>

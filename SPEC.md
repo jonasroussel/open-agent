@@ -274,7 +274,8 @@ A user's usual requests, run again without retyping them (`Commands`, `applicati
 A panel beside the conversation (full screen on a phone, `?doc=` in the address, back closes it) holding documents
 written by the model and edited by the user, with versions. The document open in each conversation is remembered on
 the device (`localStorage`, 100 conversations at most): coming back to the conversation from elsewhere opens it again;
-closing the panel forgets it.
+closing the panel forgets it. On a phone (below 768 px), where the panel covers the screen, it never opens by itself:
+neither while the model writes nor when coming back; the user taps the document's card.
 
 - **The model's tools:** `create_document` (kind `document` or `html`, title, whole content) and `update_document`
   (id, whole new content). It writes any text to keep, send or print there, never in the chat, then answers in one
@@ -416,7 +417,9 @@ Same layout and tooling as `inscript-carte`.
 - Font: Figtree. Controls at least 40px high on sign-in and admin forms, for older users.
 - Phones: the sidebar becomes a drawer. Chat: the user's messages in a bubble on the right, answers in a grey
   bubble with action badges ("Read contrat.pdf", "Web search"), documents as cards, memory changes as an inline
-  notice with Undo, a bordered composer with attach and send buttons.
+  notice with Undo, a bordered composer with attach and send buttons. On a phone the app's icon beside the answers
+  goes: the bubbles take the whole width. In every bubble a long word (a sum without spaces, a link) breaks rather
+  than widening the page.
 
 ## Data model (first draft)
 

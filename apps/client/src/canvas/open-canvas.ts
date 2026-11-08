@@ -1,4 +1,9 @@
-/** The document open in each conversation's canvas, kept on this device, so coming back to it opens it again. */
+import { MOBILE_QUERY } from '@/hooks/use-mobile.ts';
+
+/**
+ * The document open in each conversation's canvas, kept on this device, so coming back to it opens it again. Not on a
+ * phone, where the canvas covers the whole screen: there it opens only when the user taps a document.
+ */
 const STORAGE_KEY = 'open-canvas';
 /** Enough for every recent conversation; the oldest are dropped past it. */
 const MAX_REMEMBERED = 100;
@@ -13,6 +18,7 @@ function read(): Record<string, string> {
 }
 
 export function openCanvasOf(conversationId: string): string | null {
+  if (window.matchMedia(MOBILE_QUERY).matches) return null;
   return read()[conversationId] ?? null;
 }
 
