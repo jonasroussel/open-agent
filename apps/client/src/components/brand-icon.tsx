@@ -1,23 +1,31 @@
+import { useId } from 'react';
+
 import { cn } from '@/lib/utils';
 
-/** The app icon (the same drawing as `public/icon.svg`), inline so its tile follows the theme's primary color. */
-export function BrandIcon({ className }: { className?: string }) {
+/**
+ * The app's icon, a lighthouse on sand. Inline and flat for small sizes (the sidebar, the answers), where the
+ * detailed drawing of `public/icon.svg` would blur; `detailed` shows that one, for large places (64 px and up).
+ */
+export function BrandIcon({ className, detailed = false }: { className?: string; detailed?: boolean }) {
+  // Several icons on one page: each needs its own clip.
+  const clip = useId();
+  if (detailed) return <img src='/icon.svg' alt='' className={cn('shrink-0', className)} />;
   return (
     <svg viewBox='0 0 512 512' className={cn('shrink-0', className)} aria-hidden='true'>
-      <rect width='512' height='512' rx='112' fill='var(--primary)' />
-      <g stroke='var(--primary-foreground)' strokeWidth='22' strokeLinecap='round'>
-        <line x1='236' y1='276' x2='140' y2='372' />
-        <line x1='236' y1='276' x2='140' y2='176' />
-        <line x1='236' y1='276' x2='360' y2='160' />
+      <clipPath id={clip}>
+        <rect width='512' height='512' rx='112' />
+      </clipPath>
+      <g clipPath={`url(#${clip})`}>
+        <rect width='512' height='512' fill='#f2e3c6' />
+        <path d='M262 122 L560 -10 L560 300 L262 186 Z' fill='#f08a24' opacity='0.9' />
+        <circle cx='242' cy='62' r='15' fill='#2a2c6e' />
+        <path d='M172 126 L242 66 L312 126 Z' fill='#2a2c6e' />
+        <rect x='192' y='122' width='100' height='66' rx='12' fill='#f08a24' />
+        <rect x='164' y='186' width='156' height='32' rx='12' fill='#2a2c6e' />
+        <path d='M184.3 216 L299.7 216 L311.8 306 L172.2 306 Z' fill='#2a2c6e' />
+        <path d='M164.1 366 L319.9 366 L346 560 L138 560 Z' fill='#2a2c6e' />
       </g>
-      <circle cx='236' cy='276' r='52' fill='var(--primary-foreground)' />
-      <circle cx='140' cy='372' r='28' fill='var(--primary)' stroke='var(--primary-foreground)' strokeWidth='20' />
-      <circle cx='140' cy='176' r='28' fill='var(--primary)' stroke='var(--primary-foreground)' strokeWidth='20' />
-      <circle cx='368' cy='152' r='56' fill='var(--primary)' />
-      <path
-        d='M368 88 Q368 152 432 152 Q368 152 368 216 Q368 152 304 152 Q368 152 368 88Z'
-        fill='var(--primary-foreground)'
-      />
+      <rect x='6' y='6' width='500' height='500' rx='106' fill='none' stroke='#dcc79f' strokeWidth='12' />
     </svg>
   );
 }

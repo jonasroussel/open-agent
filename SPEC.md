@@ -413,8 +413,16 @@ Same layout and tooling as `inscript-carte`.
   below the top bar, with a rounded top-left corner. A tinted "New conversation" button tops the sidebar, the user
   menu ends it. In dark mode the frame is darker than the panel. A conversation's title in the top bar is edited in
   place: a tap makes it a field, Enter or leaving it saves, Escape gives up.
-- One brand color: indigo night `#2a2c6e` (`oklch(0.333 0.112 277)`), no gradients: actions, the icon, and the user's
-  bubbles. Neutral greys elsewhere; the assistant's bubbles are grey.
+- One brand color: indigo night `#2a2c6e` (`oklch(0.333 0.112 277)`), no gradients: actions and the user's bubbles.
+  Neutral greys elsewhere; the assistant's bubbles are grey.
+- **Logo: a lighthouse on sand** (chosen with the user over six directions and seven palettes, 2026-11-08): an indigo
+  night tower with a cream band, its lantern and beam burnt orange (`#f08a24`), on a sand tile (`#f2e3c6`) with a
+  darker edge, so it stands out on dark and light home screens alike. Two drawings, one per size: the detailed one
+  (`public/icon.svg`: a round tower with soft shading, glazed lantern, railing, dome, sea, rocks and gulls) for the
+  home screen, the manifest, the loading screen and large places in the app (`BrandIcon detailed`); a flat one for
+  16–32 px (`public/favicon.svg`, `BrandIcon`), where detail would blur. The PNGs come from them: `icon-192/512`
+  rounded, `apple-touch-icon` square (iOS rounds it), `icon-maskable-512` square with the lighthouse inside the safe
+  zone (Android crops it to a circle or a squircle).
 - Dark mode: charcoal surfaces and a lighter indigo (`oklch(0.52 0.15 277)`), since `#2a2c6e` disappears on them.
   The user picks "Like the device", "Light" or "Dark" in the user menu; the choice is applied before the first paint.
 - Rounded like Chatbox (`--radius: 0.625rem`): 8px on buttons, fields and menu items, 10px on lists, 14px on cards;

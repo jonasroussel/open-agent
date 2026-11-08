@@ -14,7 +14,7 @@ export function RootError({ error }: ErrorComponentProps) {
   useEffect(() => console.error(error), [error]);
   return (
     <main className='mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-5 p-6 text-center'>
-      <BrandIcon className='size-14' />
+      <BrandIcon detailed className='size-16' />
       <p className='text-lg'>{t('errors.network')}</p>
       <Button size='lg' onClick={() => void router.invalidate()}>
         <RotateCw />

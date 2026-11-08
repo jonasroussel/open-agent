@@ -211,7 +211,7 @@ export function ChatView({
         )}
         {messages.length === 0 && !ephemeral && (
           <div className='flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center'>
-            <BrandIcon className='size-14' />
+            <BrandIcon detailed className='size-16' />
             <Greeting />
           </div>
         )}
