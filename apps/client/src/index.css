@@ -48,40 +48,40 @@
 }
 
 /*
- * Chatbox-like layout and greys, with indigo night (#2a2c6e, hue 277) as the one brand color: actions, the user's
- * bubbles, the icon. Grey for the assistant's bubbles. `.dark` swaps to charcoal surfaces and a lighter indigo:
- * #2a2c6e itself would disappear on them.
+ * Chatbox-like layout with indigo night (#2a2c6e, hue 277) as the one brand color: actions, the user's bubbles. The
+ * light theme is « Papier »: warm off-white and cream (hue 85) instead of white and cold greys, to go with the sand of
+ * the lighthouse icon. `.dark` swaps to charcoal surfaces and a lighter indigo: #2a2c6e itself would disappear on them.
  */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.22 0.006 260);
-  --card: oklch(1 0 0);
+  --background: oklch(0.992 0.009 85);
+  --foreground: oklch(0.253 0.019 290);
+  --card: oklch(0.994 0.006 85);
   --card-foreground: var(--foreground);
-  --popover: oklch(1 0 0);
+  --popover: oklch(0.994 0.006 85);
   --popover-foreground: var(--foreground);
   --primary: oklch(0.333 0.112 277);
   --primary-foreground: oklch(0.99 0 0);
-  /* Pale indigo with indigo text: "New conversation" and other highlighted actions. */
-  --secondary: oklch(0.945 0.022 277);
+  /* Peach, the light of the lighthouse, with indigo text: "New conversation" and other highlighted actions. */
+  --secondary: oklch(0.933 0.041 71);
   --secondary-foreground: oklch(0.36 0.12 277);
   /* The assistant's bubbles. */
-  --muted: oklch(0.955 0.003 260);
-  /* About 6:1 on white: secondary text stays readable for older eyes. */
-  --muted-foreground: oklch(0.48 0.01 260);
-  --accent: oklch(0.94 0.004 260);
+  --muted: oklch(0.951 0.017 85);
+  /* Over 5:1 on the page, the bubbles and the frame: secondary text stays readable for older eyes. */
+  --muted-foreground: oklch(0.499 0.025 83);
+  --accent: oklch(0.933 0.02 85);
   --accent-foreground: var(--foreground);
   --destructive: oklch(0.58 0.21 27);
-  --border: oklch(0.915 0.004 260);
-  --input: oklch(0.82 0.006 260);
+  --border: oklch(0.906 0.026 85);
+  --input: oklch(0.823 0.034 85);
   --ring: oklch(0.333 0.112 277);
-  --sidebar: oklch(0.975 0.003 260);
+  --sidebar: oklch(0.957 0.017 85);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.93 0.004 260);
+  --sidebar-accent: oklch(0.918 0.024 86);
   --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: oklch(0.915 0.004 260);
+  --sidebar-border: oklch(0.906 0.026 85);
   --sidebar-ring: var(--ring);
 }
 

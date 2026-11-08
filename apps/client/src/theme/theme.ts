@@ -7,7 +7,7 @@ export type Theme = (typeof THEMES)[number];
 const STORAGE_KEY = 'theme';
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 /** The browser's bar around the app, as the sidebar frame; same values as the inline script of `index.html`. */
-const BAR_COLORS = { light: '#f5f7f9', dark: '#0f1112' };
+const BAR_COLORS = { light: '#f6f0e4', dark: '#0f1112' };
 const listeners = new Set<() => void>();
 
 function storedTheme(): Theme {

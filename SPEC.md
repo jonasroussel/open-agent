@@ -409,12 +409,16 @@ Same layout and tooling as `inscript-carte`.
 
 ## Look and feel
 
-- Modeled on Chatbox AI: the sidebar and the top bar (page title) share one grey frame; the page is a white panel
-  below the top bar, with a rounded top-left corner. A tinted "New conversation" button tops the sidebar, the user
-  menu ends it. In dark mode the frame is darker than the panel. A conversation's title in the top bar is edited in
-  place: a tap makes it a field, Enter or leaving it saves, Escape gives up.
+- Modeled on Chatbox AI: the sidebar and the top bar (page title) share one frame; the page is a panel below the top
+  bar, with a rounded top-left corner. A tinted "New conversation" button tops the sidebar, the user menu ends it. In
+  dark mode the frame is darker than the panel. A conversation's title in the top bar is edited in place: a tap makes
+  it a field, Enter or leaving it saves, Escape gives up.
 - One brand color: indigo night `#2a2c6e` (`oklch(0.333 0.112 277)`), no gradients: actions and the user's bubbles.
-  Neutral greys elsewhere; the assistant's bubbles are grey.
+- **Light theme « Papier »** (chosen with the user over « Crème » and « Sable », 2026-11-08): warm off-white and cream
+  (hue 85) instead of white and cold greys, to go with the sand of the icon. The page `#fffcf6`, the frame `#f6f0e4`
+  (also the browser's bar and the manifest's `theme_color`), the assistant's bubbles `#f4eee2`, warm borders; grey
+  text keeps over 5:1 on all of them. Highlighted actions (« Nouvelle conversation », badges, document cards, avatars)
+  are peach `#fbe5cc`, the lighthouse's light, with indigo text (7.8:1).
 - **Logo: a lighthouse on sand** (chosen with the user over six directions and seven palettes, 2026-11-08): an indigo
   night tower with a cream band, its lantern and beam burnt orange (`#f08a24`), on a sand tile (`#f2e3c6`) with a
   darker edge, so it stands out on dark and light home screens alike. Two drawings, one per size: the detailed one
