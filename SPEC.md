@@ -417,9 +417,9 @@ Same layout and tooling as `inscript-carte`.
 - Font: Figtree. Controls at least 40px high on sign-in and admin forms, for older users.
 - Phones: the sidebar becomes a drawer. Chat: the user's messages in a bubble on the right, answers in a grey
   bubble with action badges ("Read contrat.pdf", "Web search"), documents as cards, memory changes as an inline
-  notice with Undo, a bordered composer with attach and send buttons. On a phone the app's icon beside the answers
-  goes: the bubbles take the whole width. In every bubble a long word (a sum without spaces, a link) breaks rather
-  than widening the page.
+  notice with Undo, a bordered composer with attach and send buttons. On a phone the app's icon is small, inside the
+  answer's bubble, beside its first line only: the bubbles take the whole width. In every bubble a long word (a sum
+  without spaces, a link) breaks rather than widening the page.
 
 ## Data model (first draft)
 

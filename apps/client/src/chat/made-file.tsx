@@ -57,7 +57,7 @@ export function MadeFile({ part }: { part: MadeFilePart }) {
       return (
         <div
           className={cn(
-            'bg-background text-muted-foreground flex animate-pulse items-center justify-center gap-2 justify-self-center rounded-xl border text-sm',
+            'bg-background text-muted-foreground mx-auto flex animate-pulse items-center justify-center gap-2 rounded-xl border text-sm',
             drawnShape,
           )}
         >
@@ -88,7 +88,7 @@ export function MadeFile({ part }: { part: MadeFilePart }) {
     <a
       href={url}
       {...(opens ? { target: '_blank', rel: 'noreferrer' } : { download: file.name })}
-      className='bg-background hover:border-ring/50 flex max-w-full min-w-0 items-center gap-3 justify-self-start rounded-xl border px-3 py-2.5 transition-colors'
+      className='bg-background hover:border-ring/50 flex w-fit max-w-full min-w-0 items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors'
     >
       <span className='bg-secondary text-secondary-foreground flex size-9 shrink-0 items-center justify-center rounded-lg'>
         <Icon className='size-4' />
@@ -109,7 +109,7 @@ function MadeImage({ url, name, shape }: { url: string; name: string; shape: str
   const { t } = useTranslation();
   const [previewing, setPreviewing] = useState(false);
   return (
-    <figure className='grid max-w-full justify-items-center gap-1.5 justify-self-center'>
+    <figure className='mx-auto grid w-fit max-w-full justify-items-center gap-1.5'>
       <button
         type='button'
         onClick={() => setPreviewing(true)}

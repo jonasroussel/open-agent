@@ -207,43 +207,46 @@ export function AssistantMessage({
     <div className='group flex gap-3'>
       <BrandIcon className='mt-1 hidden size-7 md:block' />
       <div className='flex min-w-0 flex-1 flex-col items-start gap-2'>
-        {/* `grid-cols-1` is `minmax(0, 1fr)`: a long code line scrolls in its block instead of widening the bubble. A
-            long word (a sum without spaces, a link) breaks. */}
-        <div className='bg-muted grid max-w-full min-w-0 grid-cols-1 gap-2 rounded-2xl rounded-tl-md px-4 py-3 wrap-break-word'>
-          {/* A question comes before the work its answer led to. */}
-          {questions.map((part) => (
-            <Question key={part.toolCallId} part={part} onAnswer={onAnswer} />
-          ))}
-          {deepThinking && <Reasoning text={partsText(message, 'reasoning')} thinking={streaming && !text} />}
-          {searches.map((search) => (
-            <WebSearchLine
-              key={search.toolCallId}
-              query={search.input?.query ?? ''}
-              results={search.state === 'output-available' ? search.output.results : null}
-              failed={search.state === 'output-error'}
-            />
-          ))}
-          {lookups.map((part) => (
-            <ContextToolLine key={part.toolCallId} part={part} />
-          ))}
-          {documents.map((part) => (
-            <DocumentCard key={part.toolCallId} part={part} onOpen={onOpenDocument} />
-          ))}
-          {made.map((part) => (
-            <MadeFile key={part.toolCallId} part={part} />
-          ))}
-          {text ? (
-            <Suspense fallback={<p className='text-[15px] leading-relaxed whitespace-pre-wrap'>{text}</p>}>
-              <Markdown text={text} streaming={streaming} />
-            </Suspense>
-          ) : (
-            !deepThinking &&
-            streaming &&
-            documents.length === 0 &&
-            made.length === 0 &&
-            !asking &&
-            !lookingUp && <Dots />
-          )}
+        {/* `min-w-0`: a long code line scrolls in its block instead of widening the bubble; a long word (a sum without
+            spaces, a link) breaks. A block, not a grid: on a phone the small icon floats beside the first line only. */}
+        <div className='bg-muted flow-root max-w-full min-w-0 rounded-2xl rounded-tl-md px-4 py-3 wrap-break-word'>
+          <BrandIcon className='float-left mt-0.5 mr-2 size-5 md:hidden' />
+          <div className='space-y-2'>
+            {/* A question comes before the work its answer led to. */}
+            {questions.map((part) => (
+              <Question key={part.toolCallId} part={part} onAnswer={onAnswer} />
+            ))}
+            {deepThinking && <Reasoning text={partsText(message, 'reasoning')} thinking={streaming && !text} />}
+            {searches.map((search) => (
+              <WebSearchLine
+                key={search.toolCallId}
+                query={search.input?.query ?? ''}
+                results={search.state === 'output-available' ? search.output.results : null}
+                failed={search.state === 'output-error'}
+              />
+            ))}
+            {lookups.map((part) => (
+              <ContextToolLine key={part.toolCallId} part={part} />
+            ))}
+            {documents.map((part) => (
+              <DocumentCard key={part.toolCallId} part={part} onOpen={onOpenDocument} />
+            ))}
+            {made.map((part) => (
+              <MadeFile key={part.toolCallId} part={part} />
+            ))}
+            {text ? (
+              <Suspense fallback={<p className='text-[15px] leading-relaxed whitespace-pre-wrap'>{text}</p>}>
+                <Markdown text={text} streaming={streaming} />
+              </Suspense>
+            ) : (
+              !deepThinking &&
+              streaming &&
+              documents.length === 0 &&
+              made.length === 0 &&
+              !asking &&
+              !lookingUp && <Dots />
+            )}
+          </div>
         </div>
         {notices.map((notice) => (
           <MemoryNoticeLine key={notice.changeId} notice={notice} onUndo={() => onUndoMemory(notice)} />
@@ -330,7 +333,7 @@ function DocumentCard({ part, onOpen }: { part: DocumentPart; onOpen: (id: strin
       type='button'
       disabled={!id}
       onClick={() => id && onOpen(id)}
-      className='bg-background hover:border-ring/50 flex max-w-full min-w-0 items-center gap-3 justify-self-start rounded-xl border px-3 py-2.5 text-left transition-colors'
+      className='bg-background hover:border-ring/50 flex w-fit max-w-full min-w-0 items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors'
     >
       <span className='bg-secondary text-secondary-foreground flex size-9 shrink-0 items-center justify-center rounded-lg'>
         <Icon className='size-4' />
@@ -482,7 +485,8 @@ export function PendingAnswer() {
   return (
     <div className='flex gap-3'>
       <BrandIcon className='mt-1 hidden size-7 md:block' />
-      <div className='bg-muted rounded-2xl rounded-tl-md px-4 py-2.5'>
+      <div className='bg-muted flex items-center gap-2 rounded-2xl rounded-tl-md px-4 py-2.5'>
+        <BrandIcon className='size-5 md:hidden' />
         <Dots />
       </div>
     </div>
