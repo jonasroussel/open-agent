@@ -30,35 +30,68 @@ export function signedBy(message: ChatMessage, sender: PersonDto): ChatMessage {
 
 export type ContinuedHistory =
   | { ok: true; messages: ChatMessage[] }
-  /** `conversation_changed`: the sender's copy is behind the saved one. `not_allowed`: someone else's message. */
+  /** `conversation_changed`: the sender's copy is behind the saved one. `not_allowed`: a message they may not change. */
   | { ok: false; reason: 'conversation_changed' | 'not_allowed' };
 
 const idsOf = (messages: readonly ChatMessage[]) => messages.map((message) => message.id);
 const sameIds = (a: readonly string[], b: readonly string[]) =>
   a.length === b.length && a.every((id, index) => id === b[index]);
 
+type Part = ChatMessage['parts'][number];
+
+/** The saved message, with only the answers to its pending questions taken from the sent copy: nothing else in it. */
+function withAnswersFrom(saved: ChatMessage, sent: ChatMessage): ChatMessage {
+  const answers = new Map(
+    sent.parts.flatMap((part) =>
+      part.type === 'tool-ask_user' && part.state === 'output-available' ? [[part.toolCallId, part.output.answer]] : [],
+    ),
+  );
+  return {
+    ...saved,
+    parts: saved.parts.map((part): Part =>
+      part.type === 'tool-ask_user' && part.state === 'input-available' && answers.has(part.toolCallId)
+        ? {
+            type: part.type,
+            toolCallId: part.toolCallId,
+            state: 'output-available',
+            input: part.input,
+            output: { answer: answers.get(part.toolCallId)! },
+          }
+        : part,
+    ),
+  };
+}
+
 /**
- * A shared conversation goes on from its saved history, never from the copy a member's browser sends: that copy may
- * miss what the others wrote meanwhile, or hold changes to their messages. Only the sent message is taken, and only:
+ * A conversation goes on from its saved history, never from the copy a browser sends: that copy may be late (a phone
+ * waking up with an old copy, a member who missed what the others wrote) or hold changed messages. Only the sent
+ * message is taken, and only:
  * - a new message, when the copy held every saved message;
- * - the sender's last message again (edited, or to answer again), dropping only its answer;
- * - the answers to the questions ending the last answer, asked to the sender.
+ * - a saved user message again (edited, or to answer again), dropping everything after it: in a shared conversation,
+ *   only the sender's last message;
+ * - the answers to the questions still pending at the end of the last answer: in a shared conversation, asked to the
+ *   sender.
  */
 export function continuedHistory(
   saved: readonly ChatMessage[],
   sent: readonly ChatMessage[],
   sender: PersonDto,
   ownerId: number,
+  shared: boolean,
 ): ContinuedHistory {
   const last = sent.at(-1);
   if (!last) return { ok: false, reason: 'conversation_changed' };
   const before = idsOf(sent.slice(0, -1));
 
   if (last.role === 'assistant') {
-    if (!sameIds(idsOf(sent), idsOf(saved))) return { ok: false, reason: 'conversation_changed' };
+    const answered = saved.at(-1);
+    const pending = answered?.parts.some((part) => part.type === 'tool-ask_user' && part.state === 'input-available');
+    if (!answered || !pending || !sameIds(idsOf(sent), idsOf(saved))) {
+      return { ok: false, reason: 'conversation_changed' };
+    }
     const asked = saved.findLast((message) => message.role === 'user');
-    if (asked && authorIdOf(asked, ownerId) !== sender.id) return { ok: false, reason: 'not_allowed' };
-    return { ok: true, messages: [...saved.slice(0, -1), last] };
+    if (shared && asked && authorIdOf(asked, ownerId) !== sender.id) return { ok: false, reason: 'not_allowed' };
+    return { ok: true, messages: [...saved.slice(0, -1), withAnswersFrom(answered, last)] };
   }
 
   const index = saved.findIndex((message) => message.id === last.id);
@@ -68,9 +101,10 @@ export function continuedHistory(
   }
   if (!sameIds(before, idsOf(saved.slice(0, index)))) return { ok: false, reason: 'conversation_changed' };
   const lastUser = saved.findLastIndex((message) => message.role === 'user');
-  if (index !== lastUser || authorIdOf(saved[index]!, ownerId) !== sender.id) {
-    return { ok: false, reason: 'not_allowed' };
-  }
+  const mayChange = shared
+    ? index === lastUser && authorIdOf(saved[index]!, ownerId) === sender.id
+    : saved[index]!.role === 'user';
+  if (!mayChange) return { ok: false, reason: 'not_allowed' };
   return { ok: true, messages: [...saved.slice(0, index), signedBy(last, sender)] };
 }
 

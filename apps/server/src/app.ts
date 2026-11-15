@@ -144,6 +144,7 @@ export async function createApp(
 
   return createRoutes({
     version: options.version,
+    publicUrl: options.publicUrl,
     trustProxy: options.trustProxy,
     authentication: new Authentication(
       users,

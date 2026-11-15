@@ -26,9 +26,35 @@ export function isHttps(request: Request): boolean {
 
 /**
  * The person's address, for the sign-in limits. Behind the reverse proxy every request comes from its own address, so
- * the original one is read from the header it sets; otherwise everyone would share one bucket.
+ * the original one is read from the header it sets; otherwise everyone would share one bucket. The proxy appends the
+ * address it saw: the entries before it are whatever the client sent.
  */
 export function clientAddress(request: Request, server: ServerHandle, trustProxy: boolean): string {
-  const forwarded = trustProxy ? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() : undefined;
+  const forwarded = trustProxy ? request.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim() : undefined;
   return forwarded || server.requestIP(request)?.address || 'unknown';
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+type Handler = (request: Request, server: ServerHandle) => Response | Promise<Response>;
+
+/**
+ * `SameSite=Lax` still sends the session cookie from a sibling subdomain (same site), so a change from a page of
+ * another origin is refused. Browsers name that origin; scripts send no `Origin` and no stolen cookie.
+ */
+export function refuseForeignOrigins<Routes extends Record<string, object>>(routes: Routes, publicUrl: string): Routes {
+  const appOrigin = new URL(publicUrl).origin;
+  const guard =
+    (handler: Handler): Handler =>
+    (request, server) => {
+      const origin = request.headers.get('origin');
+      if (origin && origin !== appOrigin && !SAFE_METHODS.has(request.method)) return error('invalid_request', 403);
+      return handler(request, server);
+    };
+  return Object.fromEntries(
+    Object.entries(routes).map(([path, methods]) => [
+      path,
+      Object.fromEntries(Object.entries(methods as Record<string, Handler>).map(([method, h]) => [method, guard(h)])),
+    ]),
+  ) as Routes;
 }

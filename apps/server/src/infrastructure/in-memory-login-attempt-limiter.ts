@@ -21,7 +21,12 @@ export class InMemoryLoginAttemptLimiter implements LoginAttemptLimiter {
     });
   }
 
+  /** Keys whose window holds nothing are forgotten here: each new network address would otherwise stay for ever. */
   recordFailure(keys: readonly string[], now: Date): void {
+    const since = now.getTime() - this.#windowMs;
+    for (const [key, times] of this.#failures) {
+      if (times.at(-1)! <= since) this.#failures.delete(key);
+    }
     for (const key of keys) this.#failures.set(key, [...this.#recent(key, now), now.getTime()]);
   }
 

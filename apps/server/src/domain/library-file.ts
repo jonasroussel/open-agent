@@ -41,6 +41,17 @@ export function previewOf(file: Pick<LibraryFile, 'kind' | 'mediaType'>): { name
  */
 export const MAX_FILE_TOKENS = 600_000;
 
+/** The tools that make files for the user; a file one of them made belongs to the conversation it was made in. */
+export const MAKING_TOOL_NAMES = [
+  'generate_image',
+  'create_spreadsheet',
+  'create_pdf',
+  'create_chart',
+  'create_qr_code',
+] as const;
+
+export type MakingToolName = (typeof MAKING_TOOL_NAMES)[number];
+
 /** A text token is about 3 characters in French; DeepSeek counts a page image in hundreds of tokens (measured: 449). */
 export function estimatedTokens(content: readonly FilePiece[]): number {
   return content.reduce((total, piece) => total + (piece.type === 'text' ? Math.ceil(piece.text.length / 3) : 1000), 0);

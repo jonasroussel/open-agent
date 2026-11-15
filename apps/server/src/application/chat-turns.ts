@@ -1,49 +1,42 @@
-import {
-  OWN_KEY_REFUSED,
-  type AskUserOutput,
-  type ChatMessageMetadata,
-  type DocumentToolOutput,
-  type MemoryNotice,
-  type WebSearchOutput,
-} from '@open-agent/shared';
+import { OWN_KEY_REFUSED } from '@open-agent/shared';
+import type { ChatMessageMetadata, MemoryNotice } from '@open-agent/shared';
 import {
   APICallError,
   InvalidToolInputError,
   convertToModelMessages,
   createUIMessageStream,
-  generateText,
   isStepCount,
-  NoObjectGeneratedError,
-  Output,
   safeValidateUIMessages,
   streamText,
-  tool,
   toUIMessageStream,
-  type InferUIMessageChunk,
 } from 'ai';
+import type { InferUIMessageChunk } from 'ai';
 import { z } from 'zod';
 
-import type { Artifact } from '../domain/artifact.ts';
-import { parseDay, plusDays } from '../domain/calendar.ts';
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
-import {
-  answersQuestions,
-  cleanIcon,
-  cleanTitle,
-  hasAsked,
-  withAnsweredQuestions,
-  type ChatMessage,
-  type Conversation,
-} from '../domain/conversation.ts';
-import { attachedNames, attachmentsAreValid } from '../domain/library-file.ts';
+import { answersQuestions, hasAsked, withAnsweredQuestions } from '../domain/conversation.ts';
+import type { ChatMessage, Conversation } from '../domain/conversation.ts';
+import { attachmentsAreValid } from '../domain/library-file.ts';
 import type { MemoryRule } from '../domain/memory.ts';
 import { isExhausted } from '../domain/quota.ts';
 import { continuedHistory, signedBy, withAuthorNames } from '../domain/sharing.ts';
-import { nameOf, personOf, type User } from '../domain/user.ts';
+import { nameOf, personOf } from '../domain/user.ts';
+import type { User } from '../domain/user.ts';
 import type { AnswerRuns } from './answer-runs.ts';
 import type { Artifacts } from './artifacts.ts';
+import {
+  instructions,
+  restoreNotes,
+  THOUGHTS_NOTE,
+  timeNote,
+  withLatestRequest,
+  withNotes,
+  withoutDocumentBodies,
+} from './chat-prompt.ts';
+import { askTool, documentTools, MAX_SEARCHES, searchTool } from './chat-tools.ts';
 import type { Commands } from './commands.ts';
 import type { ContextTools } from './context-tools.ts';
+import { ConversationNaming } from './conversation-naming.ts';
 import type { Library } from './library.ts';
 import type { MakingTools } from './making-tools.ts';
 import type { MemoryReconciler } from './memory-reconciler.ts';
@@ -54,7 +47,7 @@ import type { Clock } from './ports/clock.ts';
 import { ToolRefusal } from './ports/context-services.ts';
 import { ModelUnavailableError } from './ports/model-catalog.ts';
 import type { WebSearch } from './ports/web-search.ts';
-import { textOf, type Analysis, type PreAnalysis } from './pre-analysis.ts';
+import type { Analysis, PreAnalysis } from './pre-analysis.ts';
 import type { Quotas } from './quotas.ts';
 import type { Settings } from './settings.ts';
 import type { UsageRecorder } from './usage-recorder.ts';
@@ -79,10 +72,6 @@ const CONVERSATION_ID = /^[\w-]{8,64}$/;
  * step sends the whole conversation again, so each tool also has its own cap (`CONTEXT_TOOL_CAPS`, `MAKING_TOOL_CAPS`).
  */
 const MAX_STEPS = 6;
-/** Past two searches the model answers with what it has: a third one costs without helping. */
-const MAX_SEARCHES = 2;
-/** What the model reads of each page found: enough to answer, few tokens. */
-const RESULT_CHARACTERS = 1500;
 /** A refused tool call's message names the fields it missed; the value it quotes may be long. */
 const MAX_INVALID_INPUT_CHARACTERS = 800;
 const INVALID_INPUT = 'AI_InvalidToolInputError: ';
@@ -128,6 +117,7 @@ export class ChatTurns {
   readonly #contextTools: ContextTools;
   readonly #makingTools: MakingTools;
   readonly #commands: Commands;
+  readonly #naming: ConversationNaming;
 
   constructor(
     conversations: ConversationRepository,
@@ -165,6 +155,7 @@ export class ChatTurns {
     this.#contextTools = contextTools;
     this.#makingTools = makingTools;
     this.#commands = commands;
+    this.#naming = new ConversationNaming(conversations, participants, models, usage);
   }
 
   /**
@@ -184,12 +175,13 @@ export class ChatTurns {
     const shared = people.length > 1;
     const sender = personOf(user);
     let messages = validated.data;
-    if (access && shared) {
+    if (access) {
       const continued = continuedHistory(
         await this.#conversations.messages(id),
         messages,
         sender,
         access.conversation.userId,
+        shared,
       );
       if (!continued.ok) {
         return {
@@ -198,12 +190,19 @@ export class ChatTurns {
         };
       }
       messages = continued.messages;
-    } else if (messages.length > 0) {
-      messages = [...messages.slice(0, -1), signedBy(messages.at(-1)!, sender)];
+    } else {
+      // Nothing saved yet: only the sent message is taken. Earlier ones are the browser's word alone (a first send
+      // refused before anything was saved), and a forged one could name someone else's file or document.
+      const last = messages.at(-1);
+      if (last?.role !== 'user') return { ok: false, reason: 'invalid_request' };
+      messages = [signedBy(last, sender)];
     }
     const resumed = answersQuestions(messages) ? messages.at(-1)! : null;
     if (!resumed && messages.at(-1)?.role !== 'user') return { ok: false, reason: 'invalid_request' };
     if (!attachmentsAreValid(messages)) return { ok: false, reason: 'invalid_request' };
+    if (!resumed && !(await this.#library.canAttach(user, messages.at(-1)!))) {
+      return { ok: false, reason: 'invalid_request' };
+    }
 
     try {
       this.#models.choose('fast', user);
@@ -223,7 +222,7 @@ export class ChatTurns {
       this.#runs.feed(id, stream);
       return { ok: true, stream: this.#runs.follow(id)! };
     } catch (error) {
-      this.#runs.end(id);
+      this.#runs.end(id, signal);
       throw error;
     }
   }
@@ -272,10 +271,12 @@ export class ChatTurns {
     // Conversations from before icons get theirs at their next message; a title, maybe renamed by the user, stays.
     // Each command gets its prompt before the user's words: for the pre-analysis, the title and the model, never in
     // the saved conversation, which keeps the badge.
-    const expanded = await this.#commands.expand(user, messages);
+    const expanded = await this.#commands.expand(messages, conversation.userId);
     if (!resumed) void this.#commands.recordUse(user, messages.at(-1)!);
     // Listed nowhere, an ephemeral conversation needs no name.
-    if (!ephemeral && (!conversation.title || !conversation.icon)) void this.#name(user, conversation, expanded[0]!);
+    if (!ephemeral && (!conversation.title || !conversation.icon)) {
+      void this.#naming.name(user, conversation, expanded[0]!);
+    }
     const names = new Map(people.map((person) => [person.id, nameOf(person)]));
     const named = (history: ChatMessage[]) => (shared ? withAuthorNames(history, conversation.userId, names) : history);
 
@@ -284,11 +285,13 @@ export class ChatTurns {
       onEnd: async ({ messages: history }) => {
         try {
           // An ephemeral conversation may be deleted already: its page was left while the answer was stopping.
-          if (!ephemeral || (await this.#conversations.find(conversation.id))) {
+          const deleted = ephemeral && !(await this.#conversations.find(conversation.id));
+          // Stopped after 10 minutes, its run ended already: a newer answer may have begun there since.
+          if (!deleted && !this.#runs.replaced(conversation.id, abortSignal)) {
             await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
           }
         } finally {
-          this.#runs.end(conversation.id);
+          this.#runs.end(conversation.id, abortSignal);
         }
         await this.#participants.publish(conversation, { type: 'conversation', id: conversation.id });
       },
@@ -329,14 +332,18 @@ export class ChatTurns {
 
           const choice = this.#models.choose(analysis.route, user);
           const documents = await this.#artifacts.latestOf(conversation.id);
+          // Expanded after the rewrite: the clearer request replaces only the user's words, never a command's prompt.
+          const requested = analysis.rewrittenRequest
+            ? await this.#commands.expand(withLatestRequest(messages, analysis.rewrittenRequest), conversation.userId)
+            : expanded;
           // Searches spent this turn, counted here because one step may ask for several at once.
           const searches = { count: 0 };
           const tools = {
-            ...this.#documentTools(user, conversation.id),
+            ...documentTools(this.#artifacts, user, conversation.id),
             ...(this.#webSearch
-              ? { web_search: this.#searchTool(user, conversation.id, this.#webSearch, abortSignal, searches) }
+              ? { web_search: searchTool(this.#usage, user, conversation.id, this.#webSearch, abortSignal, searches) }
               : {}),
-            ...this.#contextTools.for(user, conversation.id, abortSignal),
+            ...this.#contextTools.for(user, conversation.id, abortSignal, shared),
             ...this.#makingTools.for(user, conversation.id, abortSignal),
             save_command: this.#commands.toolFor(user),
             ask_user: askTool(resumed !== null && hasAsked(resumed)),
@@ -360,7 +367,7 @@ export class ChatTurns {
               await this.#library.expandFiles(
                 people.map((person) => person.id),
                 withoutDocumentBodies(
-                  withNotes(named(withLatestRequest(withAnsweredQuestions(expanded), analysis.rewrittenRequest)), [
+                  withNotes(named(withAnsweredQuestions(requested)), [
                     timeNote(this.#clock.now()),
                     THOUGHTS_NOTE,
                     ...restoreNotes(documents),
@@ -462,279 +469,6 @@ export class ChatTurns {
       return null;
     }
   }
-
-  /** A failed search reaches the model as an error: it answers without, and says so. */
-  #searchTool(
-    user: User,
-    conversationId: string,
-    webSearch: WebSearch,
-    abortSignal: AbortSignal,
-    searches: { count: number },
-  ) {
-    return tool({
-      description:
-        'Search the web. Returns the most relevant pages, each with its title, link, an extract and its date when known.',
-      inputSchema: z.object({
-        query: z
-          .string()
-          .min(1)
-          .max(300)
-          .describe("What to type in a search engine, in the user's language, with the place when it matters."),
-        recent: z.boolean().describe('True to keep only pages from the last few days: news, prices, events.'),
-      }),
-      execute: async ({ query, recent }): Promise<WebSearchOutput> => {
-        // Asked for in parallel, past the limit: the refusal reaches the model, which answers with what it has.
-        if (searches.count >= MAX_SEARCHES) throw new Error('No more searches this turn: answer with those pages.');
-        searches.count += 1;
-        const found = await webSearch.search({ query, recent, locale: user.locale }, abortSignal);
-        await this.#usage.recordSearch(user, conversationId, found.provider);
-        return {
-          results: found.results.map((result) => ({ ...result, content: result.content.slice(0, RESULT_CHARACTERS) })),
-        };
-      },
-    });
-  }
-
-  /** The canvas. A refused write (too long, unknown document) reaches the model as an error it can fix. */
-  #documentTools(user: User, conversationId: string) {
-    return {
-      create_document: tool({
-        description:
-          'Create a document in the canvas, a panel next to the conversation where the user reads it, edits it by hand, prints it or downloads it as Word or PDF.',
-        inputSchema: z.object({
-          kind: z
-            .enum(['document', 'html'])
-            .describe(
-              '"document": Markdown text. "html": a complete page (<!doctype html>…) with its CSS and JavaScript inline and no outside files, shown live: games, cards, calculators.',
-            ),
-          title: z.string().min(1).max(120).describe("A short title, in the user's language."),
-          content: z.string().min(1).describe('The whole content.'),
-        }),
-        execute: async (input) => toolOutput(await this.#artifacts.create(user, conversationId, input)),
-      }),
-      update_document: tool({
-        description:
-          "Rewrite a document of the canvas with the requested changes, keeping everything else exactly as it is, the user's own edits included. Give its whole new content.",
-        inputSchema: z.object({
-          id: z.string().describe('The id of the document, from the list in the instructions.'),
-          content: z.string().min(1).describe('The whole new content.'),
-        }),
-        execute: async ({ id, content }) => toolOutput(await this.#artifacts.rewrite(conversationId, id, content)),
-      }),
-    };
-  }
-
-  /**
-   * A title and an icon, from the first message. Never fails the turn: without them the sidebar shows "New
-   * conversation" and the default icon.
-   */
-  async #name(user: User, conversation: Conversation, first: ChatMessage): Promise<void> {
-    // A first message may be only a photo or a document: its name is enough to name the conversation.
-    const text = textOf(first) || attachedNames(first);
-    if (!text) return;
-    const choice = this.#models.choose('background', user);
-    try {
-      const result = await generateText({
-        model: choice.model,
-        output: Output.object({ schema: z.object({ language: z.string(), title: z.string(), icon: z.string() }) }),
-        prompt: `Nomme une conversation qui commence par le message ci-dessous. Réponds uniquement en JSON : {"language", "title", "icon"}.\n- language : la langue dans laquelle l'utilisateur écrit le message. Une langue dont il parle, qu'il cite ou vers laquelle il veut une traduction n'est que le sujet. Quand le message est trop court pour le dire, ${user.locale === 'fr' ? 'le français' : "l'anglais"}.\n- title : un titre court (6 mots au plus), dans cette langue, sans guillemets.\n- icon : le nom d'une icône Lucide (lucide.dev, kebab-case, par exemple "fuel", "utensils", "file-text") qui montre le mieux le sujet.\n\nMessage :\n${text.slice(0, 2000)}`,
-        maxOutputTokens: 80,
-      });
-      await this.#usage.record(user, conversation.id, 'title', choice, result.usage, result.providerMetadata);
-      const title = cleanTitle(result.output.title);
-      // A malformed name gets the default icon, so the next messages do not ask again.
-      const icon = cleanIcon(result.output.icon) ?? 'message-square';
-      if (title && !conversation.title) await this.#conversations.rename(conversation.id, title);
-      await this.#conversations.setIcon(conversation.id, icon);
-      await this.#participants.publish(conversation, { type: 'conversations' });
-    } catch (error) {
-      // A name that did not parse was billed all the same: the quota must see it.
-      if (NoObjectGeneratedError.isInstance(error)) {
-        await this.#usage.record(user, conversation.id, 'title', choice, error.usage, undefined, error.response?.body);
-      }
-      console.error('Naming a conversation failed:', error);
-    }
-  }
-}
-
-/** What the model and the chat's card learn of a written document. */
-function toolOutput(artifact: Artifact): DocumentToolOutput {
-  return { id: artifact.id, kind: artifact.kind, title: artifact.title, version: artifact.version };
-}
-
-/**
- * The model answers the clearer request; the conversation keeps the user's own words. Files stay attached. After an
- * answered question, the request is the user message before it.
- */
-function withLatestRequest(messages: ChatMessage[], rewrittenRequest: string | null): ChatMessage[] {
-  if (!rewrittenRequest) return messages;
-  const latestIndex = messages.findLastIndex((message) => message.role === 'user');
-  return messages.map((message, index) =>
-    index === latestIndex
-      ? {
-          ...message,
-          parts: [
-            { type: 'text' as const, text: rewrittenRequest },
-            ...message.parts.filter((part) => part.type !== 'text'),
-          ],
-        }
-      : message,
-  );
-}
-
-/**
- * The date and time, at the start of the user's latest message for the model only: there, it changes nothing before
- * it, so the provider's cache of the instructions and the history stays valid from one message to the next. Tomorrow
- * is named too: answering short, the fast model dated « lundi » wrong one time in three from today alone (2026-11-15).
- */
-function timeNote(now: Date): string {
-  const time = new Intl.DateTimeFormat('fr-FR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Europe/Paris',
-  }).format(now);
-  // The calendar day in Paris, then the next one, counted in UTC: a clock change never skips or repeats a day.
-  const today = parseDay(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(now))!;
-  const tomorrow = new Intl.DateTimeFormat('fr-FR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC',
-  }).format(plusDays(today, 1));
-  return `[Maintenant : ${time}, heure de Paris. Demain : ${tomorrow}.]`;
-}
-
-/**
- * Beside the time, right before the user's words: the model (DeepSeek) writes its thoughts in English by habit, and
- * they are shown. The same line in the instructions alone left one answer in five thinking in English (2026-11-15).
- */
-const THOUGHTS_NOTE = '[Écris ta réflexion dans la langue de ce message, comme ta réponse.]';
-
-/**
- * A document the user brought back to an older version is said in their latest message: in the instructions alone,
- * the model redid the undone changes it saw asked and confirmed earlier in the history (2026-11-03).
- */
-function restoreNotes(documents: readonly { artifact: Artifact; restoredFrom: number | null }[]): string[] {
-  return documents.flatMap(({ artifact, restoredFrom }) =>
-    restoredFrom
-      ? [
-          `[Canevas : j'ai ramené « ${artifact.title} » à la version ${restoredFrom}, volontairement. Les modifications faites après cette version, plus haut dans cette conversation, sont annulées : ne les refais pas, sauf si je le redemande.]`,
-        ]
-      : [],
-  );
-}
-
-/** Notes for the model only, opening the user's latest message: the conversation keeps the user's own words. */
-function withNotes(messages: ChatMessage[], notes: readonly string[]): ChatMessage[] {
-  const latestIndex = messages.findLastIndex((message) => message.role === 'user');
-  return messages.map((message, index) =>
-    index === latestIndex
-      ? { ...message, parts: [{ type: 'text' as const, text: notes.join('\n') }, ...message.parts] }
-      : message,
-  );
-}
-
-const askInput = z.object({ question: z.string(), options: z.array(z.string()) });
-const ASK_DESCRIPTION =
-  'Ask the user one question when you cannot go on without a choice only they can make. Offer 2 to 4 short answers they can tap, or [] when none can be guessed; they may also type their own. Your answer stops until they reply, then goes on. An answer null means you may not ask again in this answer: decide yourself and say what you assumed.';
-
-/**
- * Without `execute`, a call ends the answer until the user replies. Once a question was asked in this answer, the
- * tool answers `null` itself: one round of questions per answer, the model then decides alone.
- */
-function askTool(alreadyAsked: boolean) {
-  if (!alreadyAsked) return tool({ description: ASK_DESCRIPTION, inputSchema: askInput });
-  return tool({
-    description: ASK_DESCRIPTION,
-    inputSchema: askInput,
-    execute: async (): Promise<AskUserOutput> => ({ answer: null }),
-  });
-}
-
-/**
- * Past versions written by the tools stay out of the model's history: the instructions hold the latest one of each
- * document, so a long document is not paid for again at every version. Their content is dropped, not replaced: a
- * placeholder sentence there was copied by the model as a new version's whole content (2026-11-02).
- */
-function withoutDocumentBodies(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    parts: message.parts.map((part) =>
-      (part.type === 'tool-create_document' || part.type === 'tool-update_document') && part.input
-        ? ({
-            ...part,
-            input: Object.fromEntries(Object.entries(part.input).filter(([key]) => key !== 'content')),
-          } as typeof part)
-        : part,
-    ),
-  }));
-}
-
-/**
- * The admin's assistant prompt (`DEFAULT_PROMPTS.assistant` until changed), then what only the code knows: the date,
- * the app's language, whether the web can be searched, the canvas documents and the user's rules. The rules come
- * last, so they win over the general style.
- */
-function instructions(
-  prompt: string,
-  user: User,
-  rules: readonly MemoryRule[],
-  now: Date,
-  canSearch: boolean,
-  documents: readonly { artifact: Artifact; content: string; restoredFrom: number | null }[],
-  commandNames: readonly string[],
-  /** In a shared conversation, everyone in it, the owner first; `null` otherwise. */
-  people: readonly string[] | null,
-): string {
-  const today = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full', timeZone: 'Europe/Paris' }).format(now);
-  return [
-    prompt,
-    '',
-    `Nous sommes le ${today}. L'application de l'utilisateur est en ${user.locale === 'fr' ? 'français' : 'anglais'}.`,
-    ...(canSearch
-      ? []
-      : ["La recherche web est indisponible pour le moment : dis-le quand une réponse a besoin de faits d'actualité."]),
-    ...(documents.length > 0
-      ? [
-          '',
-          "Documents du canevas de cette conversation, dans leur dernière version (l'utilisateur a pu les modifier à la main) :",
-          ...documents.map(
-            ({ artifact, content, restoredFrom }) =>
-              `<document id="${artifact.id}" kind="${artifact.kind}" title="${artifact.title.replaceAll('"', "'")}" version="${artifact.version}"${restoredFrom ? ` restored-from="${restoredFrom}"` : ''}>\n${content}\n</document>`,
-          ),
-          ...documents.flatMap(({ artifact, restoredFrom }) =>
-            restoredFrom
-              ? [
-                  `L'utilisateur a ramené « ${artifact.title} » à la version ${restoredFrom}, volontairement : les modifications faites après elle, les tiennes comprises, sont annulées. Travaille à partir de ce contenu, ne refais jamais ces modifications sauf s'il le demande, et ne décris pas le document tel qu'il était avant.`,
-                ]
-              : [],
-          ),
-        ]
-      : []),
-    ...(rules.length > 0
-      ? [
-          '',
-          "Ce que tu retiens de l'utilisateur, d'après ce qu'il a dit : des préférences à suivre sauf si son dernier message demande autre chose, et des faits le concernant, à utiliser quand ils comptent :",
-          ...rules.map((rule) => `- ${rule.text}`),
-        ]
-      : []),
-    ...(commandNames.length > 0
-      ? [
-          '',
-          `Les commandes de l'utilisateur, à réécrire avec save_command quand il le demande : ${commandNames.map((name) => `/${name}`).join(', ')}.`,
-        ]
-      : []),
-    ...(people
-      ? [
-          '',
-          `Cette conversation est partagée entre ${people.join(', ')} : chaque message d'utilisateur s'ouvre sur le nom de son auteur entre crochets. Tu réponds au dernier, ${nameOf(user)} : « l'utilisateur », ci-dessus et ci-dessous, c'est lui, et ce que tu retiens ne concerne que lui. Appelle chacun par ce nom quand c'est utile.`,
-        ]
-      : []),
-  ].join('\n');
 }
 
 /**

@@ -6,15 +6,13 @@ import type { Clock } from './ports/clock.ts';
 import type { LoginAttemptLimiter } from './ports/login-attempt-limiter.ts';
 import type { Mailer } from './ports/mailer.ts';
 import type { SessionStore } from './ports/session-store.ts';
-import type { SignInRequestStore } from './ports/sign-in-request-store.ts';
+import type { SignInRequestStore, UsedSignInRequest } from './ports/sign-in-request-store.ts';
 
 export const SIGN_IN_LINK_MINUTES = 15;
 /** Family members sign in once per device, about twice a year. */
 const SESSION_DAYS = 180;
 
-export type SignInRequestResult =
-  | { ok: true }
-  | { ok: false; reason: 'invalid_request' | 'too_many_attempts' | 'email_failed' };
+export type SignInRequestResult = { ok: true } | { ok: false; reason: 'invalid_request' | 'too_many_attempts' };
 
 export type SignInResult =
   | { ok: true; user: User; token: string; expiresAt: Date }
@@ -28,8 +26,8 @@ export function signInLink(publicUrl: string, token: string): string {
 }
 
 /**
- * Passwordless: an invited address receives a link and a code. Unknown and revoked addresses get the same answer
- * and no email, so the sign-in form never tells who is invited.
+ * Passwordless: an invited address receives a link and a code. Unknown and revoked addresses get the same answer, as
+ * fast, and no email, so the sign-in form never tells who is invited.
  */
 export class Authentication {
   readonly #users: UserRepository;
@@ -78,34 +76,31 @@ export class Authentication {
     const user = await this.#users.findByEmail(email);
     if (!user || user.revokedAt) return { ok: true };
 
-    await this.#users.setLocale(user.id, locale);
     const { token, code } = await this.#signInRequests.create({
       userId: user.id,
       expiresAt: new Date(now.getTime() + SIGN_IN_LINK_MINUTES * 60_000),
       withCode: true,
+      locale,
       now,
     });
-    try {
-      await this.#mailer.sendSignIn({
+    // Not awaited: waiting for the SMTP server, or reporting its failure, would tell an invited address apart.
+    this.#mailer
+      .sendSignIn({
         to: user.email,
         locale,
         kind: 'sign_in',
         link: signInLink(this.#publicUrl, token),
         code,
         validForMinutes: SIGN_IN_LINK_MINUTES,
-      });
-      return { ok: true };
-    } catch (error) {
-      console.error('Sign-in email failed:', error);
-      return { ok: false, reason: 'email_failed' };
-    }
+      })
+      .catch((error: unknown) => console.error('Sign-in email failed:', error));
+    return { ok: true };
   }
 
   async signInWithToken(token: string): Promise<SignInResult> {
     const now = this.#clock.now();
-    const userId = await this.#signInRequests.useToken(token, now);
-    const user = userId === null ? null : await this.#users.findById(userId);
-    return user && !user.revokedAt ? this.#openSession(user, now) : { ok: false, reason: 'invalid_sign_in' };
+    const request = await this.#signInRequests.useToken(token, now);
+    return request ? this.#signInFor(request, now) : { ok: false, reason: 'invalid_sign_in' };
   }
 
   async signInWithCode(rawEmail: string, code: string, clientAddress: string): Promise<SignInResult> {
@@ -115,16 +110,17 @@ export class Authentication {
     if (this.#codeLimiter.isBlocked(keys, now)) return { ok: false, reason: 'too_many_attempts' };
 
     const user = email ? await this.#users.findByEmail(email) : null;
-    const accepted =
-      user !== null &&
-      !user.revokedAt &&
-      (code.trim() === this.#devSignInCode || (await this.#signInRequests.useCode(user.id, code.trim(), now)));
-    if (!accepted) {
+    if (user && !user.revokedAt && code.trim() === this.#devSignInCode) {
+      this.#codeLimiter.clear(`email:${email}`);
+      return this.#openSession(user, now);
+    }
+    const request = user && !user.revokedAt ? await this.#signInRequests.useCode(user.id, code.trim(), now) : null;
+    if (!request) {
       this.#codeLimiter.recordFailure(keys, now);
       return { ok: false, reason: 'invalid_sign_in' };
     }
     this.#codeLimiter.clear(`email:${email}`);
-    return this.#openSession(user, now);
+    return this.#signInFor(request, now);
   }
 
   /** `null` when signed out, expired, or revoked: a revocation ends access at the next request. */
@@ -137,6 +133,14 @@ export class Authentication {
 
   async signOut(token: string | null): Promise<void> {
     if (token) await this.#sessions.delete(token);
+  }
+
+  /** The language the sign-in form asked for becomes the user's only now that they proved who they are. */
+  async #signInFor({ userId, locale }: UsedSignInRequest, now: Date): Promise<SignInResult> {
+    const user = await this.#users.findById(userId);
+    if (!user || user.revokedAt) return { ok: false, reason: 'invalid_sign_in' };
+    if (locale && locale !== user.locale) await this.#users.setLocale(user.id, locale);
+    return this.#openSession({ ...user, locale: locale ?? user.locale }, now);
   }
 
   async #openSession(user: User, now: Date): Promise<SignInResult> {

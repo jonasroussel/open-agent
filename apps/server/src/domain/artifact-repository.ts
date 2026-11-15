@@ -13,11 +13,14 @@ export interface ArtifactRepository {
   /** Newest first, without their content. */
   versions(artifactId: string): Promise<Omit<ArtifactVersion, 'content'>[]>;
   version(artifactId: string, number: number): Promise<ArtifactVersion | null>;
-  /** Returns the new version's number. `restoredFrom`: the older version it brings back, if it does. */
+  /**
+   * Returns the new version's number. `writer`: the user's id, or `model`. `restoredFrom`: the older version it brings
+   * back, if it does.
+   */
   addVersion(
     artifactId: string,
     content: string,
-    author: ArtifactAuthor,
+    writer: number | 'model',
     now: Date,
     restoredFrom?: number | null,
   ): Promise<number>;

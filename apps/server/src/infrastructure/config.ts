@@ -15,8 +15,8 @@ export const config = {
   adminEmail: Bun.env.ADMIN_EMAIL || null,
   /** The SMTP server that sends the emails. Unset in development: emails go to the server log. */
   smtp: smtpSettings(),
-  /** Signs any invited user in with this code, to test on other devices. Never in production, whatever the env. */
-  devSignInCode: isProduction ? null : (Bun.env.DEV_SIGN_IN_CODE ?? '123456'),
+  /** Signs any invited user in with this code, to test on other devices. Set by `bun run dev` only. */
+  devSignInCode: devSignInCode(),
   /** USD per calendar month for users whose quota the admin did not set. The user chose 5 $ on 2026-11-01. */
   defaultMonthlyQuotaUsd: Number(Bun.env.DEFAULT_MONTHLY_QUOTA_USD ?? 5),
   /** Never logged. Without it the chat answers that no model is available. */
@@ -41,6 +41,15 @@ export const config = {
 
 function required(name: string): never {
   throw new Error(`${name} must be set in production.`);
+}
+
+/** Real emails or an `https` address mean real users: a fixed code would open every account to whoever knows it. */
+function devSignInCode() {
+  const code = Bun.env.DEV_SIGN_IN_CODE || null;
+  if (code && (Bun.env.SMTP_HOST || Bun.env.PUBLIC_URL?.startsWith('https:'))) {
+    throw new Error('DEV_SIGN_IN_CODE is for development: unset it, or unset SMTP_HOST and use an http PUBLIC_URL.');
+  }
+  return code;
 }
 
 /** `SMTP_USER` and `SMTP_PASSWORD` go together; the sender is `SMTP_USER` unless `MAIL_FROM` says otherwise. */

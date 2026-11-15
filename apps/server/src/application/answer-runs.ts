@@ -5,6 +5,11 @@ export type AnswerChunk = InferUIMessageChunk<ChatMessage>;
 
 /** A turn whose end was never heard of (a crash in the stream) is stopped and forgotten after this. */
 const LONGEST_TURN_MS = 10 * 60 * 1000;
+/**
+ * The quota is checked before each answer, not during it: past this, one person's answers running together could
+ * spend far more than what was left.
+ */
+const MAX_RUNS_PER_PERSON = 3;
 
 type Run = {
   person: PersonDto;
@@ -24,13 +29,18 @@ type Run = {
 export class AnswerRuns {
   readonly #runs = new Map<string, Run>();
 
-  /** `null` when an answer is already being written there. */
+  /**
+   * `null` when an answer is already being written there, or when the person already has their most at once. The
+   * signal stands for this run: `end` and `replaced` take it back.
+   */
   begin(conversationId: string, person: PersonDto): AbortSignal | null {
     if (this.#runs.has(conversationId)) return null;
+    const running = [...this.#runs.values()].filter((run) => run.person.id === person.id).length;
+    if (running >= MAX_RUNS_PER_PERSON) return null;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort(new Error('The answer took too long.'));
-      this.end(conversationId);
+      this.end(conversationId, controller.signal);
     }, LONGEST_TURN_MS);
     timer.unref();
     this.#runs.set(conversationId, { person, controller, chunks: [], followers: new Set(), done: false, timer });
@@ -89,9 +99,17 @@ export class AnswerRuns {
     this.#runs.get(conversationId)?.controller.abort();
   }
 
-  /** Once the answer is saved: the conversation takes a new message. */
-  end(conversationId: string): void {
-    clearTimeout(this.#runs.get(conversationId)?.timer);
+  /** Another answer began there since the one of `signal` ended: what the old one saved would erase it. */
+  replaced(conversationId: string, signal: AbortSignal): boolean {
+    const run = this.#runs.get(conversationId);
+    return run !== undefined && run.controller.signal !== signal;
+  }
+
+  /** Once the answer is saved: the conversation takes a new message. A run that ended already frees nothing. */
+  end(conversationId: string, signal: AbortSignal): void {
+    const run = this.#runs.get(conversationId);
+    if (run?.controller.signal !== signal) return;
+    clearTimeout(run.timer);
     this.#runs.delete(conversationId);
   }
 }

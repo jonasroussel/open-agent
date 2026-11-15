@@ -76,8 +76,11 @@ export class ContextTools {
     this.#weather = weather;
   }
 
-  /** The tools for one answer in `conversationId`, each refusing past its cap. */
-  for(user: User, conversationId: string, abortSignal: AbortSignal) {
+  /**
+   * The tools for one answer in `conversationId`, each refusing past its cap. A conversation `shared` with others gets
+   * none of the user's other conversations or library: what a tool reads is saved in the answer every member sees.
+   */
+  for(user: User, conversationId: string, abortSignal: AbortSignal, shared: boolean) {
     const calls: Partial<Record<ContextToolName, number>> = {};
     // Asked for in parallel, past the cap: the refusal reaches the model, which answers with what it has.
     const spend = (name: ContextToolName) => {
@@ -87,7 +90,7 @@ export class ContextTools {
       calls[name] = used + 1;
     };
 
-    return {
+    const privateTools = {
       search_conversations: tool({
         description:
           "Search the user's other conversations by their words, when they mention something said before (« comme on en a parlé… »). Returns the matching conversations with a passage each; read one with read_conversation.",
@@ -168,7 +171,10 @@ export class ContextTools {
           return { id, name: found.file.name, text: found.text, hasPictures: found.hasPictures };
         },
       }),
+    };
 
+    return {
+      ...(shared ? {} : privateTools),
       read_web_page: tool({
         description:
           'Read a web page whose address the user gave, or one found with web_search when its extract is not enough. Returns its readable text.',

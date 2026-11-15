@@ -1,5 +1,3 @@
-import type { ProviderMetadata } from 'ai';
-
 import type { User } from '../domain/user.ts';
 import type { ModelCatalog, ModelChoice, ModelRole } from './ports/model-catalog.ts';
 import type { SecretBox } from './ports/secret-box.ts';
@@ -21,9 +19,5 @@ export class Models {
   choose(role: ModelRole, user: User): ModelChoice {
     const ownKey = user.ownKey ? this.#secrets.open(user.ownKey.sealed) : null;
     return this.#catalog.choose(role, this.#settings.modelId(role), ownKey);
-  }
-
-  costOf(metadata: ProviderMetadata | undefined): number | null {
-    return this.#catalog.costOf(metadata);
   }
 }

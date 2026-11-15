@@ -1,7 +1,9 @@
+import { API_ROUTES, apiPath } from '@open-agent/shared';
 import type { Knex } from 'knex';
 
 import type { ConversationRepository } from '../../domain/conversation-repository.ts';
 import type { ChatMessage, Conversation, SearchHit, SnippetPart } from '../../domain/conversation.ts';
+import { MAKING_TOOL_NAMES } from '../../domain/library-file.ts';
 import type { ConversationMember, MemberStatus } from '../../domain/sharing.ts';
 
 type ConversationRow = {
@@ -230,11 +232,17 @@ export class SqliteConversationRepository implements ConversationRepository {
   }
 
   async sharesFile(viewerId: number, fileId: string, fileOwnerId: number): Promise<boolean> {
+    const madeBy = MAKING_TOOL_NAMES.map((name) => `tool-${name}`);
+    // `instr` only skips parsing the messages that cannot hold the file.
     const rows: unknown[] = await this.#database.raw(
-      `SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id
-        WHERE instr(m.content, ?) > 0 AND ${TAKES_PART} AND ${TAKES_PART}
+      `SELECT 1 FROM messages m JOIN conversations c ON c.id = m.conversation_id, json_each(m.content, '$.parts') p
+        WHERE instr(m.content, ?) > 0
+          AND ((json_extract(p.value, '$.type') = 'file' AND json_extract(p.value, '$.url') = ?)
+            OR (json_extract(p.value, '$.type') IN (${madeBy.map(() => '?').join(', ')})
+              AND json_extract(p.value, '$.output.id') = ?))
+          AND ${TAKES_PART} AND ${TAKES_PART}
         LIMIT 1`,
-      [fileId, viewerId, viewerId, fileOwnerId, fileOwnerId],
+      [fileId, apiPath(API_ROUTES.file, { fileId }), ...madeBy, fileId, viewerId, viewerId, fileOwnerId, fileOwnerId],
     );
     return rows.length > 0;
   }

@@ -95,8 +95,8 @@ export class Artifacts {
 
   /**
    * The user's edit, or an old version brought back (`restoredFrom`). Refused when the document changed since
-   * `baseVersion`: the user would overwrite the model's newer version without seeing it. A restore is always a new
-   * version, so the model can be told what was undone.
+   * `baseVersion`: the user would overwrite a newer version, the model's or another member's, without seeing it. A
+   * restore is always a new version, so the model can be told what was undone.
    */
   async save(
     user: User,
@@ -120,12 +120,12 @@ export class Artifacts {
     const now = this.#clock.now();
     const latest = (await this.#artifacts.version(id, artifact.version))!;
     if (latest.content === content) return { ok: true, artifact };
-    if (!restored && amendsLatest(latest, now)) {
+    if (!restored && amendsLatest(latest, user.id, now)) {
       await this.#artifacts.amendVersion(id, latest.number, content, now);
       await this.#participants.publish(artifact.conversationId, { type: 'artifact', id });
       return { ok: true, artifact: { ...artifact, updatedAt: now } };
     }
-    const version = await this.#artifacts.addVersion(id, content, 'user', now, restored?.number ?? null);
+    const version = await this.#artifacts.addVersion(id, content, user.id, now, restored?.number ?? null);
     await this.#participants.publish(artifact.conversationId, { type: 'artifact', id });
     return { ok: true, artifact: { ...artifact, version, updatedAt: now } };
   }

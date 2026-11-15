@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { CommandRepository } from '../domain/command-repository.ts';
 import { commandNote, type Command } from '../domain/command.ts';
 import type { ChatMessage } from '../domain/conversation.ts';
+import { authorIdOf } from '../domain/sharing.ts';
 import type { User } from '../domain/user.ts';
 import type { ChangeFeed } from './ports/change-feed.ts';
 import type { Clock } from './ports/clock.ts';
@@ -108,16 +109,21 @@ export class Commands {
   }
 
   /**
-   * Every message that runs a command gets the command's prompt before its words, for the model and the pre-analysis.
-   * The messages kept in the conversation stay as the user sent them.
+   * Every message that runs a command gets the command's prompt before its words, for the model and the pre-analysis:
+   * the command of the message's author (`ownerId`'s for the messages from before a sharing). The messages kept in the
+   * conversation stay as the user sent them.
    */
-  async expand(user: User, messages: readonly ChatMessage[]): Promise<ChatMessage[]> {
-    const commands = new Map((await this.#commands.listOf(user.id)).map((command) => [command.id, command]));
+  async expand(messages: readonly ChatMessage[], ownerId: number): Promise<ChatMessage[]> {
+    const authors = new Set(messages.flatMap((message) => (commandOf(message) ? [authorIdOf(message, ownerId)] : [])));
+    const listed = await Promise.all([...authors].map((authorId) => this.#commands.listOf(authorId)));
+    const commands = new Map(listed.flat().map((command) => [command.id, command]));
     return messages.map((message) => {
       const ran = commandOf(message);
       if (!ran) return message;
+      const command = commands.get(ran.id);
+      const own = command?.userId === authorIdOf(message, ownerId) ? command : null;
       const hasText = message.parts.some((part) => part.type === 'text' && part.text.trim());
-      const text = commandNote(ran.name, commands.get(ran.id) ?? null, hasText);
+      const text = commandNote(ran.name, own, hasText);
       return { ...message, parts: [{ type: 'text', text }, ...message.parts] };
     });
   }

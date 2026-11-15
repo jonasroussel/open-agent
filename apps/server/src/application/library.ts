@@ -156,10 +156,24 @@ export class Library {
     );
   }
 
+  /**
+   * Whether `user` may send `message`: each file it attaches is theirs, one they may `open`, or gone. A deleted or
+   * unknown file leaks nothing: the model is told it was deleted.
+   */
+  async canAttach(user: User, message: ChatMessage): Promise<boolean> {
+    const ids = message.parts.flatMap((part) => (part.type === 'file' ? [fileIdOf(part.url) ?? ''] : []));
+    const files = await Promise.all(ids.map((id) => this.#files.findById(id)));
+    const allowed = await Promise.all(files.map((file) => !file || this.#mayOpen(user, file)));
+    return allowed.every(Boolean);
+  }
+
   async #visible(user: User, id: string): Promise<LibraryFile | null> {
     const file = await this.#files.findById(id);
-    if (!file) return null;
-    return file.userId === user.id || (await this.#conversations.sharesFile(user.id, id, file.userId)) ? file : null;
+    return file && (await this.#mayOpen(user, file)) ? file : null;
+  }
+
+  async #mayOpen(user: User, file: LibraryFile): Promise<boolean> {
+    return file.userId === user.id || (await this.#conversations.sharesFile(user.id, file.id, file.userId));
   }
 
   async #modelParts(file: LibraryFile): Promise<ChatMessage['parts']> {

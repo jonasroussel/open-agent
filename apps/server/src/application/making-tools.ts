@@ -8,6 +8,7 @@ import {
 import { APICallError, generateText, tool, type FilePart } from 'ai';
 import { z } from 'zod';
 
+import type { MakingToolName } from '../domain/library-file.ts';
 import type { User } from '../domain/user.ts';
 import type { Library } from './library.ts';
 import type { Models } from './models.ts';
@@ -25,9 +26,7 @@ export const MAKING_TOOL_CAPS = {
   create_pdf: 2,
   create_chart: 3,
   create_qr_code: 2,
-} as const;
-
-type MakingToolName = keyof typeof MAKING_TOOL_CAPS;
+} as const satisfies Record<MakingToolName, number>;
 
 const MAX_SOURCE_IMAGES = 3;
 /** What the image model reads: JPEG, PNG and WebP (Gemini's list). */

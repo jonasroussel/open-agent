@@ -6,12 +6,13 @@ describe('amendsLatest', () => {
   const now = new Date('2026-11-01T10:00:00Z');
 
   test("the user's saves in one sitting change their own last version", () => {
-    expect(amendsLatest({ author: 'user', createdAt: new Date('2026-11-01T09:52:00Z') }, now)).toBe(true);
+    expect(amendsLatest({ userId: 1, createdAt: new Date('2026-11-01T09:52:00Z') }, 1, now)).toBe(true);
   });
 
-  test('a new sitting, or a version the model wrote, gets a new version', () => {
-    expect(amendsLatest({ author: 'user', createdAt: new Date('2026-11-01T09:49:00Z') }, now)).toBe(false);
-    expect(amendsLatest({ author: 'model', createdAt: new Date('2026-11-01T09:59:00Z') }, now)).toBe(false);
+  test("a new sitting, another member's version, the model's, or one whose writer is unknown gets a new version", () => {
+    expect(amendsLatest({ userId: 1, createdAt: new Date('2026-11-01T09:49:00Z') }, 1, now)).toBe(false);
+    expect(amendsLatest({ userId: 2, createdAt: new Date('2026-11-01T09:59:00Z') }, 1, now)).toBe(false);
+    expect(amendsLatest({ userId: null, createdAt: new Date('2026-11-01T09:59:00Z') }, 1, now)).toBe(false);
   });
 });
 

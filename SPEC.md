@@ -18,9 +18,21 @@ short vague prompts. Open Agent fixes what a harness can fix:
 - Invitation only. The admin invites an email address; the invitation email holds a sign-in link valid 7 days.
 - Sign-in: the person types their address and receives a **magic link and a 6-digit code**, both valid 15 minutes,
   once. The code exists for the installed app on iOS, which cannot receive the link (iOS opens it in Safari).
-- The sign-in form answers the same for invited and unknown addresses, and sends nothing to the latter.
-- Limits: 5 emails per address and 10 wrong codes per address every 15 minutes.
+- One live code per user: a new sign-in email retires the earlier code (a pending invitation link stays valid).
+- The sign-in form answers the same (204), and as fast, for invited and unknown addresses, and sends nothing to the
+  latter: the email is sent in the background and a failure is only logged, since waiting for the SMTP server, or
+  reporting its failure, would tell an invited address apart.
+- The language chosen on the form becomes the user's only once the link or the code is used
+  (`sign_in_requests.locale`): anyone may type an address.
+- Limits: 5 emails per address and 10 wrong codes per address every 15 minutes, in memory; on top of them, a code
+  allows 5 tries, counted in the database (`sign_in_requests.code_tries`), so a restart does not reset them.
 - Sessions last 180 days. Revoking a user ends all their sessions at once; inviting them again restores the access.
+  An open app whose session ended (signed out elsewhere, revoked, expired) goes to the sign-in page at its next
+  request.
+- A change (any method but GET, HEAD and OPTIONS) whose `Origin` is not the origin of `PUBLIC_URL` is refused (403):
+  `SameSite=Lax` alone lets a page of a sibling subdomain post with the session cookie. A request without `Origin`
+  passes: browsers name the origin of a change sent from another page, and a script outside the browser does not
+  hold the cookie.
 - Roles: `user`, `admin`. The `ADMIN_EMAIL` user is made admin at every boot. An admin cannot revoke themselves.
 - Admin data access: conversations are stored in clear in the database. The admin commits not to read them; the admin
   panel shows costs and memory rules, never conversations.
@@ -34,14 +46,17 @@ short vague prompts. Open Agent fixes what a harness can fix:
   their limit does not apply while the key is there (the admin's setting is kept for the day they remove it). A key
   OpenRouter refuses during an answer (401, 402, 403) shows "OpenRouter refused your key" instead of a plain failure.
 - **Quota per user, per calendar month, in real cost.** Every paid call (answers, pre-pass, memory, titles) records the
-  cost returned by OpenRouter; searches count at 0 $. The month starts at midnight on the 1st in Paris. Default quota
-  5 $ (`DEFAULT_MONTHLY_QUOTA_USD`; the user expects 3 to 5 regular users), changed per person by the admin
-  (0 to 100 $). Admins have no limit.
+  cost returned by OpenRouter; searches count at 0 $. Known limit: a step stopped mid-way (Stop, deleting the
+  conversation) is not recorded, as the AI SDK gives no usage for it. The month starts at midnight on the 1st in
+  Paris. Default quota 5 $ (`DEFAULT_MONTHLY_QUOTA_USD`; the user expects 3 to 5 regular users), changed per person by
+  the admin (0 to 100 $). Admins have no limit.
 - **What users see:** a gauge in percent in the user menu ("This month: 65% used"), never dollars. From 80% a line
   above the composer says how much is used.
 - **Over quota: blocked.** The check runs before each message (the message that crosses the limit is still answered).
   The server refuses with `quota_exceeded` (429), and the composer is replaced by "You have used all of your quota this
-  month. It comes back on December 1." No silent downgrade.
+  month. It comes back on December 1." No silent downgrade. Since the check comes before the answer, one person has at
+  most 3 answers being written at once (the fourth gets `conversation_busy`): together they could spend far more than
+  what was left.
 - Total budget target: under 20 €/month. Background calls always use the cheapest configured model. Set a credit limit
   on the OpenRouter key itself as the global safety net.
 
@@ -117,8 +132,9 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   (`DELETE /api/chat/:id/stream`), and deleting the conversation. The user's message is saved as it is sent. A page
   that opens the conversation, reloads, comes back to the foreground or online follows the answer again from its start
   (`GET /api/chat/:id/stream`, the AI SDK's `resumeStream`), as do the user's other devices. One answer at a time per
-  conversation (`409 conversation_busy`); an answer running past 10 minutes is stopped. In memory: a server restart
-  ends the answers being written.
+  conversation (`409 conversation_busy`); an answer running past 10 minutes is stopped. The end of an answer (its
+  save, the conversation freed) acts only on its own run: an answer stopped after 10 minutes never overwrites or frees
+  a newer one begun since. In memory: a server restart ends the answers being written.
 - **A work assistant, short answers** (assistant prompt, 2026-11-15): the request comes first and nothing more is
   done; no introduction, restating, unasked advice or warnings; no follow-up offer or closing question (« Voulez-vous
   que… »). It proposes only when the request is vague: two or three short leads. Measured with the real model on 12
@@ -129,7 +145,14 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   the gist (the key steps, the advice). A shorter answer has none: since answers became short (2026-11-15), the line
   only repeated them. Checked with the real model: 103 of 110 answers right (one long answer in twenty lacks the
   line, one short answer in twenty has it); « always » was 16 of 16, at the price of the repeat.
-- Regenerate an answer; edit a sent message and resend (the later messages are replaced, no branches).
+- Regenerate an answer; edit a sent message and resend (the later messages are replaced, no branches). Alone, the user
+  edits any of their own messages; in a shared conversation, only their last one.
+- **The server owns the history:** every conversation goes on from its saved history, never from the copy a browser
+  sends; only the sent message is taken from it. A copy behind the saved one is refused (`409 conversation_changed`),
+  and the page reloads the conversation and asks to send again: before, a phone waking up with an old copy erased the
+  messages written meanwhile on the computer. A new conversation starts from the last sent message only: the earlier
+  ones would be the browser's word alone. A first message the server never received (sent offline, or refused) stays
+  on screen with its error.
 - Automatic conversation titles (background model); pin conversations.
 - **Search in the history** ("Search" in the sidebar, ⌘K / Ctrl+K): SQLite FTS5 on the text of every message,
   accents aside (`remove_diacritics`), every word required and open-ended (« resil » finds « résiliation »). One row
@@ -140,11 +163,12 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   4 answers to tap; the user may also type their own in the composer, which then says "Your answer…". The model's
   tool has no `execute`: its call ends the stream, and the question waits, saved, even across a reload. The answer is
   the tool's output; once every question of the message has one, the client sends the history again
-  (`sendAutomaticallyWhen`) and the same message goes on: after the pre-pass's question, the pre-pass runs again with
-  the answer (and may not ask again); after the model's, its answer goes on with the same route. One round of
-  questions per answer: asked again in the same message, the tool answers `null` itself, and the model decides alone
-  and says what it assumed. A question left unanswered (the user wrote something else) reaches the model as `null`.
-  The question and its answer show first in the bubble.
+  (`sendAutomaticallyWhen`), the server takes from it only the answers to the questions still pending (the rest of the
+  assistant's message stays as saved), and the same message goes on: after the pre-pass's question, the pre-pass runs
+  again with the answer (and may not ask again); after the model's, its answer goes on with the same route. One round
+  of questions per answer: asked again in the same message, the tool answers `null` itself, and the model decides
+  alone and says what it assumed. A question left unanswered (the user wrote something else) reaches the model as
+  `null`. The question and its answer show first in the bubble.
 
 ### Web search
 
@@ -185,8 +209,12 @@ user's own or public, and nothing writes.
   day's sky, min/max, rain chance and amount. Where the user lives comes from the memory. The pre-pass never forces a
   web search for the weather.
 - **Exact calculations:** `calculate` with mathjs (sums, percentages, conversions such as "5 km to mile"; the functions
-  that change mathjs or parse further are switched off); `days_between` and `date_plus_days` count calendar days in
-  UTC (no clock-change surprises).
+  that change mathjs or parse further are switched off, `config` too); `days_between` and `date_plus_days` count
+  calendar days in UTC (no clock-change surprises). One Bun process serves every user, so a calculation must not hold
+  it: ranges and matrices over 1,000 elements, exact integers and fractions over 10,000 bits, and factorials and
+  combinatorics over an input of 1,000 are refused before they are computed, as are function definitions (a function
+  may call itself without end) and method calls (`matrix([1]).resize(…)` would skip every check). Each limit is far
+  past a household calculation and keeps the slowest expression under a few hundred milliseconds.
 - **Limits:** each call sends the whole conversation to the model again, so each tool has a cap per answer (2
   conversation searches and reads, 1 file list, 2 file reads, 3 pages, 2 forecasts, 5 calculations, 3 date counts),
   and an answer has 6 steps, the last one without tools. A refusal (`ToolRefusal`: not found, someone else's, too
@@ -219,9 +247,11 @@ try the model then made right is not shown.
   Roboto, A4, page numbers past one page; `![caption](id)` shows a JPEG or PNG of the user's library. pdfmake reads no
   URL and no file but its fonts. For a text to edit, the model still uses the canvas.
 - **Charts:** `create_chart` from a Vega-Lite spec with its data inline, drawn as a PNG (resvg, twice the size, Roboto,
-  indigo first). Safe to run on the server: a spec naming a `url` anywhere is refused (Vega would load it), the
-  expressions are evaluated by `vega-interpreter` (no generated code), pictures are stripped from the SVG before resvg
-  (which reads paths from the disk), and a chart over 2,000 pixels is refused.
+  indigo first). Safe to run on the server: a spec naming a `url` anywhere is refused (Vega would load it), and so is
+  data Vega generates (`sequence`, `graticule`, `sphere`, `impute`'s `keyvals` range, the `sequence()` function) and
+  a tick, bin or step count over 1,000 (measured: 10,000 ticks take 2 s, 100,000 take 24 s), since the spec's size
+  does not bound them; the expressions are evaluated by `vega-interpreter` (no generated code), pictures are stripped
+  from the SVG before resvg (which reads paths from the disk), and a chart over 2,000 pixels is refused.
 - **QR codes:** `create_qr_code` (a link, a text, a Wi-Fi network as `WIFI:T:WPA;S:…;P:…;;`, a vCard), 800 px PNG.
 - **Limits per answer:** 2 images, 2 workbooks, 2 PDFs, 3 charts, 2 QR codes.
 - **The pre-pass knows:** a drawing or a file is never unclear for want of a style, colors or a format; making one
@@ -242,8 +272,9 @@ try the model then made right is not shown.
 - **Word (.docx):** mammoth's HTML (keeps tables), the pictures it contains, and the headers and footers mammoth
   skips, read from the zip with `unzip`. EMF/WMF drawings cannot be shown; the model is told one is there.
 - **Text (.txt, .md, .csv):** as is. **Excel (.xlsx):** each sheet as numbered rows, with formulas (and their result
-  when Excel saved one) and dates; a zip expanding past 100 MB is refused before exceljs reads it. Not accepted: HEIC
-  from browsers that cannot open it, .doc, .xls, PowerPoint, HTML, SVG.
+  when Excel saved one) and dates. mammoth and exceljs read the whole zip in memory: a Word or Excel file expanding
+  past 100 MB is refused before it is read. Not accepted: HEIC from browsers that cannot open it, .doc, .xls,
+  PowerPoint, HTML, SVG.
 - **Reading happens once, at upload**, into the file's `content`; the pictures are stored next to the original. Each
   answer turns the message's `file` parts into `<file id="…" name="…">` + text and pictures; the pre-analysis and the
   title only see the names (`[Attached: …]`), so the pre-analysis never asks what a file contains.
@@ -253,8 +284,11 @@ try the model then made right is not shown.
   show their icon and type. An image tile opens the image over the page (`ImagePreview`), any other tile the file;
   files are added with a button or dropped on the page, and deleted from the tile. A deleted file stays named in
   its conversations, and the model is told it is gone. No `@` mention, no RAG, no embeddings.
-- **Privacy:** a file opens only for its owner (`/api/files/:id`, `nosniff`); a message may only point to the
-  user's own library files, never to a link or inline data, so nothing skips the reading at upload.
+- **Privacy:** a file opens only for its owner (`/api/files/:id`, `nosniff`), or the members of a shared conversation
+  it belongs to (see there); a message may only point to the library files its sender may open, never to a link or
+  inline data, so nothing skips the reading at upload. Files and previews are sent `private, no-cache` with an
+  `ETag`: the browser asks again at each use and gets `304` while access holds, so on a shared computer a file is no
+  longer readable from the cache after sign-out, its deletion, or leaving its conversation.
 - **Cost:** in the quota like the rest. Measured: 0.0001 to 0.0007 $ per answer with a 2-page PDF and a photo
   (about 3,200 tokens). A big file costs at every answer of its conversation.
 
@@ -278,8 +312,10 @@ A user's usual requests, run again without retyping them (`Commands`, `applicati
   model. Commands made before the order existed kept the one they showed in (most used first).
 - **What is sent:** the message keeps the user's words and `metadata.command` (`id`, `name`), shown as a badge in
   their bubble. At each answer the server puts the command's current prompt before those words, for the model, the
-  pre-analysis and the title; never in the saved conversation. A command deleted since is said so. Each message
-  counts one use. An edited message keeps its command.
+  pre-analysis and the title; never in the saved conversation. When the pre-analysis rewrites the request, the rewrite
+  replaces only the user's words: the command's prompt still reaches the model. Each message's command is its
+  author's: in a shared conversation, a message runs the prompt of the member who sent it, whoever sends the next one.
+  A command deleted since is said so. Each message counts one use. An edited message keeps its command.
 - **Sync:** a change publishes `commands`: the other devices reload the list.
 
 ### Canvas
@@ -300,9 +336,13 @@ neither while the model writes nor when coming back; the user taps the document'
   the conversation, the user's own edits included; past versions in tool calls are left out of the history so a long
   document is not paid for again at every version.
 - **Documents (Markdown):** edited like in Word with Tiptap (`@tiptap/markdown` reads and writes the Markdown the
-  model uses), loaded only with the panel. Saved 1.2 s after typing stops. Saves within 10 minutes of the user's own
-  last version change that version: one version per sitting. A save based on an older version is refused
-  (`artifact_changed`): the panel then shows the model's newer version.
+  model uses), loaded only with the panel. Saved 1.2 s after typing stops; an edit still waiting for that pause is
+  saved at once when the document closes, the tab is hidden or the page closes (with `keepalive`, for documents under
+  60,000 bytes: browsers refuse a larger `keepalive` body). Each user version records its writer
+  (`artifact_versions.user_id`). Saves within 10 minutes of the same user's own last version change that version: one
+  version per sitting. A save on top of another member's version adds one, never changes theirs. A save based on an
+  older version is refused (`artifact_changed`): the panel then shows the newer version, the model's or another
+  member's, instead of overwriting it.
 - **Versions:** a menu lists them (who, when); an old one shows read-only and can be brought back, as a new version
   marked `restored_from` ("v4 · v1 brought back by you"), never merged into the user's last one. A newer version,
   written by the model meanwhile, replaces the old one being looked at.
@@ -351,12 +391,13 @@ A conversation shared with other people of the app, who all write to the assista
   `/api/events`, and refuses another message while the answer is written (`409 conversation_busy`); the others see the
   message, the dots, « L'assistant répond à X… », and get the answer once it is done (not streamed). They can type
   meanwhile and send once it is done.
-- **The server owns the history:** a shared conversation goes on from its saved copy, never from the copy a browser
-  sends. A copy behind the saved one is refused (`409 conversation_changed`); the page reloads the conversation and asks
-  to send again. A member edits or answers again only their own last message, and answers only the questions asked to
-  them.
-- **Files and documents:** a file sent or made in it opens for everyone in it (no other file of theirs), and reaches
-  the model whoever answers; everyone reads and edits its canvas documents.
+- **The server owns the history** (as in every conversation, see Chat): a member edits or answers again only their own
+  last message, and answers only the questions asked to them.
+- **What the model reads there:** it does not get `search_conversations`, `read_conversation`, `list_files` and
+  `read_file`: their outputs would be saved in a history every member receives. A file must be attached.
+- **Files and documents:** a file opens for everyone in it only when it was attached there or made there by a making
+  tool, and then reaches the model whoever answers; a file the model only listed, read or used as a source opens for
+  its owner alone. A member may attach only files they may open. Everyone reads and edits its canvas documents.
 
 ### Admin panel
 
@@ -387,12 +428,17 @@ A conversation shared with other people of the app, who all write to the assista
   message when it is another one.
 - Responsive PWA, installable on the home screen.
 - **Every device of a user stays in step** (server-sent events, `GET /api/events`): after each change the server
-  sends a small `ChangeEvent` (`conversation` with its id, `conversations`, `memory`, `files`, `artifact` with its id),
-  never the data; each open device reloads what it shows. An answer appears whole on the other device once finished,
-  not word by word. A conversation open there is replaced by the saved copy, unless an answer is on its way on that
-  device; one deleted elsewhere sends its page back to the start. The browser reconnects by itself (a phone waking up),
-  and everything is reloaded once then, for the changes missed. One server process: the feed lives in its memory; a
-  `: ping` comment every 25 s keeps proxies from closing a quiet stream.
+  sends a small `ChangeEvent` (`conversation` with its id, `conversations`, `memory`, `files`, `commands`, `artifact`
+  with its id), never the data; each open device reloads what it shows. An answer appears whole on the other device
+  once finished, not word by word. A conversation open there is replaced by the saved copy, unless an answer is on its
+  way on that device; one deleted elsewhere sends its page back to the start. The browser reconnects by itself (a
+  phone waking up), and everything is reloaded once then, for the changes missed. One server process: the feed lives
+  in its memory; a `: ping` comment every 25 s keeps proxies from closing a quiet stream.
+- **Nothing the page shows sends data away:** a `Content-Security-Policy` on everything the static server sends lets
+  the page, and the canvas HTML pages (the `srcdoc` iframe inherits it), load and reach only the app's own origin, so
+  a prompt-injected answer or a model-written page cannot send what it read elsewhere. Inline scripts and styles stay
+  allowed for the theme script of `index.html` and the canvas pages; no `eval`. Markdown answers show only images of
+  the user's own files (`/api/files/`), since an image loads with no click; links stay clickable.
 
 ## Out of V1
 
@@ -415,9 +461,9 @@ Same layout and tooling as `inscript-carte`.
 | Email | Any SMTP server (nodemailer); Proton Mail in production |
 | Web search | Tavily, then self-hosted SearXNG |
 | Lint, format | oxlint, oxfmt |
-| Tests | `bun test`, co-located `*.test.ts` |
-| Deploy | `deploy/compose.yaml` creates the stack once (e.g. as a Portainer stack): the app (API + built client on one port, `/data` in a volume) and `open-agent-searxng` (SearXNG with `searxng/settings.yml` inside, reached only by the app). Then `bun run deploy` pushes both images to `registry.jonas.bzh` and recreates the two containers, by name, through the Portainer API |
-| Development | `bun run dev` starts `compose.yaml` (SearXNG on `localhost:8888`), then the server and Vite |
+| Tests | `bun test`, co-located `*.test.ts`; the API tests (the whole app on a real server and an in-memory database, with fake models and mailer) are split by feature in `apps/server/src/app-tests/`, each file starting with `useApp()` from `harness.ts` |
+| Deploy | `deploy/compose.yaml` creates the stack once (e.g. as a Portainer stack): the app (API + built client on one port, published because the reverse proxy runs on another machine, `/data` in a volume) and `open-agent-searxng` (SearXNG with `searxng/settings.yml` inside, reached only by the app). Then `bun run deploy`, from a clean tree, runs the lint, typecheck and tests, pushes both images to `registry.jonas.bzh` under `latest` and the short commit hash, and recreates the two containers, by name, through the Portainer API. Going back is pointing `latest` at an older hash (see `README.md`) |
+| Development | `bun run dev` starts `compose.yaml` (SearXNG on `localhost:8888`), then the server (with `DEV_SIGN_IN_CODE=123456`) and Vite |
 
 ## Look and feel
 
@@ -455,7 +501,7 @@ Same layout and tooling as `inscript-carte`.
 | Table | Holds |
 | --- | --- |
 | `users` | email, name given by the admin (`null`: the start of the email), role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default), own OpenRouter key (sealed) and when it was added |
-| `sign_in_requests` | user, token hash, code hash (none for invitations), expiry, used at |
+| `sign_in_requests` | user, token hash, code hash (none for invitations), code tries, the locale the form asked for, expiry, used at |
 | `sessions` | token hash, user, expiry |
 | `conversations` | id chosen by the client (UUID), user (its owner), title, pinned (by the owner), ephemeral, created/updated at |
 | `conversation_members` | conversation, user, status (`invited` / `member`), pinned (for them), invited at, joined at |
@@ -463,10 +509,10 @@ Same layout and tooling as `inscript-carte`.
 | `message_search` | FTS5 over the text parts of each message, sharing its `rowid`; filled by triggers on `messages` |
 | `memory_rules` | user, rule text, created/updated at, deleted at (kept so an Undo restores the same rule) |
 | `memory_rule_changes` | user, rule, operation, before, after, source (`remark` / `user` / `admin`), conversation and message of the notice, undone at |
-| `library_files` | id (UUID, in its address), user, name, kind (`image` / `pdf` / `word` / `text`), media type, size, content (JSON: whole text and names of the pictures on disk), created at |
+| `library_files` | id (UUID, in its address), user, name, kind (`image` / `pdf` / `word` / `spreadsheet` / `text`), media type, size, content (JSON: whole text and names of the pictures on disk), created at |
 | `artifacts` | id (UUID, named by the model in `update_document`), conversation, user, kind (`document` / `html`), title, created/updated at |
-| `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), created at, the version it brought back (`restored_from`) |
-| `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter, paid by the user's own key |
+| `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), the user who wrote it (`null` for the model's and for versions from before it was recorded), created at, the version it brought back (`restored_from`) |
+| `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`, `image`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter, paid by the user's own key |
 | `settings` | key (`model.fast`, `prompt.assistant`…), value, updated at; a missing key means the default |
 | `commands` | id (UUID), user, name (unique per user), prompt, uses, position (the user's order), created/updated at |
 
@@ -475,11 +521,12 @@ Same layout and tooling as `inscript-carte`.
 | Env var | Purpose |
 | --- | --- |
 | `PORT` | HTTP port (default 3427) |
-| `TRUST_PROXY` | Behind the reverse proxy: the sign-in limits read the client's address in `x-forwarded-for` (`1` in the image) |
+| `TRUST_PROXY` | Behind the reverse proxy: the sign-in limits read the client's address in the last `x-forwarded-for` entry, the one the proxy wrote; the earlier ones are whatever the client sent (`1` in the image) |
 | `DATABASE_PATH` | SQLite file |
 | `FILES_PATH` | Uploaded files and the pictures read out of them (default `data/files`; `/data/files` in the image) |
 | `CLIENT_DIST_PATH` | Built client, served next to the API |
-| `PUBLIC_URL` | Base URL in magic links |
+| `PUBLIC_URL` | Base URL in magic links; its origin is the only one allowed to send changes |
+| `DEV_SIGN_IN_CODE` | Signs any invited user in with this code, to test on other devices. No default: `bun run dev` sets `123456`; the server refuses to start when it is set with `SMTP_HOST` or an `https` `PUBLIC_URL`, which mean real users |
 | `ADMIN_EMAIL` | First admin |
 | `DEFAULT_MONTHLY_QUOTA_USD` | Quota of users the admin did not set (default 5) |
 | `OPENROUTER_API_KEY` | App key (required in production) |

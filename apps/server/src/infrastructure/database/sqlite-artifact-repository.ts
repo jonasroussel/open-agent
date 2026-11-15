@@ -19,11 +19,12 @@ type VersionRow = {
   artifact_id: string;
   number: number;
   author: ArtifactAuthor;
+  user_id: number | null;
   created_at: string;
   restored_from: number | null;
 };
 
-const VERSION_COLUMNS = ['artifact_id', 'number', 'author', 'created_at', 'restored_from'] as const;
+const VERSION_COLUMNS = ['artifact_id', 'number', 'author', 'user_id', 'created_at', 'restored_from'] as const;
 
 export class SqliteArtifactRepository implements ArtifactRepository {
   readonly #database: Knex;
@@ -79,7 +80,7 @@ export class SqliteArtifactRepository implements ArtifactRepository {
   async addVersion(
     artifactId: string,
     content: string,
-    author: ArtifactAuthor,
+    writer: number | 'model',
     now: Date,
     restoredFrom: number | null = null,
   ): Promise<number> {
@@ -91,7 +92,8 @@ export class SqliteArtifactRepository implements ArtifactRepository {
         artifact_id: artifactId,
         number,
         content,
-        author,
+        author: writer === 'model' ? 'model' : 'user',
+        user_id: writer === 'model' ? null : writer,
         created_at: at,
         restored_from: restoredFrom,
       });
@@ -134,6 +136,7 @@ function toVersion(row: VersionRow): Omit<ArtifactVersion, 'content'> {
     artifactId: row.artifact_id,
     number: row.number,
     author: row.author,
+    userId: row.user_id,
     createdAt: new Date(row.created_at),
     restoredFrom: row.restored_from,
   };

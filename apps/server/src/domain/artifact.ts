@@ -19,6 +19,8 @@ export type ArtifactVersion = {
   number: number;
   content: string;
   author: ArtifactAuthor;
+  /** Who wrote a user version; `null` for the model's, and for the users' versions saved before it was recorded. */
+  userId: number | null;
   createdAt: Date;
   /** The older version the user brought back as this one; `null` for any other version. */
   restoredFrom: number | null;
@@ -26,12 +28,17 @@ export type ArtifactVersion = {
 
 /**
  * The editor saves while the user types. Saves within this time after the user's own last version change that
- * version, so the list keeps one version per sitting, not one per pause in typing.
+ * version, so the list keeps one version per sitting, not one per pause in typing. Another member's version is never
+ * changed: their save adds one, so the first writer's next save meets a newer version instead of overwriting it.
  */
 export const USER_SITTING_MS = 10 * 60 * 1000;
 
-export function amendsLatest(latest: Pick<ArtifactVersion, 'author' | 'createdAt'>, now: Date): boolean {
-  return latest.author === 'user' && now.getTime() - latest.createdAt.getTime() < USER_SITTING_MS;
+export function amendsLatest(
+  latest: Pick<ArtifactVersion, 'userId' | 'createdAt'>,
+  userId: number,
+  now: Date,
+): boolean {
+  return latest.userId === userId && now.getTime() - latest.createdAt.getTime() < USER_SITTING_MS;
 }
 
 /** A title the model gave: one line, no Markdown heading marks, at most a sidebar's width. */

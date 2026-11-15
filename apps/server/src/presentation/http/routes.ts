@@ -23,7 +23,7 @@ import { createChatRoutes } from './chat-routes.ts';
 import { createCommandRoutes } from './command-routes.ts';
 import { createEventRoutes } from './event-routes.ts';
 import { createFileRoutes } from './file-routes.ts';
-import { clientAddress, error, isHttps, readJson, type ServerHandle } from './http.ts';
+import { clientAddress, error, isHttps, readJson, refuseForeignOrigins, type ServerHandle } from './http.ts';
 import { createMemoryRoutes } from './memory-routes.ts';
 import { createOwnKeyRoutes } from './own-key-routes.ts';
 import { toSignedInUser } from './presenters.ts';
@@ -32,6 +32,8 @@ const SESSION_COOKIE = 'session';
 
 export type HttpDependencies = {
   version: string;
+  /** The app's own origin: changes from any other are refused. */
+  publicUrl: string;
   authentication: Authentication;
   userAccess: UserAccess;
   conversations: Conversations;
@@ -66,6 +68,7 @@ function openSession(request: BunRequest, result: SignInResult): Response {
 
 export function createRoutes({
   version,
+  publicUrl,
   authentication,
   userAccess,
   conversations,
@@ -86,7 +89,7 @@ export function createRoutes({
   const signedInUser = (request: BunRequest) =>
     authentication.signedInUser(request.cookies.get(SESSION_COOKIE) ?? null);
 
-  return {
+  const routes = {
     [API_ROUTES.health]: {
       GET: () => Response.json({ status: 'ok', version } satisfies HealthResponse),
     },
@@ -115,8 +118,7 @@ export function createRoutes({
           clientAddress(request, server, trustProxy),
         );
         if (result.ok) return new Response(null, { status: 204 });
-        const status = { invalid_request: 400, too_many_attempts: 429, email_failed: 502 }[result.reason];
-        return error(result.reason, status);
+        return error(result.reason, result.reason === 'too_many_attempts' ? 429 : 400);
       },
     },
 
@@ -151,4 +153,5 @@ export function createRoutes({
     ...createArtifactRoutes({ signedInUser, artifacts }),
     ...createEventRoutes({ signedInUser, changes }),
   };
+  return refuseForeignOrigins(routes, publicUrl);
 }

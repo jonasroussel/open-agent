@@ -34,8 +34,9 @@ export interface ConversationRepository {
   removeMember(conversationId: string, userId: number): Promise<void>;
   setMemberPinned(conversationId: string, userId: number, pinned: boolean): Promise<void>;
   /**
-   * Whether a conversation the viewer owns or joined, which the file's owner also owns or joined, mentions the file:
-   * a file sent or made in a shared conversation opens for its members, no other file does.
+   * Whether a conversation the viewer owns or joined, which the file's owner also owns or joined, holds the file as an
+   * attachment or as the output of a making tool: a file sent or made in a shared conversation opens for its members.
+   * An id merely named there (a listed or read file, a tool's input) opens nothing.
    */
   sharesFile(viewerId: number, fileId: string, fileOwnerId: number): Promise<boolean>;
 }
