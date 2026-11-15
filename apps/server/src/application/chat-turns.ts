@@ -24,6 +24,7 @@ import {
 import { z } from 'zod';
 
 import type { Artifact } from '../domain/artifact.ts';
+import { parseDay, plusDays } from '../domain/calendar.ts';
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
 import {
   answersQuestions,
@@ -361,6 +362,7 @@ export class ChatTurns {
                 withoutDocumentBodies(
                   withNotes(named(withLatestRequest(withAnsweredQuestions(expanded), analysis.rewrittenRequest)), [
                     timeNote(this.#clock.now()),
+                    THOUGHTS_NOTE,
                     ...restoreNotes(documents),
                   ]),
                 ),
@@ -535,7 +537,7 @@ export class ChatTurns {
       const result = await generateText({
         model: choice.model,
         output: Output.object({ schema: z.object({ language: z.string(), title: z.string(), icon: z.string() }) }),
-        prompt: `Name a conversation that starts with the message below. Answer with JSON only: {"language", "title", "icon"}.\n- language: the language the user writes the message in. A language they ask about, quote or want a translation into is only the topic. When the message is too short to tell, ${user.locale === 'fr' ? 'French' : 'English'}.\n- title: a short title (at most 6 words), in that language, without quotes.\n- icon: the name of one Lucide icon (lucide.dev, kebab-case, e.g. "fuel", "utensils", "file-text") that best shows the topic.\n\nMessage:\n${text.slice(0, 2000)}`,
+        prompt: `Nomme une conversation qui commence par le message ci-dessous. Réponds uniquement en JSON : {"language", "title", "icon"}.\n- language : la langue dans laquelle l'utilisateur écrit le message. Une langue dont il parle, qu'il cite ou vers laquelle il veut une traduction n'est que le sujet. Quand le message est trop court pour le dire, ${user.locale === 'fr' ? 'le français' : "l'anglais"}.\n- title : un titre court (6 mots au plus), dans cette langue, sans guillemets.\n- icon : le nom d'une icône Lucide (lucide.dev, kebab-case, par exemple "fuel", "utensils", "file-text") qui montre le mieux le sujet.\n\nMessage :\n${text.slice(0, 2000)}`,
         maxOutputTokens: 80,
       });
       await this.#usage.record(user, conversation.id, 'title', choice, result.usage, result.providerMetadata);
@@ -582,10 +584,11 @@ function withLatestRequest(messages: ChatMessage[], rewrittenRequest: string | n
 
 /**
  * The date and time, at the start of the user's latest message for the model only: there, it changes nothing before
- * it, so the provider's cache of the instructions and the history stays valid from one message to the next.
+ * it, so the provider's cache of the instructions and the history stays valid from one message to the next. Tomorrow
+ * is named too: answering short, the fast model dated « lundi » wrong one time in three from today alone (2026-11-15).
  */
 function timeNote(now: Date): string {
-  const time = new Intl.DateTimeFormat('en-GB', {
+  const time = new Intl.DateTimeFormat('fr-FR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -594,8 +597,22 @@ function timeNote(now: Date): string {
     minute: '2-digit',
     timeZone: 'Europe/Paris',
   }).format(now);
-  return `[Now: ${time}, Paris time.]`;
+  // The calendar day in Paris, then the next one, counted in UTC: a clock change never skips or repeats a day.
+  const today = parseDay(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(now))!;
+  const tomorrow = new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(plusDays(today, 1));
+  return `[Maintenant : ${time}, heure de Paris. Demain : ${tomorrow}.]`;
 }
+
+/**
+ * Beside the time, right before the user's words: the model (DeepSeek) writes its thoughts in English by habit, and
+ * they are shown. The same line in the instructions alone left one answer in five thinking in English (2026-11-15).
+ */
+const THOUGHTS_NOTE = '[Écris ta réflexion dans la langue de ce message, comme ta réponse.]';
 
 /**
  * A document the user brought back to an older version is said in their latest message: in the instructions alone,
@@ -605,7 +622,7 @@ function restoreNotes(documents: readonly { artifact: Artifact; restoredFrom: nu
   return documents.flatMap(({ artifact, restoredFrom }) =>
     restoredFrom
       ? [
-          `[Canvas: I brought "${artifact.title}" back to version ${restoredFrom}, on purpose. The changes made to it after that version, earlier in this conversation, are undone: do not redo them unless I ask again.]`,
+          `[Canevas : j'ai ramené « ${artifact.title} » à la version ${restoredFrom}, volontairement. Les modifications faites après cette version, plus haut dans cette conversation, sont annulées : ne les refais pas, sauf si je le redemande.]`,
         ]
       : [],
   );
@@ -673,16 +690,18 @@ function instructions(
   /** In a shared conversation, everyone in it, the owner first; `null` otherwise. */
   people: readonly string[] | null,
 ): string {
-  const today = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeZone: 'Europe/Paris' }).format(now);
+  const today = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full', timeZone: 'Europe/Paris' }).format(now);
   return [
     prompt,
     '',
-    `Today is ${today}. The user's app is set to ${user.locale === 'fr' ? 'French' : 'English'}.`,
-    ...(canSearch ? [] : ['The web search is not available right now: say so when an answer needs current facts.']),
+    `Nous sommes le ${today}. L'application de l'utilisateur est en ${user.locale === 'fr' ? 'français' : 'anglais'}.`,
+    ...(canSearch
+      ? []
+      : ["La recherche web est indisponible pour le moment : dis-le quand une réponse a besoin de faits d'actualité."]),
     ...(documents.length > 0
       ? [
           '',
-          "Documents in this conversation's canvas, latest versions (the user may have edited them by hand):",
+          "Documents du canevas de cette conversation, dans leur dernière version (l'utilisateur a pu les modifier à la main) :",
           ...documents.map(
             ({ artifact, content, restoredFrom }) =>
               `<document id="${artifact.id}" kind="${artifact.kind}" title="${artifact.title.replaceAll('"', "'")}" version="${artifact.version}"${restoredFrom ? ` restored-from="${restoredFrom}"` : ''}>\n${content}\n</document>`,
@@ -690,7 +709,7 @@ function instructions(
           ...documents.flatMap(({ artifact, restoredFrom }) =>
             restoredFrom
               ? [
-                  `The user brought "${artifact.title}" back to version ${restoredFrom} on purpose: the changes made after it, yours included, were undone. Work from this content, never redo those changes unless the user asks, and do not describe the document as it was before.`,
+                  `L'utilisateur a ramené « ${artifact.title} » à la version ${restoredFrom}, volontairement : les modifications faites après elle, les tiennes comprises, sont annulées. Travaille à partir de ce contenu, ne refais jamais ces modifications sauf s'il le demande, et ne décris pas le document tel qu'il était avant.`,
                 ]
               : [],
           ),
@@ -699,20 +718,20 @@ function instructions(
     ...(rules.length > 0
       ? [
           '',
-          'What you remember about the user, from what they said: preferences to follow unless their latest message asks otherwise, and facts about them to use when they matter:',
+          "Ce que tu retiens de l'utilisateur, d'après ce qu'il a dit : des préférences à suivre sauf si son dernier message demande autre chose, et des faits le concernant, à utiliser quand ils comptent :",
           ...rules.map((rule) => `- ${rule.text}`),
         ]
       : []),
     ...(commandNames.length > 0
       ? [
           '',
-          `The user's commands, to rewrite with save_command when they ask: ${commandNames.map((name) => `/${name}`).join(', ')}.`,
+          `Les commandes de l'utilisateur, à réécrire avec save_command quand il le demande : ${commandNames.map((name) => `/${name}`).join(', ')}.`,
         ]
       : []),
     ...(people
       ? [
           '',
-          `This conversation is shared between ${people.join(', ')}: each user message opens with its writer's name in brackets. You are answering the last one, ${nameOf(user)}: "the user" above and below means them, and what you remember is about them only. Call each person by that name when it helps.`,
+          `Cette conversation est partagée entre ${people.join(', ')} : chaque message d'utilisateur s'ouvre sur le nom de son auteur entre crochets. Tu réponds au dernier, ${nameOf(user)} : « l'utilisateur », ci-dessus et ci-dessous, c'est lui, et ce que tu retiens ne concerne que lui. Appelle chacun par ce nom quand c'est utile.`,
         ]
       : []),
   ].join('\n');

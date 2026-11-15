@@ -17,7 +17,9 @@ export type Command = {
  * it, or to the conversation when they wrote nothing. A command deleted since is said so: its message stays readable.
  */
 export function commandNote(name: string, command: Command | null, hasText: boolean): string {
-  if (!command) return `[The user ran their command /${name}, deleted since: answer the message as it is.]`;
-  const target = hasText ? 'the text that follows' : 'the conversation so far (they wrote nothing else)';
-  return `[The user ran their command /${command.name}. Its instructions, to apply to ${target}:]\n<command>\n${command.prompt}\n</command>`;
+  if (!command) {
+    return `[L'utilisateur a lancé sa commande /${name}, supprimée depuis : réponds au message tel qu'il est.]`;
+  }
+  const target = hasText ? 'au texte qui suit' : "à la conversation jusqu'ici (il n'a rien écrit d'autre)";
+  return `[L'utilisateur a lancé sa commande /${command.name}. Ses instructions, à appliquer ${target} :]\n<command>\n${command.prompt}\n</command>`;
 }

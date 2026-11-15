@@ -145,7 +145,7 @@ export class Library {
             const found = await this.#files.findById(fileIdOf(part.url) ?? '');
             const file = found && owners.includes(found.userId) ? found : null;
             if (!file) {
-              const text = `[The file "${part.filename ?? 'file'}" was deleted from the library: its content is no longer available.]`;
+              const text = `[Le fichier « ${part.filename ?? 'fichier'} » a été supprimé de la bibliothèque : son contenu n'est plus disponible.]`;
               return [{ type: 'text' as const, text }];
             }
             return await this.#modelParts(file);
@@ -167,7 +167,7 @@ export class Library {
       file.content.map(async (piece): Promise<ChatMessage['parts'][number]> => {
         if (piece.type === 'text') return { type: 'text', text: piece.text };
         const bytes = await this.#store.read(file.userId, file.id, piece.name);
-        if (!bytes) return { type: 'text', text: '[A picture of this file is missing.]' };
+        if (!bytes) return { type: 'text', text: '[Une image de ce fichier est manquante.]' };
         const url = `data:${piece.mediaType};base64,${Buffer.from(bytes).toString('base64')}`;
         return { type: 'file', mediaType: piece.mediaType, url };
       }),

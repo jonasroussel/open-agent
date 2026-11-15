@@ -180,8 +180,8 @@ function fakeModels(): ModelCatalog {
     background: new MockLanguageModelV4({
       doGenerate: async (options) => {
         const prompt = JSON.stringify(options.prompt);
-        const forMemory = prompt.includes('Remark:');
-        const forTitle = prompt.includes('Name a conversation');
+        const forMemory = prompt.includes('Remarque :');
+        const forTitle = prompt.includes('Nomme une conversation');
         if (!forMemory && !forTitle && !analysis) throw new Error('provider down');
         let text = JSON.stringify(analysis);
         if (forMemory) text = JSON.stringify(reconciliation);
@@ -678,7 +678,7 @@ function answered(history: ChatMessage[], answer: string | null): ChatMessage[] 
 const prePasses = () =>
   models.background.doGenerateCalls
     .map((generation) => JSON.stringify(generation.prompt))
-    .filter((prompt) => prompt.includes('Latest user message'));
+    .filter((prompt) => prompt.includes('Dernier message de l'));
 
 describe('questions to the user', () => {
   test('an ambiguous request gets one question with answers to tap; the answer resumes the same message, with no second question', async () => {
@@ -706,8 +706,8 @@ describe('questions to the user', () => {
     expect(done[1]!.id).toBe(asked[1]!.id);
     expect(done[1]!.metadata).toEqual({ route: 'fast' });
     expect(textOfMessage(done[1]!)).toBe(ANSWER);
-    expect(prePasses().at(-1)).toContain('[Answer: SFR]');
-    expect(prePasses().at(-1)).toContain('clarifyingQuestion must be null now');
+    expect(prePasses().at(-1)).toContain('[Réponse : SFR]');
+    expect(prePasses().at(-1)).toContain('clarifyingQuestion doit être null maintenant');
     expect(JSON.stringify(models.fast.doStreamCalls[0]!.prompt)).toContain('SFR');
   });
 
@@ -945,7 +945,7 @@ describe('shared conversations', () => {
     const prompt = JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt);
     expect(prompt).toContain('[admin]');
     expect(prompt).toContain('[marie]');
-    expect(prompt).toContain('shared between admin, marie');
+    expect(prompt).toContain('partagée entre admin, marie');
 
     const found = (await (await call('/api/search?q=propriétaire', { cookie: marie })).json()) as SearchResponse;
     expect(found.results.map((result) => result.conversation.id)).toEqual([CONVERSATION]);
@@ -988,7 +988,7 @@ describe('shared conversations', () => {
       { toolName: 'create_document', input: { kind: 'document', title: 'Lettre', content: 'Brouillon' } },
     ];
     await say(marie, userMessage('m5', 'Écris la lettre au propriétaire, avec la photo.'));
-    expect(JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt)).not.toContain('was deleted from the library');
+    expect(JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt)).not.toContain('a été supprimé de la bibliothèque');
     const [letter] = await artifactsOf(admin);
     expect(letter).toMatchObject({ title: 'Lettre', version: 1 });
     expect((await saveArtifact(marie, letter!.id, 'Corrigée par Marie', 1)).status).toBe(200);
@@ -1012,7 +1012,7 @@ describe('shared conversations', () => {
     const prompt = JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt);
     expect(prompt).toContain('[Mamie]');
     expect(prompt).not.toContain('Marie Dupont');
-    expect(prompt).toContain('shared between admin, Mamie');
+    expect(prompt).toContain('partagée entre admin, Mamie');
 
     expect(((await (await rename('  ')).json()) as AdminUserDto).name).toBeNull();
     expect((await listOf(admin)).conversations[0]!.sharing!.members[0]!.person.name).toBe('marie');
@@ -1172,7 +1172,9 @@ describe('context tools', () => {
 
     // The second answer's first call: the time opens the user's message, for the model only.
     const lastMessage = JSON.stringify(models.fast.doStreamCalls[1]!.prompt.at(-1));
-    expect(lastMessage).toContain('[Now: Sunday, 1 November 2026 at 11:00, Paris time.]');
+    expect(lastMessage).toContain(
+      '[Maintenant : dimanche 1 novembre 2026 à 11:00, heure de Paris. Demain : lundi 2 novembre.]',
+    );
     expect(lastMessage).toContain('Rappelle-moi tout ça.');
     expect(textOfMessage((await open(cookie, CONVERSATION)).messages[1]!)).toBe(ANSWER);
   });
@@ -1450,7 +1452,7 @@ describe('commands', () => {
     // Deleted since: the old message still reads, said as such.
     await call(`/api/commands/${command.id}`, { method: 'DELETE', cookie });
     await chat(cookie, CONVERSATION, [...messages, userMessage('m3', 'Merci.')]);
-    expect(JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt)).toContain('/corriger, deleted since');
+    expect(JSON.stringify(models.fast.doStreamCalls.at(-1)!.prompt)).toContain('/corriger, supprimée depuis');
   });
 
   test('the model saves a command from the request, and rewrites it by its name', async () => {
@@ -1572,9 +1574,9 @@ describe('files', () => {
       expect(picturesSent(answer.prompt)).toBe(2);
     }
     const preAnalysis = models.background.doGenerateCalls.find((generation) =>
-      JSON.stringify(generation.prompt).includes('Latest user message'),
+      JSON.stringify(generation.prompt).includes('Dernier message de l'),
     );
-    expect(JSON.stringify(preAnalysis!.prompt)).toContain('[Attached: facture.pdf]');
+    expect(JSON.stringify(preAnalysis!.prompt)).toContain('[Pièces jointes : facture.pdf]');
   });
 
   test('a file is only for its owner: anyone else neither opens it nor shows it to the model', async () => {
@@ -1593,7 +1595,7 @@ describe('files', () => {
     await chat(anaCookie, CONVERSATION, [withFile('m1', 'Que dit ce fichier ?', file)]);
     const prompt = JSON.stringify(models.fast.doStreamCalls[0]!.prompt);
     expect(prompt).not.toContain('4721');
-    expect(prompt).toContain('was deleted from the library');
+    expect(prompt).toContain('a été supprimé de la bibliothèque');
   });
 
   test('a deleted file leaves the conversations, which then tell the model it is gone', async () => {
@@ -1609,7 +1611,7 @@ describe('files', () => {
     await chat(cookie, CONVERSATION, history);
     const prompt = JSON.stringify(models.fast.doStreamCalls[1]!.prompt);
     expect(prompt).not.toContain('4721');
-    expect(prompt).toContain('notes.txt\\" was deleted from the library');
+    expect(prompt).toContain('« notes.txt » a été supprimé de la bibliothèque');
   });
 
   test('what cannot be read whole is refused at upload, never read in part', async () => {
@@ -1734,7 +1736,7 @@ describe('canvas', () => {
     await chat(cookie, CONVERSATION, next);
     const prompt = models.fast.doStreamCalls.at(-1)!.prompt;
     expect(JSON.stringify(prompt)).toContain('version=\\"3\\" restored-from=\\"1\\"');
-    expect(JSON.stringify(prompt.at(-1))).toContain('back to version 1, on purpose');
+    expect(JSON.stringify(prompt.at(-1))).toContain('à la version 1, volontairement');
     expect(JSON.stringify(prompt.at(-1))).toContain('Merci.');
   });
 
@@ -1791,8 +1793,8 @@ describe('admin settings', () => {
     await chat(cookie, CONVERSATION, [userMessage('m1', 'Bonjour')]);
     const answer = JSON.stringify(models.fast.doStreamCalls[0]!.prompt);
     expect(answer).toContain('Tu es un assistant pirate.');
-    expect(answer).not.toContain('You are Open Agent');
-    expect(answer).toContain('Today is Sunday, 1 November 2026');
+    expect(answer).not.toContain('Tu es Open Agent');
+    expect(answer).toContain('Nous sommes le dimanche 1 novembre 2026');
     expect(answer).toContain('Réponses courtes.');
     const prompts = models.background.doGenerateCalls.map((generation) => JSON.stringify(generation.prompt));
     expect(prompts.some((prompt) => prompt.includes('Décide comment répondre, en JSON.'))).toBe(true);
@@ -2042,7 +2044,7 @@ describe('memory', () => {
     expect((await rulesOf(cookie)).map((rule) => rule.text)).toEqual(['Habite à Nantes.']);
     const asked = models.background.doGenerateCalls.map((generation) => JSON.stringify(generation)).at(-1);
     expect(asked).toContain('Merci, mais on habite à Nantes !');
-    expect(asked).toContain('The user asked to remember this message');
+    expect(asked).toContain('a demandé de retenir ce message');
 
     expect((await call(`/api/memory/changes/${notice!.changeId}/undo`, { method: 'POST', cookie })).status).toBe(204);
     expect(await rulesOf(cookie)).toEqual([]);

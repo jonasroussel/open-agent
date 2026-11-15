@@ -48,11 +48,11 @@ export class MemoryReconciler {
       this.#settings.prompt('memory'),
       ...(explicit
         ? [
-            'The user asked to remember this message: keep what lasts in it, a preference or a fact, as one rule. Answer "none" only when a rule already says it, or when nothing in it lasts beyond the current task.',
+            'L\'utilisateur a demandé de retenir ce message : garde ce qui dure en lui, une préférence ou un fait, en une seule règle. Réponds "none" seulement quand une règle le dit déjà, ou quand rien en lui ne dure au-delà de la tâche en cours.',
           ]
         : []),
       ...(rules.length >= MAX_MEMORY_RULES
-        ? ['The list is full: "add" is not allowed; update the closest rule or answer "none".']
+        ? ['La liste est pleine : "add" est interdit ; mets à jour la règle la plus proche ou réponds "none".']
         : []),
     ];
     try {
@@ -61,10 +61,10 @@ export class MemoryReconciler {
         output: Output.object({ schema }),
         instructions: lines.join('\n\n'),
         prompt: [
-          `Remark: ${remark}`,
+          `Remarque : ${remark}`,
           '',
-          'Current rules:',
-          ...(rules.length > 0 ? rules.map((rule) => `${rule.id}: ${rule.text}`) : ['(none)']),
+          'Règles actuelles :',
+          ...(rules.length > 0 ? rules.map((rule) => `${rule.id} : ${rule.text}`) : ['(aucune)']),
         ].join('\n'),
         maxOutputTokens: 300,
         abortSignal,

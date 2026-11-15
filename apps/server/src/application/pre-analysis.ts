@@ -80,7 +80,7 @@ export class PreAnalysis {
         // Right after a question, the next turn answers: said to the model, and enforced below whatever it says.
         instructions: mayClarify
           ? this.#settings.prompt('preAnalysis')
-          : `${this.#settings.prompt('preAnalysis')}\n\nThe assistant just asked the user a question: clarifyingQuestion must be null now.`,
+          : `${this.#settings.prompt('preAnalysis')}\n\nL'assistant vient de poser une question à l'utilisateur : clarifyingQuestion doit être null maintenant.`,
         prompt: transcript(history, rules),
         maxOutputTokens: 500,
         abortSignal,
@@ -127,15 +127,15 @@ function transcript(history: readonly ChatMessage[], rules: readonly MemoryRule[
   const since = history.slice(latestIndex + 1);
   const lines = earlier.map(
     (message) =>
-      `${message.role === 'user' ? 'User' : 'Assistant'}: ${cut(textOf(message), CONTEXT_CHARACTERS)}${attachments(message)}`,
+      `${message.role === 'user' ? 'Utilisateur' : 'Assistant'} : ${cut(textOf(message), CONTEXT_CHARACTERS)}${attachments(message)}`,
   );
   return [
-    ...(rules.length > 0 ? ["The user's memory:", ...rules.map((rule) => `- ${rule.text}`), ''] : []),
-    ...(lines.length > 0 ? ['Conversation so far:', ...lines, ''] : []),
-    'Latest user message:',
+    ...(rules.length > 0 ? ["La mémoire de l'utilisateur :", ...rules.map((rule) => `- ${rule.text}`), ''] : []),
+    ...(lines.length > 0 ? ["La conversation jusqu'ici :", ...lines, ''] : []),
+    "Dernier message de l'utilisateur :",
     `${cut(textOf(latest), LATEST_CHARACTERS)}${attachments(latest)}`,
     ...(since.length > 0
-      ? ['', 'Then the assistant asked, and the user answered:', ...since.map((message) => textOf(message))]
+      ? ['', "Puis l'assistant a demandé, et l'utilisateur a répondu :", ...since.map((message) => textOf(message))]
       : []),
   ].join('\n');
 }
@@ -148,7 +148,7 @@ function cleanOptions(options: readonly string[]): string[] {
 
 function attachments(message: ChatMessage): string {
   const names = attachedNames(message);
-  return names ? ` [Attached: ${names}]` : '';
+  return names ? ` [Pièces jointes : ${names}]` : '';
 }
 
 /** What the message says: its text, and the questions it asked with their answers. */
@@ -158,7 +158,11 @@ export function textOf(message: ChatMessage): string {
       if (part.type === 'text') return [part.text];
       if (part.type !== 'tool-ask_user' || !part.input) return [];
       const answer = part.state === 'output-available' ? part.output.answer : null;
-      return [answer ? `[Asked: ${part.input.question}] [Answer: ${answer}]` : `[Asked: ${part.input.question}]`];
+      return [
+        answer
+          ? `[Question posée : ${part.input.question}] [Réponse : ${answer}]`
+          : `[Question posée : ${part.input.question}]`,
+      ];
     })
     .join('\n')
     .trim();

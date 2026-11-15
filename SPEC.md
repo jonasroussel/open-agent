@@ -119,6 +119,10 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   (`GET /api/chat/:id/stream`, the AI SDK's `resumeStream`), as do the user's other devices. One answer at a time per
   conversation (`409 conversation_busy`); an answer running past 10 minutes is stopped. In memory: a server restart
   ends the answers being written.
+- **A work assistant, short answers** (assistant prompt, 2026-11-15): the request comes first and nothing more is
+  done; no introduction, restating, unasked advice or warnings; no follow-up offer or closing question (« Voulez-vous
+  que… »). It proposes only when the request is vague: two or three short leads. Measured with the real model on 12
+  everyday requests: 1,413 words down to about 600, answers ending with an offer 4 of 10 down to 0 of 11.
 - **Short answer first, « En bref » always last** (assistant prompt): a question with a short answer (yes or no,
   « est-ce normal », a number, a name) gets it in the first sentence. Every answer ends with a line « **En bref :** … »,
   at the same place every time so the user never scrolls back up: the short answer again, or else the gist (the key
@@ -161,8 +165,11 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
 The main model looks things up rather than guess (`ContextTools`, `application/context-tools.ts`); everything is the
 user's own or public, and nothing writes.
 
-- **Date and time:** not a tool. "[Now: Tuesday, 3 November 2026 at 22:42, Paris time.]" opens the user's latest
-  message, for the model only: there it changes nothing before it, so the provider's prompt cache stays valid.
+- **Date and time:** not a tool. « [Maintenant : dimanche 15 novembre 2026 à 15:50, heure de Paris. Demain : lundi 16
+  novembre.] » opens the user's latest message, for the model only: there it changes nothing before it, so the
+  provider's prompt cache stays valid. Tomorrow is named because, answering short, the fast model dated « lundi »
+  wrong one time in three from today alone (40 of 40 right with it). A second note asks for the thoughts in the
+  message's language.
 - **The user's other conversations:** `search_conversations` (the history's full-text search, the current one left
   out) then `read_conversation` (its messages as "User:" / "Assistant:" text, the latest 30,000 characters).
 - **The user's library:** `list_files` (30 newest) then `read_file`: its text, without its pictures (the model is told
@@ -367,12 +374,16 @@ A conversation shared with other people of the app, who all write to the assista
   from the next message, with "Bring back the original" (the text in `default-prompts.ts`). What depends on the
   conversation is always added by the code after the text: the date and the app's language, a missing web search,
   the canvas documents and the person's rules for the assistant; a question just asked for the analysis; a full
-  memory for the memory. Structured outputs keep the JSON fields even if a prompt forgets them.
+  memory for the memory. Structured outputs keep the JSON fields even if a prompt forgets them. **Everything the
+  model reads besides the tools' descriptions is in French** (the three prompts, what the code adds, the notes in the
+  user's message): every user writes French, and with English prompts the thoughts shown under « Réflexion
+  approfondie » were in English (18 of 21 in production); now nearly all are French.
 - **Memory:** a person's rules ("See their memory"), each one can be forgotten.
 
 ### Other
 
-- UI in French and English (i18next) from the start; the model answers in the user's language.
+- UI in French and English (i18next) from the start; the model answers in French, or in the language of the user's
+  message when it is another one.
 - Responsive PWA, installable on the home screen.
 - **Every device of a user stays in step** (server-sent events, `GET /api/events`): after each change the server
   sends a small `ChangeEvent` (`conversation` with its id, `conversations`, `memory`, `files`, `artifact` with its id),
