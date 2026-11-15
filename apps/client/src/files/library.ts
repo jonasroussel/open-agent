@@ -8,7 +8,7 @@ import {
 import { queryOptions } from '@tanstack/react-query';
 import type { FileUIPart } from 'ai';
 
-import { apiOrThrow, type ApiResult } from '@/lib/api.ts';
+import { apiFetch, apiOrThrow, type ApiResult } from '@/lib/api.ts';
 
 export const libraryFilesQuery = queryOptions({
   queryKey: [API_ROUTES.files],
@@ -23,7 +23,7 @@ export async function uploadFile(file: File): Promise<ApiResult<LibraryFileDto>>
   const form = new FormData();
   form.append('file', await preparePhoto(file));
   try {
-    const response = await fetch(API_ROUTES.files, { method: 'POST', body: form });
+    const response = await apiFetch(API_ROUTES.files, { method: 'POST', body: form });
     const body: unknown = await response.json();
     if (!response.ok) return { ok: false, error: (body as ApiError).error };
     return { ok: true, data: (body as UploadFileResponse).file };

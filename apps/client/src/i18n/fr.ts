@@ -414,7 +414,8 @@ export const fr: Translation = {
     commands_full: 'Vous avez déjà 50 commandes. Supprimez-en une d’abord.',
     conversation_busy:
       'L’assistant répond déjà à un autre message. Votre message n’est pas parti : renvoyez-le quand il a fini.',
-    conversation_changed: 'Quelqu’un a écrit entre-temps. La conversation est à jour : renvoyez votre message.',
+    conversation_changed:
+      'La conversation a changé entre-temps, depuis un autre appareil ou par quelqu’un d’autre. Elle est à jour : renvoyez votre message.',
     memory_changed: 'Cette préférence a changé depuis : elle ne peut plus être annulée d’ici.',
     quota_exceeded: 'Vous avez utilisé tout votre quota de ce mois-ci.',
     file_too_large: 'Ce fichier est trop gros (20 Mo au maximum).',

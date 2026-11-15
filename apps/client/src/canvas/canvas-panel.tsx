@@ -28,6 +28,8 @@ const noop = () => {};
 
 /** Typing pauses this long before the edit is saved. */
 const SAVE_DELAY_MS = 1200;
+/** Browsers refuse a `keepalive` body over 64 KiB: a longer document is sent plainly, which a closing page may cut. */
+const KEEPALIVE_MAX_BYTES = 60_000;
 
 /**
  * The canvas, next to the conversation (over it on a phone): the document the model is writing, as it comes, or a
@@ -159,12 +161,16 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
   }, [opened.data, loaded]);
 
   const save = useCallback(
-    // `restoredFrom`: an old version brought back, so the model learns its later changes were undone.
-    async (content: string, restoredFrom?: number) => {
+    // `restoredFrom`: an old version brought back, so the model learns its later changes were undone. `keepalive`: the
+    // page may be closing.
+    async (
+      content: string,
+      { restoredFrom, keepalive = false }: { restoredFrom?: number; keepalive?: boolean } = {},
+    ) => {
       const base = queryClient.getQueryData<ArtifactResponse>(artifactQuery(id).queryKey);
       if (!base) return;
       setSaveState('saving');
-      const result = await saveArtifact(id, { content, baseVersion: base.artifact.version, restoredFrom });
+      const result = await saveArtifact(id, { content, baseVersion: base.artifact.version, restoredFrom }, keepalive);
       if (!result.ok) {
         setSaveState(result.error === 'artifact_changed' ? 'conflict' : 'failed');
         draft.current = null;
@@ -190,21 +196,36 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
       draft.current = content;
       setSaveState('saving');
       clearTimeout(timer.current ?? undefined);
-      timer.current = setTimeout(() => void save(content), SAVE_DELAY_MS);
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        void save(content);
+      }, SAVE_DELAY_MS);
     },
     [save],
   );
 
-  // Leaving the document saves what was typed last.
-  useEffect(
-    () => () => {
-      if (timer.current && draft.current !== null) {
-        clearTimeout(timer.current);
-        void save(draft.current);
-      }
-    },
-    [save],
-  );
+  // The edit still waiting for its pause is saved at once when the user leaves: the document, or the page.
+  useEffect(() => {
+    const flush = (closing: boolean) => {
+      if (timer.current === null || draft.current === null) return;
+      clearTimeout(timer.current);
+      timer.current = null;
+      const keepalive = closing && new Blob([draft.current]).size <= KEEPALIVE_MAX_BYTES;
+      void save(draft.current, { keepalive });
+    };
+    // A phone's browser often kills a hidden tab without a `pagehide`.
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') flush(true);
+    };
+    const onPageHide = () => flush(true);
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onHidden);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onHidden);
+      flush(false);
+    };
+  }, [save]);
 
   if (!opened.data || !loaded) {
     return (
@@ -230,7 +251,7 @@ function SavedView({ id, onClose }: { id: string; onClose: () => void }) {
 
   async function restore() {
     if (viewing === null || !old.data) return;
-    await save(old.data.content, viewing);
+    await save(old.data.content, { restoredFrom: viewing });
     draft.current = null;
     setLoaded(null);
     view(null);

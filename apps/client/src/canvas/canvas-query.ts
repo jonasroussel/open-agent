@@ -26,8 +26,13 @@ export const artifactVersionQuery = (id: string, number: number) =>
     staleTime: Infinity,
   });
 
-export function saveArtifact(id: string, body: SaveArtifactBody) {
-  return api<SaveArtifactResponse>(apiPath(API_ROUTES.artifactVersions, { artifactId: id }), { method: 'POST', body });
+/** `keepalive`: the request goes on after the page closes. */
+export function saveArtifact(id: string, body: SaveArtifactBody, keepalive = false) {
+  return api<SaveArtifactResponse>(apiPath(API_ROUTES.artifactVersions, { artifactId: id }), {
+    method: 'POST',
+    body,
+    keepalive,
+  });
 }
 
 /** A document the model is writing right now: shown in the canvas as it comes, before it is saved. */

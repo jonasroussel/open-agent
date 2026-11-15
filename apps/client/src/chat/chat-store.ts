@@ -5,7 +5,7 @@ import { DefaultChatTransport } from 'ai';
 import { sessionQuery } from '@/auth/session.ts';
 import { commandsQuery } from '@/commands/commands-query.ts';
 import { libraryFilesQuery } from '@/files/library.ts';
-import { api } from '@/lib/api.ts';
+import { api, apiFetch } from '@/lib/api.ts';
 import { queryClient } from '@/lib/query-client.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
 import { quotaQuery } from '@/quota/quota-query.ts';
@@ -13,9 +13,13 @@ import { quotaQuery } from '@/quota/quota-query.ts';
 import { setAnswering } from './answering-store.ts';
 import { conversationsQuery } from './conversations-query.ts';
 
-const transport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat });
+const transport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat, fetch: apiFetch });
 /** The server creates the conversation ephemeral; its later messages stay so whatever is sent. */
-const ephemeralTransport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat, body: { ephemeral: true } });
+const ephemeralTransport = new DefaultChatTransport<ChatMessage>({
+  api: API_ROUTES.chat,
+  body: { ephemeral: true },
+  fetch: apiFetch,
+});
 
 /**
  * The user answered every question that ended the last answer: the server goes on from there. Only the last step
@@ -137,14 +141,16 @@ function idle(chat: Chat<ChatMessage>): boolean {
 /**
  * The saved copy replaces a conversation kept here, after it changed on another device or, shared, by someone else;
  * an answer to the user still being written is followed again. A conversation deleted there, or left, is forgotten;
- * its page then finds it gone and leaves.
+ * its page then finds it gone and leaves. One never answered may never have reached the server (sent offline, or
+ * refused): it stays, with the user's message and its error.
  */
 export async function refreshChat(id: string): Promise<void> {
   const chat = chats.get(id);
   if (!chat || !idle(chat)) return;
   const result = await api<ConversationResponse>(apiPath(API_ROUTES.conversation, { conversationId: id }));
   if (!result.ok) {
-    if (result.error === 'not_found') forgetChat(id);
+    const answered = chat.messages.some((message) => message.role === 'assistant');
+    if (result.error === 'not_found' && answered) forgetChat(id);
     return;
   }
   setAnswering(id, result.data.answering);

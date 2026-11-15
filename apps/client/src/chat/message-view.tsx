@@ -23,7 +23,7 @@ import { Textarea } from '@/components/ui/textarea.tsx';
 import { FileChip } from '@/files/file-chip.tsx';
 import { cn } from '@/lib/utils.ts';
 
-import { ContextToolLine, isContextToolPart } from './context-tool-line.tsx';
+import { ContextToolLine, isContextToolPart, siteOf } from './context-tool-line.tsx';
 import { isMadeFilePart, MadeFile } from './made-file.tsx';
 import { Markdown } from './markdown-loader.ts';
 
@@ -432,7 +432,7 @@ function WebSearchLine({ query, results, failed }: { query: string; results: Web
   const searching = !results && !failed;
   const sites = new Map<string, WebResult>();
   for (const result of results ?? []) {
-    const site = new URL(result.url).hostname.replace(/^www\./, '');
+    const site = siteOf(result.url);
     if (!sites.has(site)) sites.set(site, result);
   }
   let label = t('chat.searched', { query });
@@ -493,10 +493,10 @@ export function PendingAnswer() {
   );
 }
 
-/** Shown on hover with a mouse; always visible on a touch screen, which has no hover. */
+/** Shown on hover or keyboard focus with a mouse; always visible on a touch screen, which has no hover. */
 function MessageActions({ children }: { children: ReactNode }) {
   return (
-    <div className='text-muted-foreground flex gap-0.5 opacity-100 transition-opacity group-hover:opacity-100 pointer-fine:opacity-0'>
+    <div className='text-muted-foreground flex gap-0.5 opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 pointer-fine:opacity-0'>
       {children}
     </div>
   );

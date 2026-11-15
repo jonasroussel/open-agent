@@ -34,4 +34,18 @@ describe('createStaticFiles', () => {
   test('answers index.html for client routes, so a reload on any page works', async () => {
     expect(await (await get('/c/42')).text()).toBe('index');
   });
+
+  test('answers index.html for a path with a malformed percent-escape, instead of failing', async () => {
+    const response = await get('/%E0%A4%A');
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('index');
+  });
+
+  test('the page may only load images and reach servers of its own origin, so nothing it shows sends data away', async () => {
+    const policy = (await get('/c/42')).headers.get('content-security-policy') ?? '';
+    expect(policy).toContain("default-src 'self'");
+    expect(policy).toContain("img-src 'self' data: blob:");
+    expect(policy).toContain("connect-src 'self'");
+    expect(policy).toContain("form-action 'self'");
+  });
 });

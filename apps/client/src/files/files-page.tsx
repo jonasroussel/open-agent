@@ -116,7 +116,7 @@ export function FilesPage() {
                 aria-label={t('files.deleteNamed', { name: file.name })}
                 title={t('files.delete')}
                 onClick={() => setToDelete(file)}
-                className='bg-background/90 hover:bg-background absolute top-2 right-2 rounded-full opacity-100 shadow-xs transition-opacity group-hover:opacity-100 pointer-fine:opacity-0'
+                className='bg-background/90 hover:bg-background absolute top-2 right-2 rounded-full opacity-100 shadow-xs transition-opacity group-hover:opacity-100 focus-visible:opacity-100 pointer-fine:opacity-0'
               >
                 <Trash2 />
               </Button>

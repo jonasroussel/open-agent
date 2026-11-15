@@ -396,7 +396,8 @@ export const en = {
     commands_full: 'You already have 50 commands. Delete one first.',
     conversation_busy:
       'The assistant is already answering another message. Yours was not sent: send it again once it is done.',
-    conversation_changed: 'Someone wrote meanwhile. The conversation is up to date: send your message again.',
+    conversation_changed:
+      'The conversation changed meanwhile, from another device or by someone else. It is up to date: send your message again.',
     memory_changed: 'This preference changed since: it can no longer be undone from here.',
     quota_exceeded: 'You have used all of your quota this month.',
     file_too_large: 'This file is too large (20 MB at most).',

@@ -38,7 +38,8 @@ export function isContextToolPart(part: Part): part is ContextToolPart {
   return part.type in CONTEXT_TOOLS;
 }
 
-function siteOf(url: string | undefined): string {
+/** The site's name for a link: a malformed URL, saved as it came, shows as it is instead of breaking the page. */
+export function siteOf(url: string | undefined): string {
   try {
     return url ? new URL(url).hostname.replace(/^www\./, '') : '';
   } catch {
