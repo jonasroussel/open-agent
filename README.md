@@ -31,7 +31,8 @@ OPENROUTER_API_KEY=… ADMIN_EMAIL=you@example.com bun run dev
 
 `bun run dev` starts SearXNG (`compose.yaml`, on `localhost:8888`), the server on port 3427 and Vite on
 [localhost:5173](http://localhost:5173). Without `SMTP_HOST`, sign-in links and codes go to the server log, and
-the code `123456` signs in any invited address. `TAVILY_API_KEY` is optional.
+the code `123456` (`DEV_SIGN_IN_CODE`, set by `bun run dev`) signs in any invited address; the server refuses it
+alongside `SMTP_HOST` or an `https` `PUBLIC_URL`. `TAVILY_API_KEY` is optional.
 
 ```sh
 bun run test        # server and shared tests
@@ -49,7 +50,16 @@ One image serves the API and the built client on port 3427; a second one is Sear
    and an SMTP token), `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, and two random secrets,
    `ENCRYPTION_KEY` and `SEARXNG_SECRET` (`openssl rand -base64 32`). Never change `ENCRYPTION_KEY` afterwards: it
    encrypts the users' own OpenRouter keys.
-2. Then, for each release: `PORTAINER_API_KEY=… bun run deploy` builds both images, pushes them to
-   `registry.jonas.bzh` and recreates the containers.
+2. Then, for each release, from a clean commit: `PORTAINER_API_KEY=… bun run deploy` runs the lint, typecheck and
+   tests, builds both images, pushes them to `registry.jonas.bzh` tagged with the short commit hash and `latest`, and
+   recreates the containers from `latest`.
+
+To go back to a previous release, point `latest` at its images in the registry (no pull needed), then recreate the
+containers in Portainer (« Recreate » with « Re-pull image »):
+
+```sh
+docker buildx imagetools create -t registry.jonas.bzh/open-agent:latest registry.jonas.bzh/open-agent:<hash>
+docker buildx imagetools create -t registry.jonas.bzh/open-agent-searxng:latest registry.jonas.bzh/open-agent-searxng:<hash>
+```
 
 The `/data` volume holds the database and the users' files: back it up.

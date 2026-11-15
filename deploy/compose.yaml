@@ -10,7 +10,8 @@ services:
     restart: unless-stopped
     depends_on:
       - open-agent-searxng
-    # Or the reverse proxy's network and labels instead of a published port.
+    # Published because the reverse proxy runs on another machine. The app trusts the last `x-forwarded-for` entry,
+    # so only that proxy may reach this port.
     ports:
       - 3427:3427
     environment:

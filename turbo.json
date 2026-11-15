@@ -31,6 +31,8 @@
         "FAST_MODEL",
         "REASONING_MODEL",
         "BACKGROUND_MODEL",
+        "IMAGE_MODEL",
+        "DEV_SIGN_IN_CODE",
         "TAVILY_API_KEY",
         "SEARXNG_URL",
         "DEFAULT_MONTHLY_QUOTA_USD",

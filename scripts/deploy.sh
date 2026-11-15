@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Builds the production images (the app and our SearXNG), pushes them, then has Portainer recreate each container with
-# its image (same as « Recreate » with « Re-pull image » in its UI). Needs PORTAINER_API_KEY: a Portainer access token
-# (My account > Access tokens).
+# Builds the production images (the app and our SearXNG) from a clean commit once the checks pass, pushes them tagged
+# with the commit and `latest` (the commit tag keeps older images to go back to), then has Portainer recreate each
+# container with its `latest` image (same as « Recreate » with « Re-pull image » in its UI). Needs PORTAINER_API_KEY:
+# a Portainer access token (My account > Access tokens).
 set -euo pipefail
 
 REGISTRY=registry.jonas.bzh
@@ -11,6 +12,17 @@ ENVIRONMENT=3
 : "${PORTAINER_API_KEY:?Set PORTAINER_API_KEY to a Portainer access token}"
 cd "$(dirname "$0")/.."
 
+# The image must be exactly the commit that /api/health reports.
+if [[ -n $(git status --porcelain) ]]; then
+  echo 'Uncommitted changes or untracked files: commit them first.' >&2
+  exit 1
+fi
+COMMIT=$(git rev-parse --short=7 HEAD)
+
+bun run lint
+bun run typecheck
+bun run test
+
 portainer() {
   curl -sS -m 300 -H "X-API-Key: $PORTAINER_API_KEY" -H 'content-type: application/json' -w '\n%{http_code}' "$@"
 }
@@ -19,9 +31,10 @@ portainer() {
 # image's (`deploy/compose.yaml` names SearXNG's with an underscore).
 deploy() {
   local container=$1 context=$3
-  local image="$REGISTRY/$2:latest"
-  docker build --pull --platform=linux/amd64 -t "$image" "$context"
-  docker push "$image"
+  local repository="$REGISTRY/$2"
+  docker build --pull --platform=linux/amd64 -t "$repository:$COMMIT" -t "$repository:latest" "$context"
+  docker push "$repository:$COMMIT"
+  docker push "$repository:latest"
 
   echo "Recreating $container with the new image…"
   # By id, never by name: Portainer renames the old container to "<name>-old" first, then a name would point to
