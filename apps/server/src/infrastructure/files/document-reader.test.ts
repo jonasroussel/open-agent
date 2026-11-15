@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import ExcelJS from 'exceljs';
 
-import { UnreadableDocument } from '../../application/ports/document-reader.ts';
+import { DocumentTooLong, UnreadableDocument } from '../../application/ports/document-reader.ts';
 import { PopplerMammothReader } from './document-reader.ts';
 
 const page = (contents: number) =>
@@ -69,6 +69,14 @@ function wordFile(): Uint8Array {
   }
 }
 
+/** The zip with its first entry claiming to expand to `size` bytes, as a zip bomb's directory does. */
+function claimingExpandedSize(zip: Uint8Array, size: number): Uint8Array {
+  const patched = Buffer.from(zip);
+  const centralEntry = patched.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+  patched.writeUInt32LE(size, centralEntry + 24);
+  return new Uint8Array(patched);
+}
+
 describe('PopplerMammothReader.readWord', () => {
   test('reads the body with its tables, and the header and footer that mammoth skips', async () => {
     const pieces = await new PopplerMammothReader().readWord(wordFile());
@@ -76,6 +84,11 @@ describe('PopplerMammothReader.readWord', () => {
     expect(texts[0]).toBe('Header: Dossier 4471 & suite');
     expect(texts.join('\n')).toContain('<td><p>M. Garnier</p></td>');
     expect(texts.at(-1)).toBe('Footer: Confidentiel');
+  });
+
+  test('refuses a Word file that would expand past what the server holds in memory, without expanding it', async () => {
+    const bomb = claimingExpandedSize(wordFile(), 0xff_ff_ff_00);
+    await expect(new PopplerMammothReader().readWord(bomb)).rejects.toBeInstanceOf(DocumentTooLong);
   });
 });
 

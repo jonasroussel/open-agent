@@ -96,7 +96,31 @@ describe('OfficeFileMaker.chart', () => {
       ...bars,
       transform: [{ lookup: 'poste', from: { data: { url: 'file:///etc/passwd' }, key: 'id', fields: ['x'] } }],
     };
-    await expect(maker.chart(lookup)).rejects.toThrow('never from a URL');
+    await expect(maker.chart(lookup)).rejects.toThrow('no URL');
+  });
+
+  test('refuses rows Vega would generate, and counts the spec size does not bound, before drawing anything', async () => {
+    const sequence = { ...bars, data: { sequence: { start: 0, stop: 1e9, as: 'montant' } } };
+    await expect(maker.chart(sequence)).rejects.toThrow('data inline');
+    const flattened = { ...bars, transform: [{ calculate: 'sequence(0, 1e9)', as: 's' }, { flatten: ['s'] }] };
+    await expect(maker.chart(flattened)).rejects.toThrow('data inline');
+    const ticks = {
+      ...bars,
+      encoding: { ...bars.encoding, y: { ...bars.encoding.y, axis: { tickCount: { expr: '1e9' } } } },
+    };
+    await expect(maker.chart(ticks)).rejects.toThrow('tickCount');
+  });
+
+  test('draws a chart whose ticks and bins are of a readable count', async () => {
+    const histogram = {
+      data: { values: [{ montant: 750 }, { montant: 120 }] },
+      mark: 'bar',
+      encoding: {
+        x: { field: 'montant', bin: { maxbins: 20 }, type: 'quantitative', axis: { tickCount: 5 } },
+        y: { aggregate: 'count' },
+      },
+    };
+    expect((await maker.chart(histogram)).slice(0, 4)).toEqual(PNG_START);
   });
 
   test("runs no code from the spec's expressions", async () => {

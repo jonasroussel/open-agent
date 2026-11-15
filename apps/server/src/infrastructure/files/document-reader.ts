@@ -23,8 +23,8 @@ const MAX_OUTPUT_CHARACTERS = 2_000_000;
 const MAX_PDF_PAGES = 100;
 /** Pictures kept from a Word file, whose zip may hold far more than the uploaded 20 MB. */
 const MAX_WORD_IMAGE_BYTES = 20 * 1024 * 1024;
-/** A spreadsheet's zip, expanded: exceljs reads it all in memory, so a zip bomb is refused before. */
-const MAX_SPREADSHEET_BYTES = 100 * 1024 * 1024;
+/** A Word or Excel file's zip, expanded: mammoth and exceljs read it in memory, so a zip bomb is refused before. */
+const MAX_EXPANDED_BYTES = 100 * 1024 * 1024;
 /** Word may embed EMF or WMF drawings, which the model cannot see. */
 const VISIBLE_IMAGE_TYPES: Record<string, true> = {
   'image/png': true,
@@ -64,6 +64,8 @@ export class PopplerMammothReader implements DocumentReader {
   }
 
   async readWord(bytes: Uint8Array): Promise<WordPiece[]> {
+    const expanded = await expandedSize(bytes);
+    if (expanded > MAX_EXPANDED_BYTES) throw new DocumentTooLong('The Word file is too big to read.');
     const margins = await headersAndFooters(bytes);
     const images: { bytes: Uint8Array; mediaType: string }[] = [];
     const pictures = { size: 0 };
@@ -105,7 +107,7 @@ export class PopplerMammothReader implements DocumentReader {
 
   async readSpreadsheet(bytes: Uint8Array): Promise<string> {
     const expanded = await expandedSize(bytes);
-    if (expanded > MAX_SPREADSHEET_BYTES) throw new DocumentTooLong('The spreadsheet is too big to read.');
+    if (expanded > MAX_EXPANDED_BYTES) throw new DocumentTooLong('The spreadsheet is too big to read.');
     const workbook = new ExcelJS.Workbook();
     try {
       await workbook.xlsx.load(bytes.slice().buffer);
@@ -145,11 +147,11 @@ function cellText(value: ExcelJS.CellValue): string {
 
 /** The size of a zip once expanded, from `unzip -l`'s last line, without expanding anything. */
 async function expandedSize(bytes: Uint8Array): Promise<number> {
-  const folder = await mkdtemp(join(tmpdir(), 'open-agent-xlsx-'));
+  const folder = await mkdtemp(join(tmpdir(), 'open-agent-zip-'));
   try {
-    const xlsx = join(folder, 'sheet.xlsx');
-    await Bun.write(xlsx, bytes);
-    const total = /(\d+)\s+\d+ files?\s*$/.exec(await run(['unzip', '-l', xlsx]));
+    const zip = join(folder, 'file.zip');
+    await Bun.write(zip, bytes);
+    const total = /(\d+)\s+\d+ files?\s*$/.exec(await run(['unzip', '-l', zip]));
     if (!total) throw new UnreadableDocument('unzip did not give the size.');
     return Number(total[1]);
   } finally {

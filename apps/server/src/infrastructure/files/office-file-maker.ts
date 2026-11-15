@@ -27,6 +27,16 @@ const NUMBER_FORMATS: Record<Exclude<SpreadsheetFormat, 'text'>, string> = {
 
 /** A chart larger than this is refused: drawn twice as big, it would take the server's memory. */
 const MAX_CHART_SIDE = 2_000;
+/**
+ * Ticks, bins and density steps Vega makes from one number of the spec, which the spec's size does not bound.
+ * Measured on a whole chart: 1,000 ticks take 0.25 s, 10,000 take 2 s, 100,000 take 24 s.
+ */
+const COUNTS: Record<string, true> = { tickCount: true, maxbins: true, steps: true };
+const MAX_COUNT = 1_000;
+/** Data sources Vega generates: rows the spec's size does not bound (a `sequence` to 1e9 is a billion rows). */
+const GENERATORS: Record<string, true> = { sequence: true, graticule: true, sphere: true };
+const INLINE_ONLY =
+  'A chart takes its data inline (data.values): no URL, no generated data (sequence, graticule, sphere, impute keyvals, the sequence() function). Write the rows out.';
 
 /**
  * Excel with exceljs, PDFs with pdfmake from Markdown (marked), charts with Vega-Lite drawn by resvg, QR codes with
@@ -104,7 +114,8 @@ export class OfficeFileMaker implements FileMaker {
 
   async chart(spec: Record<string, unknown>): Promise<Uint8Array> {
     // Vega logs a failed load and draws without it: a URL is refused before, and the loader refuses it again.
-    if (namesUrl(spec)) throw new CannotMake('A chart takes its data inline (data.values), never from a URL.');
+    const refused = refusal(spec);
+    if (refused) throw new CannotMake(refused);
     let svg: string;
     try {
       const compiled = compile(spec as unknown as TopLevelSpec, {
@@ -154,11 +165,28 @@ function messageOf(error: unknown): string {
   return String(error instanceof Error ? error.message : error).slice(0, 300);
 }
 
-/** Whether a spec loads anything: `url` anywhere (data, lookups, image marks), the inline rows aside. */
-function namesUrl(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(namesUrl);
-  if (typeof value !== 'object' || value === null) return false;
-  return Object.entries(value).some(([key, inner]) => key === 'url' || (key !== 'values' && namesUrl(inner)));
+/**
+ * Why the spec cannot be drawn safely, the inline rows aside: data from a URL (data, lookups, image marks), data Vega
+ * generates (a generator source, `impute`'s `keyvals` range, the `sequence()` expression function), or a count past
+ * `MAX_COUNT`.
+ */
+function refusal(value: unknown): string | undefined {
+  if (typeof value === 'string') return /\bsequence\s*\(/.test(value) ? INLINE_ONLY : undefined;
+  if (Array.isArray(value)) return value.map(refusal).find(Boolean);
+  if (typeof value !== 'object' || value === null) return undefined;
+  for (const [key, inner] of Object.entries(value)) {
+    if (key === 'values') continue;
+    if (key === 'url' || GENERATORS[key] === true || (key === 'keyvals' && !Array.isArray(inner))) return INLINE_ONLY;
+    // An expression (`{"expr": "1e5"}`) hides the number; a time interval (a string) or bin's steps (an array) count
+    // nothing.
+    const hidden = typeof inner === 'object' && inner !== null && !Array.isArray(inner);
+    if (COUNTS[key] === true && (hidden || (typeof inner === 'number' && inner > MAX_COUNT))) {
+      return `${key} takes a number up to ${MAX_COUNT}: a chart shows fewer.`;
+    }
+    const inside = refusal(inner);
+    if (inside) return inside;
+  }
+  return undefined;
 }
 
 /** Excel's rules: 31 characters at most, none of `[]:*?/\`, each name once. */
