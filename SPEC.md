@@ -139,12 +139,10 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   done; no introduction, restating, unasked advice or warnings; no follow-up offer or closing question (« Voulez-vous
   que… »). It proposes only when the request is vague: two or three short leads. Measured with the real model on 12
   everyday requests: 1,413 words down to about 600, answers ending with an offer 4 of 10 down to 0 of 11.
-- **Short answer first, « En bref » last on long answers** (assistant prompt): a question with a short answer (yes or
-  no, « est-ce normal », a number, a name) gets it in the first sentence. An answer longer than a phone screen (about
-  80 words) ends with a line « **En bref :** … », so the user never scrolls back up: the short answer again, or else
-  the gist (the key steps, the advice). A shorter answer has none: since answers became short (2026-11-15), the line
-  only repeated them. Checked with the real model: 103 of 110 answers right (one long answer in twenty lacks the
-  line, one short answer in twenty has it); « always » was 16 of 16, at the price of the repeat.
+- **Short answer first, no recap line** (assistant prompt): a question with a short answer (yes or no, « est-ce normal »,
+  a number, a name) gets it in the first sentence. An answer ends with no recap line: « En bref » (2026-11-05) helped
+  while answers were long, but once they became short (2026-11-15) it only repeated their first sentence, even with an
+  80-word threshold, so it was removed (2026-11-20).
 - Regenerate an answer; edit a sent message and resend (the later messages are replaced, no branches). Alone, the user
   edits any of their own messages; in a shared conversation, only their last one.
 - **The server owns the history:** every conversation goes on from its saved history, never from the copy a browser
