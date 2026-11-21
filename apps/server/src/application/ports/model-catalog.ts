@@ -3,6 +3,9 @@ import type { LanguageModel, ProviderMetadata } from 'ai';
 
 export type { ModelRole };
 
+/** How much a language model thinks before it answers: OpenRouter's reasoning effort, `off` when it does not. */
+export type Thinking = 'off' | 'low' | 'medium';
+
 export type ModelChoice = {
   /** Already set up for its role (thinking, usage accounting). */
   model: LanguageModel;
@@ -10,15 +13,22 @@ export type ModelChoice = {
   modelId: string;
   /** Billed to the user's own OpenRouter key rather than the app's. */
   paidByUser: boolean;
+  /** What the model reads and does, from the provider's list; empty when the list could not be reached. */
+  capabilities: readonly ModelCapability[];
 };
 
 /** The provider: a model set up for a role. Which model each role uses is a setting (`Models`). */
 export interface ModelCatalog {
   /**
-   * `ownKey`: the user's own key, which then pays; `null`: the app's key. Throws `ModelUnavailableError` when the app
-   * has no key and the user none either.
+   * `ownKey`: the user's own key, which then pays; `null`: the app's key. `thinking` is ignored for the image role.
+   * Throws `ModelUnavailableError` when the app has no key and the user none either.
    */
-  choose(role: ModelRole, modelId: string, ownKey: string | null): ModelChoice;
+  choose(
+    role: ModelRole,
+    modelId: string,
+    ownKey: string | null,
+    thinking: Thinking,
+  ): Omit<ModelChoice, 'capabilities'>;
   /**
    * The billed cost of a call: from the provider's metadata, or from the reply's body when the call ended without
    * one (an answer that did not parse was billed all the same). `null` when the provider did not say.

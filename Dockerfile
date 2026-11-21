@@ -38,9 +38,10 @@ ENV NODE_ENV=production \
     TRUST_PROXY=1
 
 # Poppler reads PDFs: `pdftotext` for their text, `pdftoppm` for a picture of each page. `unzip` reads the headers
-# and footers of Word files, which mammoth skips.
+# and footers of Word files, which mammoth skips. `ffmpeg` converts recordings the models do not take (Chrome's
+# `webm`) to m4a.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends poppler-utils unzip \
+  && apt-get install -y --no-install-recommends poppler-utils unzip ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 # Only the server's runtime packages, at the versions of the lockfile. Scripts are skipped: better-sqlite3 loads

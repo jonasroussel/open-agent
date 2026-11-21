@@ -89,6 +89,10 @@ export const fr: Translation = {
     readFile: 'A lu « {{name}} »',
     readingPage: 'Lecture de {{site}}…',
     readPage: 'A lu {{site}}',
+    downloadingFile: 'Téléchargement d’un fichier…',
+    downloadedFile: 'A lu « {{name}} » ({{size}})',
+    readingAttachment: 'Relecture d’un fichier…',
+    readAttachment: 'A relu « {{name}} »',
     weather: 'Météo : {{place}}',
     calculating: 'Calcul…',
     calculated: '{{expression}} = {{result}}',
@@ -195,6 +199,14 @@ export const fr: Translation = {
     tooMany: '{{count}} fichiers au maximum par message.',
     remove: 'Retirer {{name}}',
   },
+  voice: {
+    record: 'Enregistrer un message vocal',
+    stop: 'Arrêter l’enregistrement',
+    recording: 'Enregistrement, {{time}} sur {{limit}}',
+    denied: 'Le micro est bloqué. Autorisez-le pour ce site dans les réglages de votre navigateur, puis réessayez.',
+    unavailable: 'Aucun micro n’est disponible sur cet appareil ou dans ce navigateur.',
+    fileName: 'message-vocal',
+  },
   canvas: {
     untitled: 'Document',
     empty: 'Aucun document ouvert.',
@@ -244,12 +256,12 @@ export const fr: Translation = {
       image: 'Dessine les images demandées, à partir de mots ou des photos de la personne.',
     },
     requirement: {
-      fast: 'Seuls les modèles qui lisent le texte et les images, utilisent des outils (recherche web, Canvas) et peuvent répondre sans réfléchir sont proposés.',
+      fast: 'Seuls les modèles qui lisent le texte et les images et utilisent des outils (recherche web, Canvas) sont proposés. Ils répondent sans réfléchir, ou en réfléchissant le moins possible quand ils ne savent pas s’en passer.',
       reasoning:
         'Seuls les modèles qui lisent le texte et les images, utilisent des outils et savent réfléchir sont proposés.',
       background: 'Seuls les modèles qui répondent en JSON structuré et peuvent répondre sans réfléchir sont proposés.',
       image:
-        'Seuls les modèles qui lisent le texte et les images et dessinent des images sont proposés. Le prix affiché est celui du texte : une image coûte en plus, environ 0,03 $ avec Gemini Flash Lite Image.',
+        'Seuls les modèles qui lisent le texte et les images et dessinent des images sont proposés. Le prix affiché est celui du texte : une image coûte en plus, environ 0,04 $ avec Nano Banana 2.1.',
     },
     default: 'Par défaut',
     changed: 'Modifié',
@@ -428,8 +440,9 @@ export const fr: Translation = {
       'La conversation a changé entre-temps, depuis un autre appareil ou par quelqu’un d’autre. Elle est à jour : renvoyez votre message.',
     memory_changed: 'Cette préférence a changé depuis : elle ne peut plus être annulée d’ici.',
     quota_exceeded: 'Vous avez utilisé tout votre quota de ce mois-ci.',
-    file_too_large: 'Ce fichier est trop gros (20 Mo au maximum).',
-    file_type_unsupported: 'Je ne lis que les photos, les PDF, les fichiers Word (.docx) et les fichiers texte.',
+    file_too_large: 'Ce fichier est trop gros (50 Mo au maximum).',
+    file_type_unsupported:
+      'Je ne lis que les photos, les PDF, les fichiers Word (.docx) et Excel (.xlsx), les fichiers texte et de code, les enregistrements audio (MP3, M4A, WAV…) et les vidéos (MP4, MOV, WebM).',
     file_unreadable: 'Je ne peux pas ouvrir ce fichier : il est peut-être abîmé ou protégé par un mot de passe.',
     file_too_long: 'Ce fichier est trop long pour que je le lise en entier. Envoyez-le en plusieurs parties.',
     artifact_changed: 'Le document a été modifié entre-temps.',

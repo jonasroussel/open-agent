@@ -4,6 +4,7 @@ import { createApp } from './app.ts';
 import { appVersion } from './infrastructure/app-version.ts';
 import { config } from './infrastructure/config.ts';
 import { OpenMeteoWeather } from './infrastructure/context/open-meteo-weather.ts';
+import { PublicFileDownloader } from './infrastructure/context/public-file-downloader.ts';
 import { ReadableWebPageReader } from './infrastructure/context/readable-web-page-reader.ts';
 import { AesSecretBox } from './infrastructure/crypto/aes-secret-box.ts';
 import { createDatabase } from './infrastructure/database/connection.ts';
@@ -57,6 +58,7 @@ const routes = await createApp(
     documents: new PopplerMammothReader(),
     pages: new ReadableWebPageReader(),
     weather: new OpenMeteoWeather(),
+    downloads: new PublicFileDownloader(),
   },
   {
     version,

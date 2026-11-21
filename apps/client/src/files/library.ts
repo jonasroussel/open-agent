@@ -1,5 +1,6 @@
 import {
   API_ROUTES,
+  MAX_FILE_BYTES,
   type ApiError,
   type LibraryFileDto,
   type ListLibraryFilesResponse,
@@ -19,9 +20,12 @@ export const libraryFilesQuery = queryOptions({
 const MAX_PHOTO_SIDE = 2048;
 const SMALL_PHOTO_BYTES = 1.5 * 1024 * 1024;
 
+/** A file over the limit is refused before it is sent, as the server would after minutes of upload. */
 export async function uploadFile(file: File): Promise<ApiResult<LibraryFileDto>> {
+  const prepared = await preparePhoto(file);
+  if (prepared.size > MAX_FILE_BYTES) return { ok: false, error: 'file_too_large' };
   const form = new FormData();
-  form.append('file', await preparePhoto(file));
+  form.append('file', prepared);
   try {
     const response = await apiFetch(API_ROUTES.files, { method: 'POST', body: form });
     const body: unknown = await response.json();

@@ -317,6 +317,13 @@ export type ReadFileOutput = { id: string; name: string; text: string; hasPictur
 
 /** The readable text of a page the user gave, `shortened` past what the model reads. */
 export type ReadWebPageOutput = { url: string; title: string | null; text: string; shortened: boolean };
+/**
+ * A file the model downloaded from a link, for one answer: only this is saved, never its content. `url`: where it was
+ * found, after redirects.
+ */
+export type DownloadFileOutput = { url: string; name: string; kind: FileKind; size: number };
+/** A file of this conversation the model read again, for one answer: only this is saved, never its content. */
+export type ReadAttachmentOutput = { id: string; name: string; kind: FileKind };
 
 export type WeatherInput = { place: string; days: number };
 export type WeatherDay = {
@@ -382,6 +389,8 @@ export type ChatTools = {
   list_files: { input: Record<string, never>; output: ListFilesOutput };
   read_file: { input: { id: string }; output: ReadFileOutput };
   read_web_page: { input: { url: string }; output: ReadWebPageOutput };
+  download_file: { input: { url: string }; output: DownloadFileOutput };
+  read_attachment: { input: { id: string }; output: ReadAttachmentOutput };
   weather: { input: WeatherInput; output: WeatherOutput };
   calculate: { input: { expression: string }; output: CalculateOutput };
   days_between: { input: { from: string; to: string }; output: DaysBetweenOutput };

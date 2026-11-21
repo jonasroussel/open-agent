@@ -49,6 +49,10 @@ async function answerModels(conversationId: string): Promise<string[]> {
   return state.database('usage_events').where({ conversation_id: conversationId, purpose: 'answer' }).pluck('model');
 }
 
+/** How much each call of the model was set to think, in order. */
+const thinkingOf = (modelId: string) =>
+  state.thinking.filter((choice) => choice.modelId === modelId).map((choice) => choice.thinking);
+
 describe('comparison', () => {
   test('both threads answer the same message, each with its model, and each continues its own history', async () => {
     const cookie = await signIn(ADMIN);
@@ -68,9 +72,9 @@ describe('comparison', () => {
     const left = await open(cookie, LEFT);
     const right = await open(cookie, RIGHT);
     await chat(cookie, LEFT, [...left.messages, userMessage('m3', 'Plus court.')]);
-    expect(state.models.reasoning.doStreamCalls).toHaveLength(1);
     await chat(cookie, RIGHT, [...right.messages, userMessage('m3', 'Plus formel.')]);
-    expect(state.models.reasoning.doStreamCalls).toHaveLength(1);
+    expect(thinkingOf('reasoning-model')).toEqual(['medium']);
+    expect(thinkingOf(PICKED)).toEqual(['off', 'off']);
     expect(await answerModels(LEFT)).toEqual(['fast-model', 'reasoning-model']);
     expect(await answerModels(RIGHT)).toEqual([PICKED, PICKED]);
 
@@ -126,7 +130,7 @@ describe('comparison', () => {
     expect(await state.database('conversations').where({ id: RIGHT })).toEqual([]);
   });
 
-  test('a picked model whose thinking cannot be turned off thinks on the fast route too', async () => {
+  test('a picked model whose thinking cannot be turned off thinks as little as it can on the fast route', async () => {
     const cookie = await signIn(ADMIN);
     const message = [userMessage('m1', 'Bonjour')];
     await (await sendTurn(cookie, LEFT, message)).text();
@@ -135,8 +139,7 @@ describe('comparison', () => {
     });
     await response.text();
     expect(response.status).toBe(200);
-    expect(state.models.fast.doStreamCalls).toHaveLength(1);
-    expect(state.models.reasoning.doStreamCalls).toHaveLength(1);
+    expect(thinkingOf('vendor/always-thinking')).toEqual(['low']);
     expect(await answerModels(RIGHT)).toEqual(['vendor/always-thinking']);
   });
 

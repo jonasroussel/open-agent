@@ -11,6 +11,11 @@ export interface DocumentReader {
   readWord(bytes: Uint8Array): Promise<WordPiece[]>;
   /** Each sheet as a table of text. Throws `UnreadableDocument` for a broken file, `DocumentTooLong` for a huge one. */
   readSpreadsheet(bytes: Uint8Array): Promise<string>;
+  /**
+   * A recording in a format the models do not take, as `CONVERTED_AUDIO` (m4a). Throws `UnreadableDocument` for a
+   * broken file, `DocumentTooLong` when converting it takes too long.
+   */
+  convertAudio(bytes: Uint8Array): Promise<Uint8Array>;
 }
 
 export class UnreadableDocument extends Error {}

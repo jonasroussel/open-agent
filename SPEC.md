@@ -69,7 +69,7 @@ flowchart TD
   Q -- yes --> P["Pre-pass: 1 call, background model"]
   P --> C{Truly ambiguous?}
   C -- yes --> D["One short question (ask_user) with answers to tap;<br/>the answer resumes the message, analyzed again"]
-  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>attached files in whole<br/>tools: web_search, canvas, lookups, files and images, ask_user"]
+  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>files of the latest message in whole, earlier ones as notes<br/>tools: web_search, canvas, lookups, files and images, ask_user"]
   P -- feedback detected --> R["Memory reconciler<br/>ADD / UPDATE / DELETE / NOOP"]
   R --> T["Notice under the answer: 'Remembered: …' + Undo"]
   M --> U[Usage ledger]
@@ -78,10 +78,11 @@ flowchart TD
 
 ### Pre-pass
 
-One structured-output call on the background model (thinking off, about 0.6 s and 0.00006 $) returns:
+One structured-output call on the background model (DeepSeek V4.1 Flash, thinking off, about 0.6 s and 0.00006 $; it
+runs before every answer, so it must stay fast) returns:
 
-- `route`: `fast` (thinking off) | `reasoning` (same model, thinking `medium`). No `vision` route: the same DeepSeek
-  model reads pictures (measured on a screenshot: 1.1 s, 0.0002 $);
+- `route`: `fast` (Gemini 4 Hydrogen) | `reasoning` (Gemini 4 Neon, thinking `medium`). No `vision` route: both read
+  pictures, recordings, videos and PDFs. The pre-pass only reads text: the files' names, never their content;
 - `clarifyingQuestion`: one short question instead of an answer, or null, with `clarifyingOptions`, up to 4 likely
   answers to tap (none when they cannot be guessed). It is sent as an `ask_user` call, the same as the model's own
   questions. Never twice in a row: after a question, answered or not, the next analysis cannot ask;
@@ -194,15 +195,29 @@ user's own or public, and nothing writes.
   wrong one time in three from today alone (40 of 40 right with it). A second note asks for the thoughts in the
   message's language.
 - **The user's other conversations:** `search_conversations` (the history's full-text search, the current one left
-  out) then `read_conversation` (its messages as "User:" / "Assistant:" text, the latest 30,000 characters).
+  out) then `read_conversation` (its messages as "User:" / "Assistant:" text, the latest 200,000 characters).
 - **The user's library:** `list_files` (30 newest) then `read_file`: its text, without its pictures (the model is told
-  there are some, and asks the user to attach the file to see them). A file over 50,000 tokens is refused rather than
-  read in part: attached, the model reads all of it.
+  there are some, and asks the user to attach the file to see them); a recording or a video is refused (it must be
+  attached). A file over 50,000 tokens is refused rather than read in part: attached, the model reads all of it.
 - **A web page:** `read_web_page` for a link the user gives, or a search result whose extract is not enough. Fetched by
   the server, every address and redirect checked public (private, loopback, link-local and Docker addresses refused:
-  no SSRF), http(s) on ports 80/443 only, 3 MB at most, then read like Firefox's reader view (Readability on
-  linkedom; the whole text without scripts and menus when the reader view finds under 1,000 characters). The model
-  reads 30,000 characters. Sites that refuse robots (403) say so.
+  no SSRF), http(s) on ports 80/443 only, 10 MB at most (a long article's HTML weighs several times its text), then
+  read like Firefox's reader view (Readability on linkedom; the whole text without scripts and menus when the reader
+  view finds under 1,000 characters). The model reads 200,000 characters (about 65,000 tokens). Sites that refuse
+  robots (403) say so. A link to anything but HTML or plain text is refused with « read it with download_file ».
+- **A file at a link:** `download_file` (`FileDownloader` port, `infrastructure/context/public-file-downloader.ts`,
+  with the same public-address, redirect and timeout rules as pages, `public-fetch.ts`; 60 s, 50 MB at most). The
+  file is read like an upload (same kinds, same readers, a recording converted), for this answer only: nothing goes to
+  « Mes fichiers », the saved message keeps `{ url, name, kind, size }`, never the bytes. The model is told so instead
+  of sending the user to read the file himself.
+- **A file of this conversation, again:** `read_attachment` (by the id in the note that replaced the file, see Files
+  and photos) reads again, whole, a file attached or made in this conversation, by one of its members; any other id
+  is refused. Like a download, for this answer only, and the saved message keeps `{ id, name, kind }`. Allowed in a
+  shared conversation (those files are everyone's there).
+- **How a read file reaches the model:** both tools keep its content in memory for the running answer and send it as
+  one user message after the tool results, at each step: inside a tool result, OpenRouter dropped a PDF without a word
+  and Gemini 4 answered it had only the file's size (pictures came through; 2026-11-21). In later answers, the
+  tool's old result carries a note: the file was read in an earlier answer, read it again with the same tool.
 - **Weather:** `weather` (place, 1 to 7 days) from Open-Meteo (free, no key, Météo-France for France): now, then each
   day's sky, min/max, rain chance and amount. Where the user lives comes from the memory. The pre-pass never forces a
   web search for the weather.
@@ -214,13 +229,16 @@ user's own or public, and nothing writes.
   may call itself without end) and method calls (`matrix([1]).resize(…)` would skip every check). Each limit is far
   past a household calculation and keeps the slowest expression under a few hundred milliseconds.
 - **Limits:** each call sends the whole conversation to the model again, so each tool has a cap per answer (2
-  conversation searches and reads, 1 file list, 2 file reads, 3 pages, 2 forecasts, 5 calculations, 3 date counts),
-  and an answer has 6 steps, the last one without tools. A refusal (`ToolRefusal`: not found, someone else's, too
-  long, unknown place) reaches the model and stays with the call, so it reads it again later, as do the fields a call
-  missed (DeepSeek once called a tool with `{}`); any other failure is hidden as "The answer failed.".
+  conversation searches and reads, 1 file list, 2 file reads, 3 pages, 3 downloads, 3 re-read attachments, 2
+  forecasts, 5 calculations, 3 date counts), and an answer has 6 steps, the last one without tools. A refusal
+  (`ToolRefusal`: not found, someone else's, too long, unknown place) reaches the model and stays with the call, so it
+  reads it again later, as do the fields a call missed (DeepSeek once called a tool with `{}`); any other failure is
+  hidden as "The answer failed.".
 - **What the user sees:** one line per lookup in the answer ("A relu « Prénoms pour chat roux »", "Météo : Nantes…",
-  "(3*19.99 + 2*7.45) * 0.85 = 63.6395"), pulsing while it runs; a conversation, file or page links to it.
-- **The pre-pass knows:** it never asks the user for a file, an earlier conversation, a page, the weather or the time.
+  "(3*19.99 + 2*7.45) * 0.85 = 63.6395", "A lu « bail.pdf » (1,2 Mo)"), pulsing while it runs; a conversation, file,
+  page or download links to it.
+- **The pre-pass knows:** it never asks the user for a file, an earlier conversation, a page or a file at a link, the
+  weather or the time.
 
 ### Files and images the model makes
 
@@ -257,38 +275,65 @@ try the model then made right is not shown.
 
 ### Files and photos
 
-- **Rule: everything in a file reaches the model, at every answer.** A user who asks « vous avez vu … dans le
-  fichier ? » must get a real answer, even ten messages later. Nothing is cut: a file the model cannot read whole
-  (more than about 600,000 tokens) is refused at upload with a clear message, never read in part.
+- **Rule: a file reaches the model whole, in the turn it was sent.** In the answer to the message that attaches it
+  (or its edit, its new answer, its answers to a question), every file goes in whole. In every later answer it is a
+  short note with its name, kind and id (« Fichier joint plus tôt : « facture.pdf » (PDF, id …). Il a été lu quand il
+  a été envoyé… relis-le avec read_attachment »), and the prompt tells the model to read it again with
+  `read_attachment` when a question is about it, rather than answer from memory. A file sent again at every answer
+  cost its whole length each time, a video several times the answer. Nothing is cut: a file the model cannot read
+  whole (more than about 600,000 tokens) is refused at upload with a clear message, never read in part.
 - **Adding:** the paperclip of the composer (from this device, take a photo on mobile, from my files), drag and drop,
-  or paste a screenshot. At most 5 files per message, 20 MB each. Chips show them while they upload.
+  paste a screenshot, or the microphone. At most 5 files per message, 50 MB each (refused in the browser before the
+  upload too). Chips show them while they upload; a recording or a video plays in its chip and in the message
+  (`<audio>` / `<video controls preload="metadata">`).
+- **Kinds:** Bun reads an uploaded file's media type from its name, not from the browser, so the extension decides
+  in practice. Images (JPEG, PNG, WebP, GIF), PDF, Word (.docx), Excel (.xlsx), text (txt, md, csv, json, html, xml,
+  yaml, log, srt and the common code files: read as text, served as `text/plain`, so an uploaded page never runs; a
+  file holding a NUL byte is not text), recordings (mp3, m4a, wav, ogg/opus, aac, flac, and webm from Chrome's
+  recorder, uploaded as `.weba`) and videos (mp4, mov, webm). Not accepted: HEIC from browsers that cannot open it,
+  .doc, .xls, PowerPoint, SVG, AVI.
+- **What reaches the model depends on the answering model** (its OpenRouter `input_modalities`, `ModelChoice.
+  capabilities`): a PDF goes whole as one `application/pdf` file part to a model that reads files, else as its pages
+  (below); a recording to a model that hears audio, a video to one that watches, else a French note says it cannot.
+  Images, Word, Excel and text as below, whatever the model.
 - **Photos:** made at most 2,048 px wide or tall in the browser (JPEG) before upload: fast on a phone, small print
   stays readable. The model sees them.
-- **PDFs:** every page goes twice: its text (`pdftotext -layout`, keeps tables) and its picture (`pdftoppm`, 110 dpi).
-  So charts, stamps, handwriting, pictures and scanned pages are read too. Measured: a page picture costs a few
-  hundred tokens on DeepSeek.
+- **PDFs:** read at upload into every page's text (`pdftotext -layout`, keeps tables) and picture (`pdftoppm`, 110
+  dpi), for models that do not read PDFs and for `read_file`; at most 100 pages. Measured: a page picture costs a few
+  hundred tokens on DeepSeek; a 1-page PDF sent whole to Gemini 4 Hydrogen, 628 input tokens, 2.4 s.
+- **Recordings:** OpenRouter takes mp3, wav, ogg, aac, m4a, aiff, flac and pcm as they are, and refuses the
+  `audio/webm` of Chrome's recorder: anything else is converted at upload to m4a (AAC, 96 kb/s, so an hour stays
+  under 50 MB) with `ffmpeg` (in the image), and the converted file is the stored original. Measured: 40 minutes
+  convert in 18 s on an M-series Mac; the conversion may take 3 minutes. On Gemini 4 Hydrogen a 4-second voice message
+  (m4a or ogg/opus) was transcribed word for word, 2–3 s, about 0.0014 $.
+- **Voice messages:** the microphone button, next to the paperclip, records with `MediaRecorder` (WebM/Opus on Chrome
+  and Firefox, M4A on Safari), shows the elapsed time and a stop button, stops by itself at 10 minutes, and attaches
+  the recording to the message being written. A refused or missing microphone says so.
+- **Videos:** sent as they are. Measured on Gemini 4 Hydrogen: a 3-second mp4, 370 input tokens, 3.1 s; a 41.5 MB
+  mp4 (55 MB once in base64) was accepted, 12.8 s, 1,499 input tokens.
 - **Word (.docx):** mammoth's HTML (keeps tables), the pictures it contains, and the headers and footers mammoth
   skips, read from the zip with `unzip`. EMF/WMF drawings cannot be shown; the model is told one is there.
-- **Text (.txt, .md, .csv):** as is. **Excel (.xlsx):** each sheet as numbered rows, with formulas (and their result
-  when Excel saved one) and dates. mammoth and exceljs read the whole zip in memory: a Word or Excel file expanding
-  past 100 MB is refused before it is read. Not accepted: HEIC from browsers that cannot open it, .doc, .xls,
-  PowerPoint, HTML, SVG.
-- **Reading happens once, at upload**, into the file's `content`; the pictures are stored next to the original. Each
-  answer turns the message's `file` parts into `<file id="…" name="…">` + text and pictures; the pre-analysis and the
-  title only see the names (`[Attached: …]`), so the pre-analysis never asks what a file contains.
+- **Text:** as is. **Excel (.xlsx):** each sheet as numbered rows, with formulas (and their result when Excel saved
+  one) and dates. mammoth and exceljs read the whole zip in memory: a Word or Excel file expanding past 100 MB is
+  refused before it is read.
+- **Reading happens once, at upload**, into the file's `content`; the pictures are stored next to the original. An
+  answer turns the latest message's `file` parts into `<file id="…" name="…">` + its content; the pre-analysis and
+  the title only see the names (`[Attached: …]`), so the pre-analysis never asks what a file contains.
 - **Personal library ("My files"):** every uploaded file stays, reusable in any conversation from the paperclip
   ("From my files", with a search), with the files and images the model made. The page is a grid of tiles, not a
-  list: an image fills its tile, a PDF shows its first page (`/api/files/:id/preview`), Word, Excel and text files
-  show their icon and type. An image tile opens the image over the page (`ImagePreview`), any other tile the file;
-  files are added with a button or dropped on the page, and deleted from the tile. A deleted file stays named in
-  its conversations, and the model is told it is gone. No `@` mention, no RAG, no embeddings.
+  list: an image fills its tile, a PDF shows its first page (`/api/files/:id/preview`), a video plays in its tile, a
+  recording under its name, Word, Excel and text files show their icon and type. An image tile opens the image over
+  the page (`ImagePreview`), a document tile the file; files are added with a button or dropped on the page, and
+  deleted from the tile. A deleted file stays named in its conversations, and the model is told it is gone. No `@`
+  mention, no RAG, no embeddings.
 - **Privacy:** a file opens only for its owner (`/api/files/:id`, `nosniff`), or the members of a shared conversation
   it belongs to (see there); a message may only point to the library files its sender may open, never to a link or
   inline data, so nothing skips the reading at upload. Files and previews are sent `private, no-cache` with an
   `ETag`: the browser asks again at each use and gets `304` while access holds, so on a shared computer a file is no
-  longer readable from the cache after sign-out, its deletion, or leaving its conversation.
-- **Cost:** in the quota like the rest. Measured: 0.0001 to 0.0007 $ per answer with a 2-page PDF and a photo
-  (about 3,200 tokens). A big file costs at every answer of its conversation.
+  longer readable from the cache after sign-out, its deletion, or leaving its conversation. A `Range` request gets
+  its part (`206`): Safari plays a recording or a video only so.
+- **Cost:** in the quota like the rest. A file costs once, in its turn, and again only when the model reads it with
+  `read_attachment`.
 
 ### Commands
 
@@ -392,7 +437,8 @@ A conversation shared with other people of the app, who all write to the assista
 - **The server owns the history** (as in every conversation, see Chat): a member edits or answers again only their own
   last message, and answers only the questions asked to them.
 - **What the model reads there:** it does not get `search_conversations`, `read_conversation`, `list_files` and
-  `read_file`: their outputs would be saved in a history every member receives. A file must be attached.
+  `read_file`: their outputs would be saved in a history every member receives. A file must be attached;
+  `read_attachment`, `read_web_page` and `download_file` stay.
 - **Files and documents:** a file opens for everyone in it only when it was attached there or made there by a making
   tool, and then reaches the model whoever answers; a file the model only listed, read or used as a source opens for
   its owner alone. A member may attach only files they may open. Everyone reads and edits its canvas documents.
@@ -429,12 +475,23 @@ computer (hidden below the `md` breakpoint).
   email names them. The name shows in shared conversations (old messages too: they are looked up by the writer's id),
   in what the model reads there, in share emails and in the user's menu.
 - **Models (Settings page):** the OpenRouter model of each role, changed at runtime, for the next message. The
-  picker lists OpenRouter's models (kept an hour by the server, `:batch` variants left out), cheapest first, with
-  their prices, and only those that can take the role: text and pictures in, tools, and thinking that can be turned
-  off (OpenRouter's `reasoning.mandatory` unset) for `fast`; text and pictures in, tools and reasoning for
-  `reasoning`; text in, structured JSON and thinking that can be turned off for `background`; text and pictures in and
-  images out for `image` (`missingCapabilities`). The server checks it again on save. Thinking per role stays in the
-  code (off, `medium`, off). The price shown is the text's: an image costs about 0.03 $ more.
+  picker lists OpenRouter's models (`:batch` variants left out), cheapest first, with their prices, and only those
+  that can take the role: text and pictures in and tools for `fast`; the same and reasoning for `reasoning`; text in,
+  structured JSON and thinking that can be turned off for `background`; text and pictures in and images out for
+  `image` (`missingCapabilities`). The server checks it again on save. Capabilities also hold `audio`, `video` and
+  `file` (OpenRouter's `input_modalities`): what an answer may send the model (see Files and photos). The price shown
+  is the text's: an image costs about 0.03 $ more.
+- **Thinking:** one rule in `Models`, for the roles and the comparison's pick: the reasoning role thinks `medium` when
+  the model can reason; otherwise thinking is off, or `low` when the model cannot turn it off (OpenRouter's
+  `reasoning.mandatory`, as Gemini 4: efforts `low` to `xhigh` only). When the model list cannot be reached, the
+  capabilities are empty and each role keeps its usual setting (fast and background off, reasoning `medium`).
+- **Model list:** OpenRouter's `/models`, kept an hour; past the hour the old list answers at once while a new one
+  loads in the background (it is read at every model call).
+- **Default models** (measured 2026-11-21): fast `google/gemini-4-hydrogen` (1.5 $ / 7.5 $ per million tokens, 1M
+  context, first word 2.3–3.6 s on a trivial question; with one tool call, thinking `low`, 3.5 s and 0.00065 $),
+  reasoning `google/gemini-4-neon` (3 $ / 15 $, first word 3.9–5.4 s; with one tool call at `medium`, 4.1 s and
+  0.0013 $), background `deepseek/deepseek-v4.1-flash-1017` (first word 0.4–0.6 s), image
+  `google/gemini-nano-banana-2.1` (one ~1 MB JPEG in 7.8 s, 0.036 $). Thinking `low` or `medium` changes little.
 - **Prompts (Settings page):** the assistant, the analysis of each message and the memory prompts, edited whole, used
   from the next message, with "Bring back the original" (the text in `default-prompts.ts`). What depends on the
   conversation is always added by the code after the text: the date and the app's language, a missing web search,
@@ -532,7 +589,7 @@ Same layout and tooling as `inscript-carte`.
 | `message_search` | FTS5 over the text parts of each message, sharing its `rowid`; filled by triggers on `messages` |
 | `memory_rules` | user, rule text, created/updated at, deleted at (kept so an Undo restores the same rule) |
 | `memory_rule_changes` | user, rule, operation, before, after, source (`remark` / `user` / `admin`), conversation and message of the notice, undone at |
-| `library_files` | id (UUID, in its address), user, name, kind (`image` / `pdf` / `word` / `spreadsheet` / `text`), media type, size, content (JSON: whole text and names of the pictures on disk), created at |
+| `library_files` | id (UUID, in its address), user, name, kind (`image` / `pdf` / `word` / `spreadsheet` / `text` / `audio` / `video`), media type, size, content (JSON: whole text, names of the pictures on disk, the original for a recording or a video), created at |
 | `artifacts` | id (UUID, named by the model in `update_document`), conversation, user, kind (`document` / `html`), title, created/updated at |
 | `artifact_versions` | artifact, number (from 1), content, author (`model` / `user`), the user who wrote it (`null` for the model's and for versions from before it was recorded), created at, the version it brought back (`restored_from`) |
 | `usage_events` | user, conversation, purpose (`answer`, `pre_pass`, `memory`, `title`, `web_search`, `image`), model or search service, input/output/reasoning tokens, cost in USD from OpenRouter, paid by the user's own key |
@@ -553,10 +610,10 @@ Same layout and tooling as `inscript-carte`.
 | `ADMIN_EMAIL` | First admin |
 | `DEFAULT_MONTHLY_QUOTA_USD` | Quota of users the admin did not set (default 5) |
 | `OPENROUTER_API_KEY` | App key (required in production) |
-| `FAST_MODEL` | Everyday answers until the admin page changes it; default `deepseek/deepseek-v4.1-flash-1017`, thinking off |
-| `REASONING_MODEL` | Answers that need thinking, same; thinking `medium` |
-| `BACKGROUND_MODEL` | Pre-pass, memory and titles, same; thinking off |
-| `IMAGE_MODEL` | Images the user asks for; default `google/gemini-3.1-flash-lite-image` |
+| `FAST_MODEL` | Everyday answers until the admin page changes it; default `google/gemini-4-hydrogen` (thinking `low`, it cannot be turned off) |
+| `REASONING_MODEL` | Answers that need thinking; default `google/gemini-4-neon`, thinking `medium` |
+| `BACKGROUND_MODEL` | Pre-pass, memory and titles; default `deepseek/deepseek-v4.1-flash-1017`, thinking off |
+| `IMAGE_MODEL` | Images the user asks for; default `google/gemini-nano-banana-2.1` |
 | `TAVILY_API_KEY` | First web search service (optional) |
 | `SEARXNG_URL` | Our SearXNG, e.g. `http://open-agent-searxng:8080` (default `http://localhost:8888` in development) |
 | `SMTP_HOST` | SMTP server of the emails (required in production; unset in development: links and codes go to the server log). Proton Mail: `smtp.protonmail.ch` |

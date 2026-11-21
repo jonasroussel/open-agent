@@ -4,9 +4,13 @@ import type { ChatMessage } from './conversation.ts';
 
 /**
  * What the model reads of a file, in order. Nothing is cut: the user must be able to ask about any line or picture of
- * it. Pictures are stored next to the original, under `name`.
+ * it. Pictures are stored next to the original, under `name`. A recording or a video is the original itself, given to
+ * the model as it is.
  */
-export type FilePiece = { type: 'text'; text: string } | { type: 'image'; name: string; mediaType: string };
+export type FilePiece =
+  | { type: 'text'; text: string }
+  | { type: 'image'; name: string; mediaType: string }
+  | { type: 'media'; name: string; mediaType: string };
 
 export type LibraryFile = {
   /** A UUID: also the file's address, `/api/files/:id`. */
@@ -26,6 +30,27 @@ export const ORIGINAL = 'original';
 /** The stored picture of a PDF page, counted from 1. */
 export function pageImageName(page: number): string {
   return `page-${page}.jpg`;
+}
+
+/**
+ * The recordings the models take as they are (OpenRouter's audio formats). Any other, as the `audio/webm` of Chrome's
+ * recorder, is converted at upload to `CONVERTED_AUDIO`.
+ */
+export const LISTENABLE_AUDIO_TYPES: Record<string, true> = {
+  'audio/mpeg': true,
+  'audio/mp4': true,
+  'audio/wav': true,
+  'audio/ogg': true,
+  'audio/aac': true,
+  'audio/flac': true,
+};
+
+export const CONVERTED_AUDIO = { mediaType: 'audio/mp4', extension: 'm4a' } as const;
+
+/** "note.webm" becomes "note.m4a": the name follows the converted recording. */
+export function withExtension(name: string, extension: string): string {
+  const dot = name.lastIndexOf('.');
+  return `${dot > 0 ? name.slice(0, dot) : name}.${extension}`;
 }
 
 /** What shows a file in "My files": the image itself, or a PDF's first page. Other files show their kind's icon. */
@@ -72,6 +97,23 @@ const FILE_URL = /^\/api\/files\/([0-9a-f-]{36})$/;
 /** The library file a message's `file` part points to; `null` for any other address. */
 export function fileIdOf(url: string): string | null {
   return FILE_URL.exec(url)?.[1] ?? null;
+}
+
+const MADE_BY: Record<string, true> = Object.fromEntries(MAKING_TOOL_NAMES.map((name) => [`tool-${name}`, true]));
+
+/**
+ * Whether `messages` attach the file or hold it as a making tool's output, as `sharesFile` does for a whole
+ * conversation: an id merely named there (a listed or read file, a tool's input) does not count.
+ */
+export function holdsFile(messages: readonly ChatMessage[], fileId: string): boolean {
+  return messages.some((message) =>
+    message.parts.some((part) => {
+      if (part.type === 'file') return fileIdOf(part.url) === fileId;
+      return (
+        MADE_BY[part.type] === true && 'output' in part && (part.output as { id?: unknown } | undefined)?.id === fileId
+      );
+    }),
+  );
 }
 
 /**

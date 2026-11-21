@@ -146,7 +146,79 @@ describe('context tools', () => {
 
     await say(admin, userMessage('m3', 'Et le devis du plombier ?'));
     expect(toolNames().filter((name) => PRIVATE_TOOLS.includes(name))).toEqual([]);
-    expect(toolNames()).toEqual(expect.arrayContaining(['read_web_page', 'weather', 'calculate']));
+    expect(toolNames()).toEqual(
+      expect.arrayContaining(['read_web_page', 'download_file', 'read_attachment', 'weather', 'calculate']),
+    );
+  });
+});
+
+const BAIL = 'https://example.org/bail.pdf';
+const BAIL_BYTES = new TextEncoder().encode('%PDF-1.7 préavis de 3 mois');
+/** The PDF files a model call carries, tool results included. */
+const pdfsIn = (prompt: unknown) => JSON.stringify(prompt).split('"mediaType":"application/pdf"').length - 1;
+
+describe('downloads', () => {
+  test('a page link that is a file sends the model to download_file, which gives the file for that answer only', async () => {
+    const cookie = await signIn(ADMIN);
+    state.pdfPages = [{ text: 'Préavis de 3 mois', image: new Uint8Array([0xff, 0xd8, 1]) }];
+    state.downloads[BAIL] = { url: BAIL, name: 'bail.pdf', mediaType: 'application/pdf', bytes: BAIL_BYTES };
+    state.scriptedCalls = [
+      { toolName: 'read_web_page', input: { url: BAIL } },
+      { toolName: 'download_file', input: { url: BAIL } },
+    ];
+    await chat(cookie, CONVERSATION, [userMessage('m1', `Que dit ce bail ? ${BAIL}`)]);
+
+    expect(await toolResults(cookie)).toEqual([
+      {
+        tool: 'read_web_page',
+        output: undefined,
+        error: 'This link is a file (application/pdf), not a web page: read it with download_file.',
+      },
+      {
+        tool: 'download_file',
+        output: { url: BAIL, name: 'bail.pdf', kind: 'pdf', size: BAIL_BYTES.length },
+        error: undefined,
+      },
+    ]);
+    expect(pdfsIn(state.models.fast.doStreamCalls.at(-1)!.prompt)).toBe(1);
+    expect(JSON.stringify((await open(cookie, CONVERSATION)).messages)).not.toContain(
+      Buffer.from(BAIL_BYTES).toString('base64'),
+    );
+
+    await say(cookie, userMessage('m3', 'Et le dépôt de garantie ?'));
+    const next = state.models.fast.doStreamCalls.at(-1)!.prompt;
+    expect(pdfsIn(next)).toBe(0);
+    expect(JSON.stringify(next)).toContain('Fichier lu dans une réponse précédente');
+  });
+
+  test('a downloaded Word, Excel or text file reaches the model as text; an unreadable one is refused', async () => {
+    const cookie = await signIn(ADMIN);
+    const notes = 'https://example.org/notes.txt';
+    state.downloads[notes] = {
+      url: notes,
+      name: 'notes.txt',
+      mediaType: 'text/plain',
+      bytes: new TextEncoder().encode('Rendez-vous le 12.'),
+    };
+    const binary = 'https://example.org/setup.exe';
+    state.downloads[binary] = {
+      url: binary,
+      name: 'setup.exe',
+      mediaType: 'application/x-msdownload',
+      bytes: new Uint8Array([77, 90]),
+    };
+    state.scriptedCalls = [
+      { toolName: 'download_file', input: { url: notes } },
+      { toolName: 'download_file', input: { url: binary } },
+    ];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Lis ces liens.')]);
+
+    expect((await toolResults(cookie)).map(({ error }) => error)).toEqual([
+      undefined,
+      'This kind of file cannot be read.',
+    ]);
+    expect(JSON.stringify(state.models.fast.doStreamCalls.at(-1)!.prompt)).toContain('Rendez-vous le 12.');
+    expect(JSON.stringify((await open(cookie, CONVERSATION)).messages)).not.toContain('Rendez-vous le 12.');
   });
 });
 describe('web search', () => {

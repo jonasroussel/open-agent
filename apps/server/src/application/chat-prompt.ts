@@ -99,6 +99,29 @@ export function withoutDocumentBodies(messages: ChatMessage[]): ChatMessage[] {
   }));
 }
 
+const READ_EARLIER =
+  "Fichier lu dans une réponse précédente : son contenu n'est plus joint. Relis-le avec le même outil si la question porte sur lui.";
+
+/**
+ * A file downloaded or read again by a tool served the answer that read it: its content was never saved, so an older
+ * call's result says so, in French as everything the code adds for the model.
+ */
+export function withEarlierReadNotes(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    parts: message.parts.map((part) => {
+      if (
+        (part.type !== 'tool-download_file' && part.type !== 'tool-read_attachment') ||
+        part.state !== 'output-available'
+      ) {
+        return part;
+      }
+      const output: Record<string, unknown> = { ...part.output, note: READ_EARLIER };
+      return { ...part, output } as unknown as typeof part;
+    }),
+  }));
+}
+
 /**
  * The admin's assistant prompt (`DEFAULT_PROMPTS.assistant` until changed), then what only the code knows: the date,
  * the app's language, whether the web can be searched, the canvas documents and the user's rules. The rules come

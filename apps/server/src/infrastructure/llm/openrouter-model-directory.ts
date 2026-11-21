@@ -3,7 +3,7 @@ import type { ModelCapability } from '@open-agent/shared';
 import type { ModelDirectory, ModelInfo } from '../../application/ports/model-catalog.ts';
 
 const MODELS_URL = 'https://openrouter.ai/api/v1/models';
-/** The list changes a few times a day at most; the admin page opens it now and then. */
+/** The list changes a few times a day at most. */
 const CACHE_MS = 60 * 60 * 1000;
 
 type OpenRouterModel = {
@@ -18,9 +18,20 @@ type OpenRouterModel = {
 /** OpenRouter's public model list (no key needed), kept an hour. */
 export class OpenRouterModelDirectory implements ModelDirectory {
   #cache: { at: number; models: ModelInfo[] } | null = null;
+  #loading: Promise<ModelInfo[]> | null = null;
 
   async list(): Promise<ModelInfo[]> {
-    if (this.#cache && Date.now() - this.#cache.at < CACHE_MS) return this.#cache.models;
+    const cache = this.#cache;
+    if (cache && Date.now() - cache.at < CACHE_MS) return cache.models;
+    if (!this.#loading) {
+      this.#loading = this.#load().finally(() => (this.#loading = null));
+      if (cache) this.#loading.catch((error) => console.error('Refreshing the models failed:', error));
+    }
+    // Every answer looks its model up: past the hour the old list answers at once while the new one loads.
+    return cache ? cache.models : this.#loading;
+  }
+
+  async #load(): Promise<ModelInfo[]> {
     const response = await fetch(MODELS_URL, { signal: AbortSignal.timeout(15_000) });
     if (!response.ok) throw new Error(`OpenRouter answered ${response.status} for its models.`);
     const { data } = (await response.json()) as { data: OpenRouterModel[] };
@@ -34,8 +45,10 @@ export class OpenRouterModelDirectory implements ModelDirectory {
 function toModelInfo(model: OpenRouterModel): ModelInfo {
   const parameters = model.supported_parameters ?? [];
   const capabilities: ModelCapability[] = [];
-  if (model.architecture.input_modalities.includes('text')) capabilities.push('text');
-  if (model.architecture.input_modalities.includes('image')) capabilities.push('image');
+  const inputs = model.architecture.input_modalities;
+  for (const modality of ['text', 'image', 'audio', 'video', 'file'] as const) {
+    if (inputs.includes(modality)) capabilities.push(modality);
+  }
   if (parameters.includes('tools')) capabilities.push('tools');
   if (parameters.includes('reasoning')) capabilities.push('reasoning');
   if (!model.reasoning?.mandatory) capabilities.push('thinking_off');

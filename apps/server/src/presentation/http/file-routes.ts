@@ -21,16 +21,27 @@ const UPLOAD_STATUS = {
 /**
  * A file never changes under its id, but who may read it does: on a shared computer, a file must not stay readable from
  * the browser's cache after sign-out, its deletion or its reader leaving the conversation. Each use asks again, and a
- * `304` spares sending the bytes.
+ * `304` spares sending the bytes. A part is sent when asked (`range`): Safari plays a recording or a video only so.
  */
 function revalidated(request: BunRequest, tag: string, body: Uint8Array, headers: Record<string, string>): Response {
   const etag = `"${tag}"`;
-  const cacheHeaders = { etag, 'cache-control': 'private, no-cache' };
+  const cacheHeaders = { etag, 'cache-control': 'private, no-cache', 'accept-ranges': 'bytes' };
   const known = (request.headers.get('if-none-match') ?? '')
     .split(',')
     .map((value) => value.trim().replace(/^W\//, ''));
   if (known.includes(etag)) return new Response(null, { status: 304, headers: cacheHeaders });
-  return new Response(body, { headers: { ...headers, ...cacheHeaders } });
+  const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range')?.trim() ?? '');
+  if (!range || (!range[1] && !range[2])) return new Response(body, { headers: { ...headers, ...cacheHeaders } });
+  // `bytes=-500`: the last 500 bytes.
+  const start = range[1] ? Number(range[1]) : Math.max(0, body.length - Number(range[2]));
+  const end = range[1] && range[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+  if (start > end) {
+    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${body.length}` } });
+  }
+  return new Response(body.subarray(start, end + 1), {
+    status: 206,
+    headers: { ...headers, ...cacheHeaders, 'content-range': `bytes ${start}-${end}/${body.length}` },
+  });
 }
 
 export function createFileRoutes({ signedInUser, library }: FileHttpDependencies) {
@@ -69,7 +80,7 @@ export function createFileRoutes({ signedInUser, library }: FileHttpDependencies
           return revalidated(request, opened.file.id, opened.bytes, {
             'content-type': opened.file.mediaType,
             'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(opened.file.name)}`,
-            // Only images, PDFs, Word and plain text are stored; the browser must not guess anything else.
+            // Only images, PDFs, Word, Excel, recordings, videos and plain text are stored; the browser must not guess.
             'x-content-type-options': 'nosniff',
           });
         }),

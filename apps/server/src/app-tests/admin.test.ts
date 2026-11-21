@@ -36,6 +36,10 @@ async function settingsOf(cookie: string): Promise<AdminSettingsResponse> {
   return (await (await call('/api/admin/settings', { cookie })).json()) as AdminSettingsResponse;
 }
 
+/** How much the model's calls were set to think. */
+const thinkingOf = (modelId: string) =>
+  new Set(state.thinking.filter((choice) => choice.modelId === modelId).map((choice) => choice.thinking));
+
 describe('admin settings', () => {
   test('the admin switches a role to another model, checked against OpenRouter, and the next answers use it', async () => {
     const cookie = await signIn(ADMIN);
@@ -52,6 +56,24 @@ describe('admin settings', () => {
     await setFast('fast-model');
     expect((await settingsOf(cookie)).models.fast).toBe('fast-model');
     expect(await state.database('settings').count({ count: '*' }).first()).toEqual({ count: 0 });
+  });
+
+  test('a model whose thinking cannot be turned off may answer everyday messages, thinking as little as it can, but not run the background calls', async () => {
+    const cookie = await signIn(ADMIN);
+    const setModel = (role: string) =>
+      call(`/api/admin/settings/models/${role}`, {
+        method: 'PUT',
+        body: { modelId: 'vendor/always-thinking' },
+        cookie,
+      });
+
+    expect(await errorOf(await setModel('background'))).toBe('model_unsuitable');
+    expect((await setModel('fast')).status).toBe(200);
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Bonjour')]);
+    const answer = await state.database('usage_events').where({ purpose: 'answer' }).first('model');
+    expect(answer.model).toBe('vendor/always-thinking');
+    expect(thinkingOf('vendor/always-thinking')).toEqual(new Set(['low']));
+    expect(thinkingOf('background-model')).toEqual(new Set(['off']));
   });
 
   test('an edited prompt applies from the next message, the code still adds what depends on the conversation, and reset brings the default back', async () => {

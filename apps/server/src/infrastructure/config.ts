@@ -26,12 +26,16 @@ export const config = {
    * entered again. Development data needs no secret.
    */
   encryptionKey: Bun.env.ENCRYPTION_KEY || (isProduction ? required('ENCRYPTION_KEY') : 'development'),
-  /** OpenRouter model ids per role, until the admin page changes them. The user chose these on 2026-11-01 and 2026-11-03. */
+  /**
+   * OpenRouter model ids per role, until the admin page changes them. The user chose Gemini 4 and Nano Banana 2.1 on
+   * 2026-11-21 (multimodal answers; latency over price); the background calls stay on DeepSeek, which answers before
+   * every message in about 0.5 s.
+   */
   models: {
-    fast: Bun.env.FAST_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',
-    reasoning: Bun.env.REASONING_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',
+    fast: Bun.env.FAST_MODEL ?? 'google/gemini-4-hydrogen',
+    reasoning: Bun.env.REASONING_MODEL ?? 'google/gemini-4-neon',
     background: Bun.env.BACKGROUND_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',
-    image: Bun.env.IMAGE_MODEL ?? 'google/gemini-3.1-flash-lite-image',
+    image: Bun.env.IMAGE_MODEL ?? 'google/gemini-nano-banana-2.1',
   },
   /** Never logged. Tavily's free plan: 1,000 searches a month; SearXNG takes over when they are used up. */
   tavilyApiKey: Bun.env.TAVILY_API_KEY || null,

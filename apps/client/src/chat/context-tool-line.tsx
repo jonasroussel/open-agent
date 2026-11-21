@@ -4,6 +4,7 @@ import {
   Calculator,
   CalendarDays,
   CloudSun,
+  Download,
   FileText,
   FolderOpen,
   Globe,
@@ -15,6 +16,7 @@ import {
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { fileSize } from '@/files/file-details.ts';
 import { cn } from '@/lib/utils.ts';
 
 type Part = ChatMessage['parts'][number];
@@ -25,6 +27,8 @@ const CONTEXT_TOOLS = {
   'tool-list_files': true,
   'tool-read_file': true,
   'tool-read_web_page': true,
+  'tool-download_file': true,
+  'tool-read_attachment': true,
   'tool-weather': true,
   'tool-calculate': true,
   'tool-days_between': true,
@@ -55,10 +59,10 @@ type Line = { icon: LucideIcon; label: string; target?: ReactNode };
  * from. It pulses while it runs; a failed one says so (the model was told why).
  */
 export function ContextToolLine({ part }: { part: ContextToolPart }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const running = part.state === 'input-streaming' || part.state === 'input-available';
   const failed = part.state === 'output-error';
-  const line = lineOf(part, running, t);
+  const line = lineOf(part, running, t, i18n.language);
 
   return (
     <div className={cn('text-muted-foreground flex items-start gap-1.5 text-sm', running && 'animate-pulse')}>
@@ -68,7 +72,12 @@ export function ContextToolLine({ part }: { part: ContextToolPart }) {
   );
 }
 
-function lineOf(part: ContextToolPart, running: boolean, t: ReturnType<typeof useTranslation>['t']): Line {
+function lineOf(
+  part: ContextToolPart,
+  running: boolean,
+  t: ReturnType<typeof useTranslation>['t'],
+  language: string,
+): Line {
   const done = part.state === 'output-available';
   switch (part.type) {
     case 'tool-search_conversations':
@@ -109,6 +118,32 @@ function lineOf(part: ContextToolPart, running: boolean, t: ReturnType<typeof us
         label,
         target: (
           <a href={url} target='_blank' rel='noreferrer' className='hover:text-foreground'>
+            {label}
+          </a>
+        ),
+      };
+    }
+    case 'tool-download_file': {
+      if (!done) return { icon: Download, label: t('tools.downloadingFile') };
+      const label = t('tools.downloadedFile', { name: part.output.name, size: fileSize(part.output.size, language) });
+      return {
+        icon: Download,
+        label,
+        target: (
+          <a href={part.output.url} target='_blank' rel='noreferrer' className='hover:text-foreground'>
+            {label}
+          </a>
+        ),
+      };
+    }
+    case 'tool-read_attachment': {
+      if (!done) return { icon: FileText, label: t('tools.readingAttachment') };
+      const label = t('tools.readAttachment', { name: part.output.name });
+      return {
+        icon: FileText,
+        label,
+        target: (
+          <a href={`/api/files/${part.output.id}`} target='_blank' rel='noreferrer' className='hover:text-foreground'>
             {label}
           </a>
         ),

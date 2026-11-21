@@ -18,11 +18,26 @@ export type WebPage = { url: string; title: string | null; text: string };
 
 /** A page the user named, read as plain text. */
 export interface WebPageReader {
-  /** Throws `PageUnavailable` with a message the model can pass on. */
+  /** Throws `PageUnavailable` with a message the model can pass on, `NotAWebPage` for a link to a file. */
   read(url: string, abortSignal: AbortSignal): Promise<WebPage>;
 }
 
 export class PageUnavailable extends ToolRefusal {}
+
+/** A link to a file (a PDF, a picture…): the model is sent to `download_file`. */
+export class NotAWebPage extends PageUnavailable {
+  constructor(mediaType: string) {
+    super(`This link is a file (${mediaType || 'unknown type'}), not a web page: read it with download_file.`);
+  }
+}
+
+export type DownloadedFile = { url: string; name: string; mediaType: string; bytes: Uint8Array };
+
+/** A file at a public link, for one answer: nothing is kept. */
+export interface FileDownloader {
+  /** Throws `PageUnavailable` with a message the model can pass on, for a private address or a file too big too. */
+  download(url: string, abortSignal: AbortSignal): Promise<DownloadedFile>;
+}
 
 export interface WeatherService {
   /** `days`: from today, 1 to 7. Throws `PlaceNotFound` when the place does not exist. */

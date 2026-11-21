@@ -2,6 +2,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { MAX_FILE_BYTES } from '@open-agent/shared';
 import ExcelJS from 'exceljs';
 import mammoth from 'mammoth';
 
@@ -17,12 +18,17 @@ import {
 const PAGE_DPI = 110;
 /** One upload must not pin the server: a tool run longer than this is stopped. */
 const COMMAND_TIMEOUT_MS = 30_000;
-/** A compressed file expands far past the 20 MB it weighs: what a tool prints is read up to this. */
+/**
+ * A 50 MB recording lasts about an hour: converting 40 minutes took 18 s on an M-series Mac (2026-11-21), a small
+ * server is a few times slower.
+ */
+const AUDIO_TIMEOUT_MS = 180_000;
+/** A compressed file expands far past what it weighs: what a tool prints is read up to this. */
 const MAX_OUTPUT_CHARACTERS = 2_000_000;
 /** Rendered pages: far past what the model reads at once, and every page is a picture to make. */
 const MAX_PDF_PAGES = 100;
-/** Pictures kept from a Word file, whose zip may hold far more than the uploaded 20 MB. */
-const MAX_WORD_IMAGE_BYTES = 20 * 1024 * 1024;
+/** Pictures kept from a Word file, whose zip may hold far more than the upload weighs. */
+const MAX_WORD_IMAGE_BYTES = MAX_FILE_BYTES;
 /** A Word or Excel file's zip, expanded: mammoth and exceljs read it in memory, so a zip bomb is refused before. */
 const MAX_EXPANDED_BYTES = 100 * 1024 * 1024;
 /** Word may embed EMF or WMF drawings, which the model cannot see. */
@@ -32,7 +38,10 @@ const VISIBLE_IMAGE_TYPES: Record<string, true> = {
   'image/gif': true,
   'image/webp': true,
 };
-/** PDFs with Poppler (`pdftotext`, `pdftoppm`; `poppler-utils` in the image), Word files with mammoth, Excel with exceljs. */
+/**
+ * PDFs with Poppler (`pdftotext`, `pdftoppm`; `poppler-utils` in the image), Word files with mammoth, Excel with
+ * exceljs, recordings with `ffmpeg` (in the image).
+ */
 export class PopplerMammothReader implements DocumentReader {
   async readPdf(bytes: Uint8Array): Promise<PdfPage[]> {
     const folder = await mkdtemp(join(tmpdir(), 'open-agent-pdf-'));
@@ -126,6 +135,23 @@ export class PopplerMammothReader implements DocumentReader {
     if (text.length > MAX_OUTPUT_CHARACTERS) throw new DocumentTooLong('The spreadsheet holds too much text.');
     return text;
   }
+
+  async convertAudio(bytes: Uint8Array): Promise<Uint8Array> {
+    const folder = await mkdtemp(join(tmpdir(), 'open-agent-audio-'));
+    try {
+      const input = join(folder, 'input');
+      const output = join(folder, 'audio.m4a');
+      await Bun.write(input, bytes);
+      // 96 kb/s: an hour-long recording stays under the 50 MB a file may weigh.
+      await run(
+        ['ffmpeg', '-nostdin', '-v', 'error', '-i', input, '-vn', '-c:a', 'aac', '-b:a', '96k', output],
+        AUDIO_TIMEOUT_MS,
+      );
+      return await Bun.file(output).bytes();
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
+  }
 }
 
 function pushText(pieces: WordPiece[], text: string): void {
@@ -203,20 +229,20 @@ function pageNumber(name: string): number {
  * A broken or protected file makes the command exit with an error. Returns what it printed; a tool that runs too long
  * or prints too much is stopped and refused, so one upload cannot pin the server.
  */
-async function run(command: string[]): Promise<string> {
+async function run(command: string[], timeoutMs = COMMAND_TIMEOUT_MS): Promise<string> {
   const process = Bun.spawn(command, { stdout: 'pipe', stderr: 'pipe' });
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
     process.kill();
-  }, COMMAND_TIMEOUT_MS);
+  }, timeoutMs);
   try {
     const [output, failure, code] = await Promise.all([
       readCapped(process.stdout),
       new Response(process.stderr).text(),
       process.exited,
     ]);
-    if (timedOut) throw new DocumentTooLong(`${command[0]} ran longer than ${COMMAND_TIMEOUT_MS / 1000} s.`);
+    if (timedOut) throw new DocumentTooLong(`${command[0]} ran longer than ${timeoutMs / 1000} s.`);
     if (code !== 0) throw new UnreadableDocument(`${command[0]} failed: ${failure}`);
     return output;
   } catch (error) {

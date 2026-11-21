@@ -33,6 +33,8 @@ import { FilePickerDialog } from '@/files/file-picker-dialog.tsx';
 import { libraryFilesQuery, uploadFile } from '@/files/library.ts';
 import { cn } from '@/lib/utils.ts';
 
+import { VoiceRecorder } from './voice-recorder.tsx';
+
 /** On a touch screen, Enter adds a line, like in a text message; the button sends. */
 const touchScreen = window.matchMedia('(pointer: coarse)').matches;
 
@@ -83,6 +85,7 @@ export function Composer({
   const [notice, setNotice] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [recording, setRecording] = useState(false);
   const deviceInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -98,7 +101,12 @@ export function Composer({
   const ready = attachments.flatMap((attachment) => (attachment.file ? [attachment.file] : []));
   const room = MAX_FILES_PER_MESSAGE - attachments.length;
   const canSend =
-    !busy && !waiting && !uploading && !sendBlocked && (text.trim() !== '' || ready.length > 0 || command !== null);
+    !busy &&
+    !waiting &&
+    !uploading &&
+    !recording &&
+    !sendBlocked &&
+    (text.trim() !== '' || ready.length > 0 || command !== null);
 
   const update = (key: string, change: Partial<Attachment>) =>
     setAttachments((current) =>
@@ -342,6 +350,12 @@ export function Composer({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <VoiceRecorder
+          disabled={room <= 0}
+          onRecorded={(file) => addFiles([file])}
+          onRecordingChange={setRecording}
+          onError={setNotice}
+        />
         {/* In the user's order, between the paperclip and the send button; scrolled sideways when they do not fit. */}
         <div className='flex min-w-0 flex-1 [scrollbar-width:none] gap-1.5 overflow-x-auto'>
           {commands.map((candidate) => (

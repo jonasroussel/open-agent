@@ -42,7 +42,7 @@ export class MemoryReconciler {
     abortSignal: AbortSignal,
     explicit = false,
   ): Promise<MemoryEdit | null> {
-    const choice = this.#models.choose('background', user);
+    const choice = await this.#models.choose('background', user);
     // A full memory takes no new rule: said to the model, and enforced by `Memory.applyRemark`.
     const lines = [
       this.#settings.prompt('memory'),

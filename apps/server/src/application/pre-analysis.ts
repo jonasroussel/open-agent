@@ -72,7 +72,7 @@ export class PreAnalysis {
     abortSignal: AbortSignal,
   ): Promise<Analysis> {
     const mayClarify = mayAskToClarify(history);
-    const choice = this.#models.choose('background', user);
+    const choice = await this.#models.choose('background', user);
     try {
       const result = await generateText({
         model: choice.model,

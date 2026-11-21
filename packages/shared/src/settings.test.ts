@@ -3,9 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { missingCapabilities } from './settings.ts';
 
 describe('missingCapabilities', () => {
-  test('answers read text and pictures and use tools; everyday answers turn thinking off, thinking answers think', () => {
+  test('answers read text and pictures and use tools; thinking answers think, everyday ones may think or not', () => {
     expect(missingCapabilities('fast', ['text', 'image', 'tools', 'thinking_off'])).toEqual([]);
-    expect(missingCapabilities('fast', ['text', 'tools', 'reasoning'])).toEqual(['image', 'thinking_off']);
+    expect(missingCapabilities('fast', ['text', 'image', 'tools', 'reasoning'])).toEqual([]);
+    expect(missingCapabilities('fast', ['text', 'tools', 'reasoning'])).toEqual(['image']);
     expect(missingCapabilities('reasoning', ['text', 'image', 'tools', 'thinking_off'])).toEqual(['reasoning']);
   });
 

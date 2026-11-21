@@ -17,7 +17,7 @@ import { Models } from './application/models.ts';
 import { OwnKeys } from './application/own-keys.ts';
 import { Participants } from './application/participants.ts';
 import type { Clock } from './application/ports/clock.ts';
-import type { WeatherService, WebPageReader } from './application/ports/context-services.ts';
+import type { FileDownloader, WeatherService, WebPageReader } from './application/ports/context-services.ts';
 import type { DocumentReader } from './application/ports/document-reader.ts';
 import type { FileStore } from './application/ports/file-store.ts';
 import type { Mailer } from './application/ports/mailer.ts';
@@ -87,6 +87,8 @@ export type AppAdapters = {
   /** Pages the user names, for the model's `read_web_page`. */
   pages: WebPageReader;
   weather: WeatherService;
+  /** Files at public links, for the model's `download_file`. */
+  downloads: FileDownloader;
 };
 
 /** Wires the application; the composition root for `main.ts` and the HTTP tests. */
@@ -104,6 +106,7 @@ export async function createApp(
     documents,
     pages,
     weather,
+    downloads,
   }: AppAdapters,
   options: AppOptions,
 ) {
@@ -178,7 +181,7 @@ export async function createApp(
       settings,
       clock,
       webSearch,
-      new ContextTools(conversations, participants, library, new MathjsCalculator(), pages, weather),
+      new ContextTools(conversations, participants, library, new MathjsCalculator(), pages, weather, downloads),
       new MakingTools(library, roleModels, usage, new OfficeFileMaker()),
       commands,
     ),

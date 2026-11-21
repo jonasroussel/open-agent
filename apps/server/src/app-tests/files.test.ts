@@ -18,6 +18,7 @@ import {
   say,
   share,
   sharedWithMarie,
+  prePasses,
   toolResults,
   upload,
   withFile,
@@ -167,11 +168,19 @@ describe('making tools', () => {
   });
 });
 
-/** The pictures of a model call: each one is something the model sees, not just reads about. */
-const picturesSent = (prompt: unknown) =>
-  (prompt as { role: string; content: string | { type: string; mediaType?: string }[] }[])
-    .flatMap((message) => (typeof message.content === 'string' ? [] : message.content))
-    .filter((part) => part.type === 'file' && part.mediaType === 'image/jpeg').length;
+/** The media type of every file a model call carries, tool results included: what the model sees or hears. */
+function filesSent(prompt: unknown): string[] {
+  const types: string[] = [];
+  JSON.stringify(prompt, (_key, value: unknown) => {
+    const part = value as { type?: unknown; mediaType?: unknown } | null;
+    if (part?.type === 'file' && typeof part.mediaType === 'string') types.push(part.mediaType);
+    return value;
+  });
+  return types;
+}
+
+const setFast = (cookie: string, modelId: string) =>
+  call('/api/admin/settings/models/fast', { method: 'PUT', body: { modelId }, cookie });
 
 async function uploaded(cookie: string, name: string, type: string, bytes: Uint8Array | string) {
   return ((await (await upload(cookie, name, type, bytes)).json()) as UploadFileResponse).file;
@@ -183,7 +192,7 @@ function revalidate(url: string, etag: string, cookie?: string) {
 }
 
 describe('files', () => {
-  test('a PDF reaches the model whole, text and picture of every page, at every answer', async () => {
+  test('a PDF goes whole to a model that reads files, as text and pictures of its pages to one that does not, and only in the turn it was sent', async () => {
     const cookie = await signIn(ADMIN);
     state.pdfPages = [
       { text: 'Facture 2026-114, total 89 €', image: new Uint8Array([0xff, 0xd8, 1]) },
@@ -198,19 +207,114 @@ describe('files', () => {
     expect([...new Uint8Array(await preview.arrayBuffer())]).toEqual([0xff, 0xd8, 1]);
 
     await chat(cookie, CONVERSATION, [withFile('m1', 'Le total est bon ?', file)]);
-    const history = [...(await open(cookie, CONVERSATION)).messages, userMessage('m3', 'Et la date ?')];
-    await chat(cookie, CONVERSATION, history);
+    const [whole] = state.models.fast.doStreamCalls;
+    expect(filesSent(whole!.prompt)).toEqual(['application/pdf']);
+    expect(JSON.stringify(whole!.prompt)).not.toContain('Facture 2026-114');
+    const preAnalysis = prePasses()[0]!;
+    expect(preAnalysis).toContain('[Pièces jointes : facture.pdf]');
+    expect(preAnalysis).not.toContain('application/pdf');
 
-    for (const answer of state.models.fast.doStreamCalls) {
-      const prompt = JSON.stringify(answer.prompt);
-      expect(prompt).toContain('Facture 2026-114, total 89 €');
-      expect(prompt).toContain('Page 2 of 2');
-      expect(picturesSent(answer.prompt)).toBe(2);
-    }
-    const preAnalysis = state.models.background.doGenerateCalls.find((generation) =>
-      JSON.stringify(generation.prompt).includes('Dernier message de l'),
-    );
-    expect(JSON.stringify(preAnalysis!.prompt)).toContain('[Pièces jointes : facture.pdf]');
+    await say(cookie, userMessage('m3', 'Et la date ?'));
+    const later = JSON.stringify(state.models.fast.doStreamCalls[1]!.prompt);
+    expect(filesSent(state.models.fast.doStreamCalls[1]!.prompt)).toEqual([]);
+    expect(later).toContain(`« facture.pdf » (PDF, id ${file.id})`);
+    expect(later).toContain('read_attachment');
+
+    expect((await setFast(cookie, 'vendor/newer-model')).status).toBe(200);
+    await say(cookie, withFile('m5', 'Et maintenant ?', file));
+    const pages = state.models.fast.doStreamCalls[2]!.prompt;
+    expect(JSON.stringify(pages)).toContain('Facture 2026-114, total 89 €');
+    expect(JSON.stringify(pages)).toContain('Page 2 of 2');
+    expect(filesSent(pages)).toEqual(['image/jpeg', 'image/jpeg']);
+  });
+
+  test('a recording reaches a model that listens, and a note tells one that does not', async () => {
+    const cookie = await signIn(ADMIN);
+    const voice = await uploaded(cookie, 'message.m4a', 'audio/x-m4a', new Uint8Array([0, 0, 0, 24, 1, 2, 3]));
+    expect(voice).toMatchObject({ kind: 'audio', mediaType: 'audio/mp4', previewUrl: null });
+
+    await chat(cookie, CONVERSATION, [withFile('m1', '', voice)]);
+    expect(filesSent(state.models.fast.doStreamCalls[0]!.prompt)).toEqual(['audio/mp4']);
+    expect(prePasses()[0]).not.toContain('audio/mp4');
+
+    expect((await setFast(cookie, 'vendor/newer-model')).status).toBe(200);
+    await say(cookie, withFile('m3', 'Et celui-ci ?', voice));
+    const prompt = state.models.fast.doStreamCalls[1]!.prompt;
+    expect(filesSent(prompt)).toEqual([]);
+    expect(JSON.stringify(prompt)).toContain("ne peut pas écouter l'audio");
+  });
+
+  test('a video is watched in the turn it was sent; later the model reads a note it can act on', async () => {
+    const cookie = await signIn(ADMIN);
+    const video = await uploaded(cookie, 'fuite.mov', 'video/quicktime', new Uint8Array([0, 0, 0, 20, 9, 9]));
+    expect(video).toMatchObject({ kind: 'video', mediaType: 'video/quicktime' });
+    // Safari plays a video only when the server sends the parts it asks for.
+    const part = await fetch(new URL(video.url, state.server.url), { headers: { cookie, range: 'bytes=4-' } });
+    expect(part.status).toBe(206);
+    expect(part.headers.get('content-range')).toBe('bytes 4-5/6');
+    expect([...new Uint8Array(await part.arrayBuffer())]).toEqual([9, 9]);
+
+    await chat(cookie, CONVERSATION, [withFile('m1', 'Ça fuit où ?', video)]);
+    expect(filesSent(state.models.fast.doStreamCalls[0]!.prompt)).toEqual(['video/quicktime']);
+
+    await say(cookie, userMessage('m3', 'Et pour réparer ?'));
+    const later = state.models.fast.doStreamCalls[1]!.prompt;
+    expect(filesSent(later)).toEqual([]);
+    expect(JSON.stringify(later)).toContain(`« fuite.mov » (vidéo, id ${video.id})`);
+  });
+
+  // Bun reads an uploaded file's media type from its name, not from the browser: the recorder names it `.weba`.
+  test.skipIf(!Bun.which('ffmpeg'))(
+    "a recording from Chrome's recorder (webm) is stored converted to m4a, which the models take",
+    async () => {
+      const cookie = await signIn(ADMIN);
+      const webm = new Uint8Array(
+        await Bun.$`ffmpeg -v error -f lavfi -i sine=d=0.5 -c:a libopus -f webm -`.arrayBuffer(),
+      );
+      const file = await uploaded(cookie, 'message.weba', 'audio/webm;codecs=opus', webm);
+      expect(file).toMatchObject({ name: 'message.m4a', kind: 'audio', mediaType: 'audio/mp4' });
+      const stored = new Uint8Array(await (await call(file.url, { cookie })).arrayBuffer());
+      expect(new TextDecoder().decode(stored.slice(4, 8))).toBe('ftyp');
+      expect(await errorOf(await upload(cookie, 'broken.weba', 'audio/webm', 'not a recording'))).toBe(
+        'file_unreadable',
+      );
+    },
+  );
+
+  test('the model reads again a file of this conversation for one answer; nothing of it is saved, and no other file is reached', async () => {
+    const { admin, marie } = await sharedWithMarie();
+    const notes = await uploaded(admin, 'notes.txt', 'text/plain', 'Code du portail : 4721');
+    const elsewhere = await uploaded(admin, 'ailleurs.txt', 'text/plain', 'Code de la cave : 1180');
+    const hers = await uploaded(marie, 'secret.txt', 'text/plain', 'Code du coffre : 5512');
+    await chat(admin, 'other-conversation-id', [withFile('m1', 'Garde ça.', elsewhere)]);
+    await say(admin, withFile('m3', 'Voici mes notes.', notes));
+
+    state.scriptedCalls = [
+      { toolName: 'read_attachment', input: { id: notes.id } },
+      { toolName: 'read_attachment', input: { id: elsewhere.id } },
+      { toolName: 'read_attachment', input: { id: hers.id } },
+    ];
+    await say(marie, userMessage('m5', 'Quel est le code ?'));
+    const results = await toolResults(marie);
+    expect(results[0]).toEqual({
+      tool: 'read_attachment',
+      output: { id: notes.id, name: 'notes.txt', kind: 'text' },
+      error: undefined,
+    });
+    expect(results.slice(1).map(({ error }) => error)).toEqual([
+      'No file with this id was attached or made in this conversation.',
+      'No file with this id was attached or made in this conversation.',
+    ]);
+    const calls = state.models.fast.doStreamCalls;
+    expect(JSON.stringify(calls.at(-1)!.prompt)).toContain('Code du portail : 4721');
+    expect(JSON.stringify(calls.at(-1)!.prompt)).not.toContain('1180');
+    expect(JSON.stringify(calls.at(-1)!.prompt)).not.toContain('5512');
+    expect(JSON.stringify((await open(admin, CONVERSATION)).messages)).not.toContain('4721');
+
+    await say(admin, userMessage('m7', 'Merci.'));
+    const next = JSON.stringify(state.models.fast.doStreamCalls.at(-1)!.prompt);
+    expect(next).not.toContain('4721');
+    expect(next).toContain('Fichier lu dans une réponse précédente');
   });
 
   test('a file is only for its owner: anyone else neither opens it nor attaches it to a message', async () => {
@@ -248,14 +352,25 @@ describe('files', () => {
 
   test('what cannot be read whole is refused at upload, never read in part', async () => {
     const cookie = await signIn(ADMIN);
-    expect(await errorOf(await upload(cookie, 'page.html', 'text/html', '<p>hi</p>'))).toBe('file_type_unsupported');
-    expect(await errorOf(await upload(cookie, 'big.txt', 'text/plain', new Uint8Array(21 * 1024 * 1024)))).toBe(
+    expect(await errorOf(await upload(cookie, 'film.avi', 'video/x-msvideo', 'RIFF'))).toBe('file_type_unsupported');
+    expect(await errorOf(await upload(cookie, 'notes.txt', 'text/plain', new Uint8Array([77, 90, 0, 1])))).toBe(
+      'file_unreadable',
+    );
+    expect(await errorOf(await upload(cookie, 'big.txt', 'text/plain', new Uint8Array(51 * 1024 * 1024)))).toBe(
       'file_too_large',
     );
     expect(await errorOf(await upload(cookie, 'long.txt', 'text/plain', 'mot '.repeat(500_000)))).toBe('file_too_long');
     state.pdfPages = null;
     expect(await errorOf(await upload(cookie, 'locked.pdf', 'application/pdf', '%PDF'))).toBe('file_unreadable');
     expect((await (await call('/api/files', { cookie })).json()) as unknown).toEqual({ files: [] });
+  });
+
+  test('a page or code file is read as text, and served as plain text', async () => {
+    const cookie = await signIn(ADMIN);
+    const page = await uploaded(cookie, 'page.html', 'text/html', '<script>alert(1)</script><p>Bonjour</p>');
+    expect(page).toMatchObject({ kind: 'text', mediaType: 'text/plain' });
+    expect((await call(page.url, { cookie })).headers.get('content-type')).toStartWith('text/plain');
+    expect(await uploaded(cookie, 'app.ts', 'video/mp2t', 'const a = 1;')).toMatchObject({ kind: 'text' });
   });
 
   test('a message may only attach files of the library', async () => {

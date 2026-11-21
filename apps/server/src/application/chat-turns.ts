@@ -30,6 +30,7 @@ import {
   THOUGHTS_NOTE,
   timeNote,
   withLatestRequest,
+  withEarlierReadNotes,
   withNotes,
   withoutDocumentBodies,
 } from './chat-prompt.ts';
@@ -221,7 +222,7 @@ export class ChatTurns {
     }
 
     try {
-      this.#models.choose('fast', user);
+      await this.#models.choose('fast', user);
     } catch (error) {
       if (error instanceof ModelUnavailableError) return { ok: false, reason: 'model_unavailable' };
       throw error;
@@ -385,7 +386,8 @@ export class ChatTurns {
           // The right thread of a comparison answers with the model the admin picked; everything else is the settings'.
           const choice = conversation.modelId
             ? await this.#models.choosePicked(analysis.route, conversation.modelId, user)
-            : this.#models.choose(analysis.route, user);
+            : await this.#models.choose(analysis.route, user);
+          const owners = people.map((person) => person.id);
           const documents = await this.#artifacts.latestOf(conversation.id);
           // Expanded after the rewrite: the clearer request replaces only the user's words, never a command's prompt.
           const requested = analysis.rewrittenRequest
@@ -393,12 +395,13 @@ export class ChatTurns {
             : expanded;
           // Searches spent this turn, counted here because one step may ask for several at once.
           const searches = { count: 0 };
+          const context = this.#contextTools.for(user, conversation.id, abortSignal, owners, choice.capabilities);
           const tools = {
             ...documentTools(this.#artifacts, user, conversation.id),
             ...(this.#webSearch
               ? { web_search: searchTool(this.#usage, user, conversation.id, this.#webSearch, abortSignal, searches) }
               : {}),
-            ...this.#contextTools.for(user, conversation.id, abortSignal, shared),
+            ...context.tools,
             ...this.#makingTools.for(user, conversation.id, abortSignal),
             save_command: this.#commands.toolFor(user),
             ask_user: askTool(resumed !== null && hasAsked(resumed)),
@@ -417,31 +420,37 @@ export class ChatTurns {
               await this.#commands.names(user),
               shared ? people.map(nameOf) : null,
             ),
-            // Every attached file goes in whole, at each answer: the user may ask about any detail, any time.
+            // Each file reaches the model in the turn it was sent, as the answering model can take it; later, a note.
             messages: await convertToModelMessages(
               await this.#library.expandFiles(
-                people.map((person) => person.id),
-                withoutDocumentBodies(
-                  withNotes(named(withAnsweredQuestions(requested)), [
-                    timeNote(this.#clock.now()),
-                    THOUGHTS_NOTE,
-                    ...restoreNotes(documents),
-                  ]),
+                owners,
+                withEarlierReadNotes(
+                  withoutDocumentBodies(
+                    withNotes(named(withAnsweredQuestions(requested)), [
+                      timeNote(this.#clock.now()),
+                      THOUGHTS_NOTE,
+                      ...restoreNotes(documents),
+                    ]),
+                  ),
                 ),
+                choice.capabilities,
               ),
             ),
             tools,
             stopWhen: isStepCount(MAX_STEPS),
-            // The search tool is withheld once two are spent, and the last step writes.
-            prepareStep: ({ stepNumber, steps }) => {
+            // The search tool is withheld once two are spent, and the last step writes. The files read by a tool in
+            // this answer follow the conversation at each step.
+            prepareStep: ({ stepNumber, steps, messages: stepMessages }) => {
               const searched = steps.reduce(
                 (count, step) => count + step.toolCalls.filter((call) => call.toolName === 'web_search').length,
                 0,
               );
-              if (stepNumber === MAX_STEPS - 1) return { toolChoice: 'none' };
-              if (searched >= MAX_SEARCHES) return { activeTools: withoutSearch };
+              const files = context.filesMessage();
+              const withFiles = files ? { messages: [...stepMessages, files] } : {};
+              if (stepNumber === MAX_STEPS - 1) return { ...withFiles, toolChoice: 'none' };
+              if (searched >= MAX_SEARCHES) return { ...withFiles, activeTools: withoutSearch };
               if (stepNumber === 0 && searchFirst) return { toolChoice: 'required', activeTools: ['web_search'] };
-              return undefined;
+              return files ? withFiles : undefined;
             },
             abortSignal,
             // Each step is one billed call: a search, a document, then the answer.

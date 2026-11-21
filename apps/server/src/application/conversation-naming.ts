@@ -33,7 +33,7 @@ export class ConversationNaming {
     // A first message may be only a photo or a document: its name is enough to name the conversation.
     const text = textOf(first) || attachedNames(first);
     if (!text) return;
-    const choice = this.#models.choose('background', user);
+    const choice = await this.#models.choose('background', user);
     try {
       const result = await generateText({
         model: choice.model,

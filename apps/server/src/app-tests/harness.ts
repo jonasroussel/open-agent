@@ -23,15 +23,17 @@ import { MockLanguageModelV4 } from 'ai/test';
 import type { Knex } from 'knex';
 
 import { createApp } from '../app.ts';
-import { PageUnavailable, PlaceNotFound } from '../application/ports/context-services.ts';
+import type { DownloadedFile } from '../application/ports/context-services.ts';
+import { NotAWebPage, PageUnavailable, PlaceNotFound } from '../application/ports/context-services.ts';
 import type { PdfPage } from '../application/ports/document-reader.ts';
 import { UnreadableDocument } from '../application/ports/document-reader.ts';
 import type { ShareEmail, SignInEmail } from '../application/ports/mailer.ts';
-import type { ModelCatalog, ModelInfo } from '../application/ports/model-catalog.ts';
+import type { ModelCatalog, ModelInfo, Thinking } from '../application/ports/model-catalog.ts';
 import type { WebSearchRequest } from '../application/ports/web-search.ts';
 import { AesSecretBox } from '../infrastructure/crypto/aes-secret-box.ts';
 import { createDatabase } from '../infrastructure/database/connection.ts';
 import { DiskFileStore } from '../infrastructure/files/disk-file-store.ts';
+import { PopplerMammothReader } from '../infrastructure/files/document-reader.ts';
 import { OpenRouterModelCatalog } from '../infrastructure/llm/openrouter-model-catalog.ts';
 
 export const ADMIN = 'admin@example.com';
@@ -58,6 +60,8 @@ type State = {
   searchDown: boolean;
   /** The own key each model call used, `null` for the app's; `keyAccepted`: what OpenRouter says of a key, `null`: down. */
   keysUsed: (string | null)[];
+  /** How much each model call was set to think, in order. */
+  thinking: { modelId: string; thinking: Thinking }[];
   keyAccepted: boolean | null;
   /** OpenRouter refuses the users' own keys during the answer. */
   ownKeyRefused: boolean;
@@ -67,6 +71,8 @@ type State = {
   answerHeld: Promise<void> | null;
   /** What the fake document reader finds in the next PDF; `null`: the PDF is broken. */
   pdfPages: PdfPage[] | null;
+  /** The files the fake web serves for download, by url; any other url answers 404. */
+  downloads: Record<string, DownloadedFile>;
 };
 
 /** The app and its fakes for the current test, reset before each test by `useApp`. */
@@ -204,8 +210,9 @@ function fakeModels(): ModelCatalog {
   };
   const openRouter = new OpenRouterModelCatalog(null);
   return {
-    choose: (role, modelId, ownKey) => {
+    choose: (role, modelId, ownKey, thinking) => {
       state.keysUsed.push(ownKey);
+      state.thinking.push({ modelId, thinking });
       const model = ownKey && state.ownKeyRefused ? refusingModel() : state.models[role];
       return { model, modelId, paidByUser: ownKey !== null };
     },
@@ -228,13 +235,23 @@ function refusingModel() {
   return new MockLanguageModelV4({ doStream: async () => refuseKey(), doGenerate: async () => refuseKey() });
 }
 
-/** The models OpenRouter offers in the tests: those of the environment, a newer one, one blind to pictures, one whose
- * thinking cannot be turned off, one that draws. */
+/** The models OpenRouter offers in the tests: those of the environment (which hear, watch and read PDFs, as Gemini
+ * does), a newer one, one blind to pictures, one whose thinking cannot be turned off, one that draws. */
 const MODEL_LIST: ModelInfo[] = [
   ...(['fast-model', 'reasoning-model', 'background-model'] as const).map((id) => ({
     id,
     name: id,
-    capabilities: ['text', 'image', 'tools', 'reasoning', 'thinking_off', 'structured_outputs'] as ModelCapability[],
+    capabilities: [
+      'text',
+      'image',
+      'audio',
+      'video',
+      'file',
+      'tools',
+      'reasoning',
+      'thinking_off',
+      'structured_outputs',
+    ] as ModelCapability[],
     inputPrice: 0.15,
     outputPrice: 0.6,
   })),
@@ -281,12 +298,14 @@ export function useApp() {
     state.scriptedCalls = [];
     state.answerHeld = null;
     state.keysUsed = [];
+    state.thinking = [];
     state.keyAccepted = true;
     state.ownKeyRefused = false;
     state.sent = [];
     state.shares = [];
     state.mailerDown = false;
     state.pdfPages = [];
+    state.downloads = {};
     state.imageDraws = true;
     filesFolder = mkdtempSync(join(tmpdir(), 'open-agent-files-'));
     state.database = createDatabase(':memory:');
@@ -330,13 +349,22 @@ export function useApp() {
               return state.pdfPages;
             },
             readWord: async () => [],
+            convertAudio: (bytes) => new PopplerMammothReader().convertAudio(bytes),
             readSpreadsheet: async () =>
               'Sheet "Budget":\n1 | Poste | Montant\n2 | Loyer | 750\n3 | Total | =SUM(B2:B2)',
           },
           pages: {
             read: async (url) => {
+              if (url.endsWith('.pdf')) throw new NotAWebPage('application/pdf');
               if (url !== PAGE.url) throw new PageUnavailable('The page answered 404.');
               return PAGE;
+            },
+          },
+          downloads: {
+            download: async (url) => {
+              const file = state.downloads[url];
+              if (!file) throw new PageUnavailable('The file answered 404.');
+              return file;
             },
           },
           weather: {

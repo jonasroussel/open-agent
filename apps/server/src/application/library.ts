@@ -1,15 +1,19 @@
-import { fileKindOf, MAX_FILE_BYTES, mediaTypeOf, type FileKind } from '@open-agent/shared';
+import { fileKindOf, MAX_FILE_BYTES, mediaTypeOf, type FileKind, type ModelCapability } from '@open-agent/shared';
 
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
 import type { ChatMessage } from '../domain/conversation.ts';
 import {
   cleanFileName,
+  CONVERTED_AUDIO,
   estimatedTokens,
   fileIdOf,
+  holdsFile,
+  LISTENABLE_AUDIO_TYPES,
   MAX_FILE_TOKENS,
   ORIGINAL,
   pageImageName,
   previewOf,
+  withExtension,
   type FilePiece,
   type LibraryFile,
 } from '../domain/library-file.ts';
@@ -22,18 +26,49 @@ import type { FileStore } from './ports/file-store.ts';
 
 export type Upload = { name: string; mediaType: string; bytes: Uint8Array };
 
-export type UploadResult =
-  | { ok: true; file: LibraryFile }
-  | { ok: false; reason: 'file_too_large' | 'file_type_unsupported' | 'file_unreadable' | 'file_too_long' };
+type ReadFailure = 'file_too_large' | 'file_type_unsupported' | 'file_unreadable' | 'file_too_long';
+
+export type UploadResult = { ok: true; file: LibraryFile } | { ok: false; reason: ReadFailure };
+
+/** What the model gets of a file: text, and files (pictures, a PDF, a recording, a video) as their bytes. */
+export type ModelPiece =
+  | { type: 'text'; text: string }
+  | { type: 'file'; mediaType: string; data: Uint8Array; filename?: string };
+
+/** A downloaded file, read for one answer: nothing of it is stored. */
+export type DownloadReading =
+  | { ok: true; name: string; kind: FileKind; size: number; pieces: ModelPiece[] }
+  | { ok: false; reason: ReadFailure };
 
 type Picture = { name: string; bytes: Uint8Array };
 
+/** A file read as at upload, before it is stored: its bytes are the converted recording, if it was one. */
+type Reading = {
+  name: string;
+  kind: FileKind;
+  mediaType: string;
+  bytes: Uint8Array;
+  content: FilePiece[];
+  pictures: Picture[];
+};
+
 const EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp' };
+
+/** What the model reads of a file's kind, in French. */
+const KIND_NAMES: Record<FileKind, string> = {
+  image: 'image',
+  pdf: 'PDF',
+  word: 'Word',
+  spreadsheet: 'Excel',
+  text: 'texte',
+  audio: 'enregistrement audio',
+  video: 'vidéo',
+};
 
 /**
  * Each user's files. A file is read once, at upload, into what the model needs to know all of it: the whole text, and
- * a picture of every PDF page and of every image in a Word file. Every answer then gets the whole file again, so the
- * user can ask about any detail of it, even many messages later.
+ * a picture of every PDF page and of every image in a Word file; a recording or a video is its original. The answer to
+ * the message it came with gets the whole file; later answers read it again whole when asked (`readAttachment`).
  */
 export class Library {
   readonly #files: LibraryRepository;
@@ -60,38 +95,57 @@ export class Library {
   }
 
   async upload(user: User, upload: Upload): Promise<UploadResult> {
-    if (upload.bytes.length > MAX_FILE_BYTES) return { ok: false, reason: 'file_too_large' };
-    const kind = fileKindOf(upload.name, upload.mediaType);
-    if (!kind) return { ok: false, reason: 'file_type_unsupported' };
-    const mediaType = mediaTypeOf(kind, upload.name, upload.mediaType);
-
-    const pictures: Picture[] = [];
-    let content: FilePiece[];
-    try {
-      content = await this.#read(kind, mediaType, upload.bytes, pictures);
-    } catch (error) {
-      if (error instanceof DocumentTooLong) return { ok: false, reason: 'file_too_long' };
-      if (error instanceof UnreadableDocument) return { ok: false, reason: 'file_unreadable' };
-      throw error;
-    }
-    if (content.length === 0) return { ok: false, reason: 'file_unreadable' };
-    if (estimatedTokens(content) > MAX_FILE_TOKENS) return { ok: false, reason: 'file_too_long' };
-
+    const read = await this.#readUpload(upload);
+    if (!read.ok) return read;
+    const { reading } = read;
     const file: LibraryFile = {
       id: crypto.randomUUID(),
       userId: user.id,
-      name: cleanFileName(upload.name),
-      kind,
-      mediaType,
-      size: upload.bytes.length,
-      content,
+      name: reading.name,
+      kind: reading.kind,
+      mediaType: reading.mediaType,
+      size: reading.bytes.length,
+      content: reading.content,
       createdAt: this.#clock.now(),
     };
-    await this.#store.save(user.id, file.id, ORIGINAL, upload.bytes);
-    for (const picture of pictures) await this.#store.save(user.id, file.id, picture.name, picture.bytes);
+    await this.#store.save(user.id, file.id, ORIGINAL, reading.bytes);
+    for (const picture of reading.pictures) await this.#store.save(user.id, file.id, picture.name, picture.bytes);
     await this.#files.create(file);
     this.#changes.publish(user.id, { type: 'files' });
     return { ok: true, file };
+  }
+
+  /** A file the model downloaded, read like an upload and given as `expandFiles` would, but kept nowhere. */
+  async readDownload(download: Upload, capabilities: readonly ModelCapability[]): Promise<DownloadReading> {
+    const read = await this.#readUpload(download);
+    if (!read.ok) return read;
+    const { reading } = read;
+    const bytesOf = async (name: string) =>
+      name === ORIGINAL ? reading.bytes : (reading.pictures.find((picture) => picture.name === name)?.bytes ?? null);
+    return {
+      ok: true,
+      name: reading.name,
+      kind: reading.kind,
+      size: reading.bytes.length,
+      pieces: await this.#pieces(reading, bytesOf, capabilities),
+    };
+  }
+
+  /**
+   * A file attached or made in `conversationId`, read again whole for one answer (`read_attachment`); `null` for any
+   * other id, and for a file of someone no longer in the conversation (`owners`: its participants), as `expandFiles`.
+   */
+  async readAttachment(
+    conversationId: string,
+    owners: readonly number[],
+    id: string,
+    capabilities: readonly ModelCapability[],
+  ): Promise<{ file: LibraryFile; pieces: ModelPiece[] } | null> {
+    const file = await this.#files.findById(id);
+    if (!file || !owners.includes(file.userId)) return null;
+    if (!holdsFile(await this.#conversations.messages(conversationId), file.id)) return null;
+    const bytesOf = (name: string) => this.#store.read(file.userId, file.id, name);
+    return { file, pieces: await this.#pieces(file, bytesOf, capabilities) };
   }
 
   list(user: User): Promise<Omit<LibraryFile, 'content'>[]> {
@@ -132,23 +186,51 @@ export class Library {
   }
 
   /**
-   * Every `file` part becomes the file's whole content, as text and pictures, between `<file>` tags. `owners`: the
-   * conversation's participants, whose files it may hold.
+   * Each file reaches the model in the turn it was sent: in the latest user message, each `file` part becomes the
+   * file's whole content, between `<file>` tags, as the answering model can take it (`capabilities`): a PDF whole to a
+   * model that reads files, else its pages as text and pictures; a recording to a model that listens, a video to one
+   * that watches, else a note. In earlier messages a note names it, for `read_attachment`: a file sent again at every
+   * answer cost its whole length each time, and a video several times the answer itself. `owners`: the conversation's
+   * participants, whose files it may hold.
    */
-  async expandFiles(owners: readonly number[], messages: readonly ChatMessage[]): Promise<ChatMessage[]> {
+  async expandFiles(
+    owners: readonly number[],
+    messages: readonly ChatMessage[],
+    capabilities: readonly ModelCapability[],
+  ): Promise<ChatMessage[]> {
+    const latest = messages.findLastIndex((message) => message.role === 'user');
     return await Promise.all(
-      messages.map(async (message) => {
+      messages.map(async (message, index) => {
         if (!message.parts.some((part) => part.type === 'file')) return message;
         const parts = await Promise.all(
-          message.parts.map(async (part) => {
+          message.parts.map(async (part): Promise<ChatMessage['parts']> => {
             if (part.type !== 'file') return [part];
             const found = await this.#files.findById(fileIdOf(part.url) ?? '');
             const file = found && owners.includes(found.userId) ? found : null;
             if (!file) {
               const text = `[Le fichier « ${part.filename ?? 'fichier'} » a été supprimé de la bibliothèque : son contenu n'est plus disponible.]`;
-              return [{ type: 'text' as const, text }];
+              return [{ type: 'text', text }];
             }
-            return await this.#modelParts(file);
+            if (index !== latest) {
+              const text = `[Fichier joint plus tôt : « ${file.name} » (${KIND_NAMES[file.kind]}, id ${file.id}). Il a été lu quand il a été envoyé et n'est plus joint : relis-le avec read_attachment si la question porte sur lui.]`;
+              return [{ type: 'text', text }];
+            }
+            const bytesOf = (name: string) => this.#store.read(file.userId, file.id, name);
+            const pieces = await this.#pieces(file, bytesOf, capabilities);
+            return [
+              { type: 'text', text: `<file id="${file.id}" name="${file.name.replaceAll('"', "'")}">` },
+              ...pieces.map((piece): ChatMessage['parts'][number] =>
+                piece.type === 'text'
+                  ? piece
+                  : {
+                      type: 'file',
+                      mediaType: piece.mediaType,
+                      url: `data:${piece.mediaType};base64,${Buffer.from(piece.data).toString('base64')}`,
+                      ...(piece.filename ? { filename: piece.filename } : {}),
+                    },
+              ),
+              { type: 'text', text: '</file>' },
+            ];
           }),
         );
         return { ...message, parts: parts.flat() };
@@ -176,29 +258,70 @@ export class Library {
     return file.userId === user.id || (await this.#conversations.sharesFile(user.id, file.id, file.userId));
   }
 
-  async #modelParts(file: LibraryFile): Promise<ChatMessage['parts']> {
-    const pieces = await Promise.all(
-      file.content.map(async (piece): Promise<ChatMessage['parts'][number]> => {
-        if (piece.type === 'text') return { type: 'text', text: piece.text };
-        const bytes = await this.#store.read(file.userId, file.id, piece.name);
-        if (!bytes) return { type: 'text', text: '[Une image de ce fichier est manquante.]' };
-        const url = `data:${piece.mediaType};base64,${Buffer.from(bytes).toString('base64')}`;
-        return { type: 'file', mediaType: piece.mediaType, url };
+  /** Read as at upload: refused when too big, of a kind the app does not read, broken, or too long for the model. */
+  async #readUpload(upload: Upload): Promise<{ ok: true; reading: Reading } | { ok: false; reason: ReadFailure }> {
+    if (upload.bytes.length > MAX_FILE_BYTES) return { ok: false, reason: 'file_too_large' };
+    const kind = fileKindOf(upload.name, upload.mediaType);
+    if (!kind) return { ok: false, reason: 'file_type_unsupported' };
+    const reading: Reading = {
+      name: cleanFileName(upload.name),
+      kind,
+      mediaType: mediaTypeOf(kind, upload.name, upload.mediaType),
+      bytes: upload.bytes,
+      content: [],
+      pictures: [],
+    };
+    try {
+      if (kind === 'audio' && !LISTENABLE_AUDIO_TYPES[reading.mediaType]) {
+        reading.bytes = await this.#reader.convertAudio(reading.bytes);
+        reading.mediaType = CONVERTED_AUDIO.mediaType;
+        reading.name = withExtension(reading.name, CONVERTED_AUDIO.extension);
+      }
+      reading.content = await this.#read(kind, reading.mediaType, reading.bytes, reading.pictures);
+    } catch (error) {
+      if (error instanceof DocumentTooLong) return { ok: false, reason: 'file_too_long' };
+      if (error instanceof UnreadableDocument) return { ok: false, reason: 'file_unreadable' };
+      throw error;
+    }
+    if (reading.content.length === 0) return { ok: false, reason: 'file_unreadable' };
+    if (estimatedTokens(reading.content) > MAX_FILE_TOKENS) return { ok: false, reason: 'file_too_long' };
+    return { ok: true, reading };
+  }
+
+  async #pieces(
+    file: Pick<LibraryFile, 'name' | 'kind' | 'content'>,
+    bytesOf: (name: string) => Promise<Uint8Array | null>,
+    capabilities: readonly ModelCapability[],
+  ): Promise<ModelPiece[]> {
+    if (file.kind === 'pdf' && capabilities.includes('file')) {
+      const data = await bytesOf(ORIGINAL);
+      if (data) return [{ type: 'file', mediaType: 'application/pdf', data, filename: file.name }];
+    }
+    return await Promise.all(
+      file.content.map(async (piece): Promise<ModelPiece> => {
+        if (piece.type === 'text') return piece;
+        if (piece.type === 'media') {
+          const note = mediaNote(piece.mediaType, capabilities);
+          if (note) return { type: 'text', text: note };
+        }
+        const data = await bytesOf(piece.name);
+        if (!data) return { type: 'text', text: '[Une partie de ce fichier est manquante.]' };
+        return { type: 'file', mediaType: piece.mediaType, data, filename: file.name };
       }),
     );
-    return [
-      { type: 'text', text: `<file id="${file.id}" name="${file.name.replaceAll('"', "'")}">` },
-      ...pieces,
-      { type: 'text', text: '</file>' },
-    ];
   }
 
   async #read(kind: FileKind, mediaType: string, bytes: Uint8Array, pictures: Picture[]): Promise<FilePiece[]> {
     switch (kind) {
       case 'image':
         return [{ type: 'image', name: ORIGINAL, mediaType }];
+      case 'audio':
+      case 'video':
+        return [{ type: 'media', name: ORIGINAL, mediaType }];
       case 'text': {
         const text = new TextDecoder().decode(bytes);
+        // Any extension reads as text: a binary file under a code file's name is not text.
+        if (text.includes('\u0000')) throw new UnreadableDocument('Not a text file.');
         return text.trim() ? [{ type: 'text', text }] : [];
       }
       case 'pdf': {
@@ -226,4 +349,16 @@ export class Library {
       }
     }
   }
+}
+
+/** Why the model does not get a recording or a video, in French as everything it reads; `null`: it gets it. */
+function mediaNote(mediaType: string, capabilities: readonly ModelCapability[]): string | null {
+  if (mediaType.startsWith('audio/')) {
+    return capabilities.includes('audio')
+      ? null
+      : "[Enregistrement audio : le modèle qui répond ne peut pas écouter l'audio. Dis-le à l'utilisateur s'il te demande ce qu'il contient.]";
+  }
+  return capabilities.includes('video')
+    ? null
+    : "[Vidéo : le modèle qui répond ne peut pas regarder les vidéos. Dis-le à l'utilisateur s'il te demande ce qu'elle montre.]";
 }

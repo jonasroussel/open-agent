@@ -2,14 +2,17 @@ import type {
   CalculateOutput,
   DatePlusDaysOutput,
   DaysBetweenOutput,
+  DownloadFileOutput,
   ListFilesOutput,
+  ModelCapability,
   ReadConversationOutput,
+  ReadAttachmentOutput,
   ReadFileOutput,
   ReadWebPageOutput,
   SearchConversationsOutput,
   WeatherOutput,
 } from '@open-agent/shared';
-import { tool } from 'ai';
+import { tool, type ModelMessage, type ToolResultPart } from 'ai';
 import { z } from 'zod';
 
 import { daysBetween, formatDay, parseDay, plusDays, weekdayOf } from '../domain/calendar.ts';
@@ -17,9 +20,15 @@ import type { ConversationRepository } from '../domain/conversation-repository.t
 import { cleanSnippet, isOutsideHistory, searchTerms } from '../domain/conversation.ts';
 import { attachedNames, estimatedTokens } from '../domain/library-file.ts';
 import type { User } from '../domain/user.ts';
-import type { Library } from './library.ts';
+import type { Library, ModelPiece } from './library.ts';
 import type { Participants } from './participants.ts';
-import { ToolRefusal, type Calculator, type WeatherService, type WebPageReader } from './ports/context-services.ts';
+import {
+  ToolRefusal,
+  type Calculator,
+  type FileDownloader,
+  type WeatherService,
+  type WebPageReader,
+} from './ports/context-services.ts';
 import { textOf } from './pre-analysis.ts';
 
 /**
@@ -32,6 +41,8 @@ export const CONTEXT_TOOL_CAPS = {
   list_files: 1,
   read_file: 2,
   read_web_page: 3,
+  download_file: 3,
+  read_attachment: 3,
   weather: 2,
   calculate: 5,
   days_between: 3,
@@ -42,15 +53,34 @@ type ContextToolName = keyof typeof CONTEXT_TOOL_CAPS;
 
 const FOUND_CONVERSATIONS = 8;
 const LISTED_FILES = 30;
-/** About 8,000 tokens each: enough to know what was said or what a page says. */
-const CONVERSATION_CHARACTERS = 30_000;
-const PAGE_CHARACTERS = 30_000;
+/** About 65,000 tokens each: a long conversation or page whole, a small part of the model's million. */
+const CONVERSATION_CHARACTERS = 200_000;
+const PAGE_CHARACTERS = 200_000;
+
+/** Why a downloaded file could not be read, for the model. */
+const DOWNLOAD_REFUSALS = {
+  file_too_large: 'The file is too big to read.',
+  file_type_unsupported: 'This kind of file cannot be read.',
+  file_unreadable: 'The file is broken or protected: it cannot be read.',
+  file_too_long: 'The file is too long to read whole.',
+} as const;
 /** A longer file is refused rather than read in part: attached, the model reads all of it. */
 const READ_FILE_TOKENS = 50_000;
 
+/** What the model reads of a file tool's result: what is saved, and where the file's content is. */
+function toModelOutput({ output }: { output: unknown }): ToolResultPart['output'] {
+  return {
+    type: 'content',
+    value: [
+      { type: 'text', text: JSON.stringify(output) },
+      { type: 'text', text: 'Son contenu suit, dans le dernier message, pour cette réponse seulement.' },
+    ],
+  };
+}
+
 /**
- * What the model may look up before answering: the user's other conversations and files, a page they named, the
- * weather, and exact calculations. Everything is the user's own or public; nothing here writes.
+ * What the model may look up before answering: the user's other conversations and files, a page or a file at a link,
+ * the weather, and exact calculations. Everything is the user's own or public; nothing here writes.
  */
 export class ContextTools {
   readonly #conversations: ConversationRepository;
@@ -59,6 +89,7 @@ export class ContextTools {
   readonly #calculator: Calculator;
   readonly #pages: WebPageReader;
   readonly #weather: WeatherService;
+  readonly #downloads: FileDownloader;
 
   constructor(
     conversations: ConversationRepository,
@@ -67,6 +98,7 @@ export class ContextTools {
     calculator: Calculator,
     pages: WebPageReader,
     weather: WeatherService,
+    downloads: FileDownloader,
   ) {
     this.#conversations = conversations;
     this.#participants = participants;
@@ -74,21 +106,60 @@ export class ContextTools {
     this.#calculator = calculator;
     this.#pages = pages;
     this.#weather = weather;
+    this.#downloads = downloads;
   }
 
   /**
-   * The tools for one answer in `conversationId`, each refusing past its cap. A conversation `shared` with others gets
-   * none of the user's other conversations or library: what a tool reads is saved in the answer every member sees.
+   * The tools for one answer in `conversationId`, each refusing past its cap, and `filesMessage`, what the files they
+   * read give the model. `owners`: the conversation's participants. A conversation shared with others gets none of
+   * the user's other conversations or library: what a tool reads is saved in the answer every member sees.
+   * `capabilities`: the answering model's, for what a file read for this answer gives it.
    */
-  for(user: User, conversationId: string, abortSignal: AbortSignal, shared: boolean) {
+  for(
+    user: User,
+    conversationId: string,
+    abortSignal: AbortSignal,
+    owners: readonly number[],
+    capabilities: readonly ModelCapability[],
+  ) {
     const calls: Partial<Record<ContextToolName, number>> = {};
     // Asked for in parallel, past the cap: the refusal reaches the model, which answers with what it has.
     const spend = (name: ContextToolName) => {
       const used = calls[name] ?? 0;
-      if (used >= CONTEXT_TOOL_CAPS[name])
+      if (used >= CONTEXT_TOOL_CAPS[name]) {
         throw new ToolRefusal(`No more ${name} in this answer: answer with what you have.`);
+      }
       calls[name] = used + 1;
     };
+    // The content of each file read in this answer: it never reaches the saved message.
+    const readFiles: { name: string; pieces: ModelPiece[] }[] = [];
+
+    /**
+     * The files read so far in this answer, as one user message after the tool results, sent with each step. Inside a
+     * tool result, OpenRouter dropped a PDF without a word: Gemini 4 answered it had only the file's size
+     * (2026-11-21); pictures came through.
+     */
+    const filesMessage = (): ModelMessage | null =>
+      readFiles.length === 0
+        ? null
+        : {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: '[Fichiers lus par tes outils pour cette réponse ; la conversation ne les garde pas.]',
+              },
+              ...readFiles.flatMap(({ name, pieces }) => [
+                { type: 'text' as const, text: `<file name="${name.replaceAll('"', "'")}">` },
+                ...pieces.map((piece) =>
+                  piece.type === 'text'
+                    ? piece
+                    : { type: 'file' as const, mediaType: piece.mediaType, data: piece.data, filename: piece.filename },
+                ),
+                { type: 'text' as const, text: '</file>' },
+              ]),
+            ],
+          };
 
     const privateTools = {
       search_conversations: tool({
@@ -165,6 +236,9 @@ export class ContextTools {
           spend('read_file');
           const found = await this.#library.text(user, id);
           if (!found) throw new ToolRefusal('No file with this id in the library.');
+          if (found.file.kind === 'audio' || found.file.kind === 'video') {
+            throw new ToolRefusal('This file is a recording or a video: ask the user to attach it to their message.');
+          }
           if (estimatedTokens([{ type: 'text', text: found.text }]) > READ_FILE_TOKENS) {
             throw new ToolRefusal('This file is too long to read here: ask the user to attach it to their message.');
           }
@@ -173,8 +247,8 @@ export class ContextTools {
       }),
     };
 
-    return {
-      ...(shared ? {} : privateTools),
+    const tools = {
+      ...(owners.length > 1 ? {} : privateTools),
       read_web_page: tool({
         description:
           'Read a web page whose address the user gave, or one found with web_search when its extract is not enough. Returns its readable text.',
@@ -190,6 +264,35 @@ export class ContextTools {
             shortened,
           };
         },
+      }),
+
+      download_file: tool({
+        description:
+          'Download a file from a public link (a PDF, a picture, a recording, a video, a Word, Excel or text file) and read it for this answer only. Use it for any link to a file, instead of asking the user to open it. The file is not saved: in a later answer, download it again if you need it.',
+        inputSchema: z.object({ url: z.string().min(1).max(2000).describe('The whole address, with https://.') }),
+        execute: async ({ url }): Promise<DownloadFileOutput> => {
+          spend('download_file');
+          const file = await this.#downloads.download(url, abortSignal);
+          const read = await this.#library.readDownload(file, capabilities);
+          if (!read.ok) throw new ToolRefusal(DOWNLOAD_REFUSALS[read.reason]);
+          readFiles.push({ name: read.name, pieces: read.pieces });
+          return { url: file.url, name: read.name, kind: read.kind, size: read.size };
+        },
+        toModelOutput,
+      }),
+
+      read_attachment: tool({
+        description:
+          'Read again, whole, a file attached or made earlier in this conversation (its id is in the note that replaced it), for this answer only. Use it when a question is about such a file, instead of answering from memory.',
+        inputSchema: z.object({ id: z.string().max(100).describe('The file id from the note.') }),
+        execute: async ({ id }): Promise<ReadAttachmentOutput> => {
+          spend('read_attachment');
+          const found = await this.#library.readAttachment(conversationId, owners, id, capabilities);
+          if (!found) throw new ToolRefusal('No file with this id was attached or made in this conversation.');
+          readFiles.push({ name: found.file.name, pieces: found.pieces });
+          return { id: found.file.id, name: found.file.name, kind: found.file.kind };
+        },
+        toModelOutput,
       }),
 
       weather: tool({
@@ -249,6 +352,7 @@ export class ContextTools {
         },
       }),
     };
+    return { tools, filesMessage };
   }
 }
 

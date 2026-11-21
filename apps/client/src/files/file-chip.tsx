@@ -1,5 +1,5 @@
 import type { FileKind } from '@open-agent/shared';
-import { FileImage, FileSpreadsheet, FileText, FileType, LoaderCircle, X } from 'lucide-react';
+import { FileAudio, FileImage, FileSpreadsheet, FileText, FileType, FileVideo, LoaderCircle, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,11 +11,13 @@ export const KIND_ICONS = {
   word: FileType,
   spreadsheet: FileSpreadsheet,
   text: FileText,
+  audio: FileAudio,
+  video: FileVideo,
 } satisfies Record<FileKind, unknown>;
 
 /**
- * An image shows itself; other files show their kind's icon and their name, or the icon alone in lists that already
- * write the name. Both open the file in a new tab.
+ * An image shows itself, a recording and a video play in place; other files show their kind's icon and their name, or
+ * the icon alone in lists that already write the name. Images and other files open in a new tab.
  */
 export function FileChip({
   name,
@@ -40,6 +42,16 @@ export function FileChip({
   const { t } = useTranslation();
   const Icon = kind ? KIND_ICONS[kind] : FileText;
   const picture = kind === 'image' ? (url ?? preview) : null;
+  const remove = onRemove && (
+    <button
+      type='button'
+      onClick={onRemove}
+      aria-label={t('files.remove', { name })}
+      className='bg-foreground text-background absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full'
+    >
+      <X className='size-3' />
+    </button>
+  );
 
   let body: ReactNode;
   if (picture) {
@@ -49,6 +61,30 @@ export function FileChip({
       <span className='bg-card flex size-16 items-center justify-center rounded-lg border'>
         <Icon className='text-muted-foreground size-6' />
       </span>
+    );
+  } else if (url && kind === 'video') {
+    return (
+      <div className='relative'>
+        <video
+          src={url}
+          controls
+          preload='metadata'
+          title={name}
+          className='max-h-60 max-w-72 rounded-lg border bg-black'
+        />
+        {remove}
+      </div>
+    );
+  } else if (url && kind === 'audio') {
+    return (
+      <div className='bg-card relative grid w-72 max-w-full gap-1 rounded-lg border p-2'>
+        <span className='flex min-w-0 items-center gap-2 px-1 text-sm'>
+          <Icon className='text-muted-foreground size-4 shrink-0' />
+          <span className='truncate font-medium'>{name}</span>
+        </span>
+        <audio src={url} controls preload='metadata' className='h-10 w-full' />
+        {remove}
+      </div>
     );
   } else {
     body = (
@@ -81,16 +117,7 @@ export function FileChip({
           <LoaderCircle className='size-5 animate-spin' />
         </span>
       )}
-      {onRemove && (
-        <button
-          type='button'
-          onClick={onRemove}
-          aria-label={t('files.remove', { name })}
-          className='bg-foreground text-background absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full'
-        >
-          <X className='size-3' />
-        </button>
-      )}
+      {remove}
     </div>
   );
 }

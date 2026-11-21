@@ -14,11 +14,15 @@ export const MAX_PROMPT_LENGTH = 20_000;
 
 /**
  * What OpenRouter says a model can do, among what the app needs. `thinking_off`: its thinking can be turned off
- * (OpenRouter's `reasoning.mandatory` is not set). `image_output`: it draws images.
+ * (OpenRouter's `reasoning.mandatory` is not set). `image_output`: it draws images. `audio`, `video`, `file`: it reads
+ * them (OpenRouter's `input_modalities`; `file` is a PDF read natively).
  */
 export type ModelCapability =
   | 'text'
   | 'image'
+  | 'audio'
+  | 'video'
+  | 'file'
   | 'tools'
   | 'reasoning'
   | 'thinking_off'
@@ -27,11 +31,12 @@ export type ModelCapability =
 
 /**
  * Answers read text, photos and documents and use the web search and the canvas; the reasoning role thinks first;
- * the background calls answer in a JSON schema. `fast` and `background` run with thinking off. Images are drawn from
- * words and from the user's photos.
+ * the background calls answer in a JSON schema with thinking off, since they run before every answer. A fast model
+ * whose thinking cannot be turned off thinks as little as it can. Images are drawn from words and from the user's
+ * photos.
  */
 const REQUIREMENTS: Record<ModelRole, readonly ModelCapability[]> = {
-  fast: ['text', 'image', 'tools', 'thinking_off'],
+  fast: ['text', 'image', 'tools'],
   reasoning: ['text', 'image', 'tools', 'reasoning'],
   background: ['text', 'structured_outputs', 'thinking_off'],
   image: ['text', 'image', 'image_output'],

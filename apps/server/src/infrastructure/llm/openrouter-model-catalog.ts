@@ -1,4 +1,3 @@
-import type { ChatRole } from '@open-agent/shared';
 import { createOpenRouter, type OpenRouterProvider } from '@openrouter/ai-sdk-provider';
 import type { ProviderMetadata } from 'ai';
 
@@ -8,16 +7,18 @@ import {
   type ModelCatalog,
   type ModelChoice,
   type ModelRole,
+  type Thinking,
 } from '../../application/ports/model-catalog.ts';
 
 /**
- * Thinking per role, tested on deepseek-v4.1-flash-1017 (2026-11-01): off, a title takes about 0.5 s with 0 reasoning
- * tokens; `medium` solved a train-crossing problem in 3.4 s for 0.0007 $, as well as `high` (5.8 s).
+ * Tested on deepseek-v4.1-flash-1017 (2026-11-01): off, a title takes about 0.5 s with 0 reasoning tokens; `medium`
+ * solved a train-crossing problem in 3.4 s for 0.0007 $, as well as `high` (5.8 s). Gemini 4 cannot turn thinking off
+ * (2026-11-21): its first word comes after 2.3–3.6 s (Hydrogen) or 3.9–5.4 s (Neon), `low` or `medium` alike.
  */
-const REASONING: Record<ChatRole, { enabled: boolean; effort: 'none' | 'medium' }> = {
-  fast: { enabled: false, effort: 'none' },
-  reasoning: { enabled: true, effort: 'medium' },
-  background: { enabled: false, effort: 'none' },
+const REASONING: Record<Thinking, { enabled: boolean; effort: 'none' | 'low' | 'medium' }> = {
+  off: { enabled: false, effort: 'none' },
+  low: { enabled: true, effort: 'low' },
+  medium: { enabled: true, effort: 'medium' },
 };
 
 function provider(apiKey: string): OpenRouterProvider {
@@ -32,15 +33,24 @@ export class OpenRouterModelCatalog implements ModelCatalog {
     this.#provider = apiKey ? provider(apiKey) : null;
   }
 
-  choose(role: ModelRole, modelId: string, ownKey: string | null): ModelChoice {
+  choose(
+    role: ModelRole,
+    modelId: string,
+    ownKey: string | null,
+    thinking: Thinking,
+  ): Omit<ModelChoice, 'capabilities'> {
     // A provider is a few closures: making one per call for an own key costs nothing worth caching.
     const chosen = ownKey ? provider(ownKey) : this.#provider;
     if (!chosen) throw new ModelUnavailableError();
     // The image model answers through the chat API too: its cost then comes as for any answer.
-    const model =
-      role === 'image'
-        ? chosen.chat(modelId, { usage: { include: true }, extraBody: { modalities: ['image', 'text'] } })
-        : chosen.chat(modelId, { usage: { include: true }, reasoning: REASONING[role] });
+    if (role === 'image') {
+      const model = chosen.chat(modelId, { usage: { include: true }, extraBody: { modalities: ['image', 'text'] } });
+      return { model, modelId, paidByUser: ownKey !== null };
+    }
+    // Gemini 4's reasoning text is Google's summary, in English whatever the prompt's language (5 of 5, 2026-11-21):
+    // it is not shown. The model still thinks, and the thinking is billed.
+    const exclude = modelId.startsWith('google/');
+    const model = chosen.chat(modelId, { usage: { include: true }, reasoning: { ...REASONING[thinking], exclude } });
     return { model, modelId, paidByUser: ownKey !== null };
   }
 

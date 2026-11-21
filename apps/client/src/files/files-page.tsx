@@ -146,8 +146,8 @@ export function FilesPage() {
 }
 
 /**
- * An image fills its tile and opens over the page; a PDF shows its first page; Word, Excel and text files show their
- * icon and their type. Files other than images open in a new tab.
+ * An image fills its tile and opens over the page; a PDF shows its first page; a video and a recording play in their
+ * tile; Word, Excel and text files show their icon and their type. Those open in a new tab.
  */
 function FileTile({ file, details, onPreview }: { file: LibraryFileDto; details: string; onPreview: () => void }) {
   const Icon = KIND_ICONS[file.kind];
@@ -158,14 +158,18 @@ function FileTile({ file, details, onPreview }: { file: LibraryFileDto; details:
   const body = (
     <>
       <div className='bg-muted relative aspect-[4/3] overflow-hidden border-b'>
-        {file.previewUrl ? (
+        {file.kind === 'video' && (
+          <video src={file.url} controls preload='metadata' title={file.name} className='size-full bg-black' />
+        )}
+        {file.kind !== 'video' && file.previewUrl && (
           <img
             src={file.previewUrl}
             alt=''
             loading='lazy'
             className={cn('size-full object-cover', file.kind === 'pdf' && 'bg-white object-top')}
           />
-        ) : (
+        )}
+        {file.kind !== 'video' && !file.previewUrl && (
           <div className='text-muted-foreground flex size-full flex-col items-center justify-center gap-2'>
             <Icon className='size-10 stroke-[1.5]' />
             <span className='text-xs font-semibold tracking-wide uppercase'>{extension}</span>
@@ -182,10 +186,13 @@ function FileTile({ file, details, onPreview }: { file: LibraryFileDto; details:
           {file.name}
         </span>
         <span className='text-muted-foreground text-xs'>{details}</span>
+        {file.kind === 'audio' && <audio src={file.url} controls preload='metadata' className='mt-1 h-10 w-full' />}
       </div>
     </>
   );
 
+  // A player in a link would open the file at each tap on its controls.
+  if (file.kind === 'audio' || file.kind === 'video') return <div className={className}>{body}</div>;
   if (file.kind === 'image') {
     return (
       <button type='button' onClick={onPreview} className={cn(className, 'cursor-zoom-in')}>

@@ -90,7 +90,7 @@ export class MakingTools {
         execute: async ({ prompt, aspect, fileName: name, sourceImageIds }): Promise<MadeFileOutput> => {
           spend('generate_image');
           const sources = await Promise.all((sourceImageIds ?? []).map((id) => this.#sourceImage(user, id)));
-          const choice = this.#models.choose('image', user);
+          const choice = await this.#models.choose('image', user);
           let result;
           try {
             result = await generateText({
