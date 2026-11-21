@@ -188,6 +188,8 @@ export const fr: Translation = {
     cancel: 'Annuler',
     attachMenu: 'Joindre des fichiers',
     fromDevice: 'Depuis cet appareil',
+    fromPhotos: 'Photos et vidéos',
+    fromDocuments: 'Documents et fichiers',
     takePhoto: 'Prendre une photo',
     fromLibrary: 'Depuis mes fichiers',
     pickTitle: 'Depuis mes fichiers',

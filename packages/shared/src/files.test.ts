@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { fileKindOf, mediaTypeOf } from './files.ts';
+import { DOCUMENT_ACCEPT, FILE_ACCEPT, fileKindOf, MEDIA_ACCEPT, mediaTypeOf } from './files.ts';
 
 describe('fileKindOf', () => {
   test('reads the media type first, and the extension when the browser gives none', () => {
@@ -42,5 +42,14 @@ describe('mediaTypeOf', () => {
     expect(mediaTypeOf('text', 'page.html', 'text/html')).toBe('text/plain');
     expect(mediaTypeOf('audio', 'note.m4a', 'audio/x-m4a')).toBe('audio/mp4');
     expect(mediaTypeOf('audio', 'note.mp3', '')).toBe('audio/mpeg');
+  });
+});
+
+describe('accept lists', () => {
+  test('keeps images and videos out of the documents, and together cover every file', () => {
+    const documents = DOCUMENT_ACCEPT.split(',');
+    expect(documents.some((entry) => entry.startsWith('image/') || entry.startsWith('video/'))).toBe(false);
+    expect(documents.some((entry) => MEDIA_ACCEPT.split(',').includes(entry))).toBe(false);
+    expect(new Set([...MEDIA_ACCEPT.split(','), ...documents])).toEqual(new Set(FILE_ACCEPT.split(',')));
   });
 });

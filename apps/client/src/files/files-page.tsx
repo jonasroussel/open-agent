@@ -1,7 +1,14 @@
-import { FILE_ACCEPT, apiPath, API_ROUTES, type LibraryFileDto } from '@open-agent/shared';
+import {
+  DOCUMENT_ACCEPT,
+  FILE_ACCEPT,
+  MEDIA_ACCEPT,
+  apiPath,
+  API_ROUTES,
+  type LibraryFileDto,
+} from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderOpen, Trash2, Upload } from 'lucide-react';
-import { useRef, useState, type DragEvent } from 'react';
+import { FileText, FolderOpen, Images, Trash2, Upload } from 'lucide-react';
+import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AlertMessage } from '@/components/alert-message.tsx';
@@ -16,6 +23,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.tsx';
 import { api } from '@/lib/api.ts';
 import { TOUCH_SCREEN } from '@/lib/touch-screen.ts';
 import { cn } from '@/lib/utils.ts';
@@ -33,6 +46,8 @@ export function FilesPage() {
   const queryClient = useQueryClient();
   const files = useQuery(libraryFilesQuery);
   const input = useRef<HTMLInputElement>(null);
+  const mediaInput = useRef<HTMLInputElement>(null);
+  const documentInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<LibraryFileDto | null>(null);
@@ -48,6 +63,11 @@ export function FilesPage() {
     }
     setUploading(false);
     await queryClient.invalidateQueries({ queryKey: libraryFilesQuery.queryKey });
+  }
+
+  function onPicked(event: ChangeEvent<HTMLInputElement>) {
+    void add([...(event.target.files ?? [])]);
+    event.target.value = '';
   }
 
   async function remove(file: LibraryFileDto) {
@@ -77,22 +97,40 @@ export function FilesPage() {
     >
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <p className='text-muted-foreground max-w-xl'>{t('files.description')}</p>
-        <Button size='lg' disabled={uploading} onClick={() => input.current?.click()}>
-          <Upload />
-          {uploading ? t('files.adding') : t('files.add')}
-        </Button>
-        {/* As in the composer: a phone gets no `accept` so its chooser shows files, whose kind the server checks. */}
-        <input
-          ref={input}
-          type='file'
-          multiple
-          accept={TOUCH_SCREEN ? undefined : FILE_ACCEPT}
-          hidden
-          onChange={(event) => {
-            void add([...(event.target.files ?? [])]);
-            event.target.value = '';
-          }}
-        />
+        {TOUCH_SCREEN ? (
+          // As in the composer: Chrome on Android hides documents once images or videos are accepted.
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size='lg' disabled={uploading}>
+                <Upload />
+                {uploading ? t('files.adding') : t('files.add')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end' className='w-auto min-w-48'>
+              <DropdownMenuItem onSelect={() => mediaInput.current?.click()}>
+                <Images />
+                {t('files.fromPhotos')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => documentInput.current?.click()}>
+                <FileText />
+                {t('files.fromDocuments')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button size='lg' disabled={uploading} onClick={() => input.current?.click()}>
+            <Upload />
+            {uploading ? t('files.adding') : t('files.add')}
+          </Button>
+        )}
+        {TOUCH_SCREEN ? (
+          <>
+            <input ref={mediaInput} type='file' multiple accept={MEDIA_ACCEPT} hidden onChange={onPicked} />
+            <input ref={documentInput} type='file' multiple accept={DOCUMENT_ACCEPT} hidden onChange={onPicked} />
+          </>
+        ) : (
+          <input ref={input} type='file' multiple accept={FILE_ACCEPT} hidden onChange={onPicked} />
+        )}
       </div>
       {error && <AlertMessage text={error} />}
       {files.isError && <AlertMessage text={t('errors.network')} />}

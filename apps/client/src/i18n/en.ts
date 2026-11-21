@@ -173,6 +173,8 @@ export const en = {
     cancel: 'Cancel',
     attachMenu: 'Attach files',
     fromDevice: 'From this device',
+    fromPhotos: 'Photos and videos',
+    fromDocuments: 'Documents and files',
     takePhoto: 'Take a photo',
     fromLibrary: 'From my files',
     pickTitle: 'From my files',

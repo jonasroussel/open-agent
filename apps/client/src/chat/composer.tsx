@@ -1,13 +1,27 @@
 import {
+  DOCUMENT_ACCEPT,
   fileKindOf,
   FILE_ACCEPT,
   MAX_FILES_PER_MESSAGE,
+  MEDIA_ACCEPT,
   type CommandDto,
   type FileKind,
   type LibraryFileDto,
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUp, Camera, FolderOpen, Paperclip, Plus, Square, SquareSlash, Upload, X } from 'lucide-react';
+import {
+  ArrowUp,
+  Camera,
+  FileText,
+  FolderOpen,
+  Images,
+  Paperclip,
+  Plus,
+  Square,
+  SquareSlash,
+  Upload,
+  X,
+} from 'lucide-react';
 import {
   useRef,
   useState,
@@ -85,6 +99,8 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [recording, setRecording] = useState(false);
   const deviceInput = useRef<HTMLInputElement>(null);
+  const mediaInput = useRef<HTMLInputElement>(null);
+  const documentInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const commands = useQuery(commandsQuery).data ?? [];
@@ -132,6 +148,11 @@ export function Composer({
         void queryClient.invalidateQueries({ queryKey: libraryFilesQuery.queryKey });
       });
     }
+  }
+
+  function onFilesPicked(event: ChangeEvent<HTMLInputElement>) {
+    addFiles([...(event.target.files ?? [])]);
+    event.target.value = '';
   }
 
   function addFromLibrary(files: LibraryFileDto[]) {
@@ -333,14 +354,25 @@ export function Composer({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side='top' align='start' className='w-auto min-w-48'>
-            <DropdownMenuItem onSelect={() => deviceInput.current?.click()}>
-              <Upload />
-              {t('files.fromDevice')}
-            </DropdownMenuItem>
-            {TOUCH_SCREEN && (
-              <DropdownMenuItem onSelect={() => cameraInput.current?.click()}>
-                <Camera />
-                {t('files.takePhoto')}
+            {TOUCH_SCREEN ? (
+              <>
+                <DropdownMenuItem onSelect={() => mediaInput.current?.click()}>
+                  <Images />
+                  {t('files.fromPhotos')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => documentInput.current?.click()}>
+                  <FileText />
+                  {t('files.fromDocuments')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => cameraInput.current?.click()}>
+                  <Camera />
+                  {t('files.takePhoto')}
+                </DropdownMenuItem>
+              </>
+            ) : (
+              <DropdownMenuItem onSelect={() => deviceInput.current?.click()}>
+                <Upload />
+                {t('files.fromDevice')}
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onSelect={() => setPicking(true)}>
@@ -377,30 +409,24 @@ export function Composer({
             {t('commands.newShort')}
           </button>
         </div>
-        {/* Chrome on Android reads its chooser from `accept`: media types leave only camera and photos, so a phone
-            gets no `accept` and files show too; the kind is checked after picking. */}
-        <input
-          ref={deviceInput}
-          type='file'
-          multiple
-          accept={TOUCH_SCREEN ? undefined : FILE_ACCEPT}
-          hidden
-          onChange={(event) => {
-            addFiles([...(event.target.files ?? [])]);
-            event.target.value = '';
-          }}
-        />
-        <input
-          ref={cameraInput}
-          type='file'
-          accept='image/*'
-          capture='environment'
-          hidden
-          onChange={(event) => {
-            addFiles([...(event.target.files ?? [])]);
-            event.target.value = '';
-          }}
-        />
+        {/* Chrome on Android opens only the camera and photos once images or videos are accepted: a phone gets
+            documents in a field of their own, without them. */}
+        {TOUCH_SCREEN ? (
+          <>
+            <input ref={mediaInput} type='file' multiple accept={MEDIA_ACCEPT} hidden onChange={onFilesPicked} />
+            <input ref={documentInput} type='file' multiple accept={DOCUMENT_ACCEPT} hidden onChange={onFilesPicked} />
+            <input
+              ref={cameraInput}
+              type='file'
+              accept='image/*'
+              capture='environment'
+              hidden
+              onChange={onFilesPicked}
+            />
+          </>
+        ) : (
+          <input ref={deviceInput} type='file' multiple accept={FILE_ACCEPT} hidden onChange={onFilesPicked} />
+        )}
         {tools}
         <VoiceRecorder
           disabled={room <= 0}

@@ -122,12 +122,23 @@ const FILE_TYPES: Record<FileKind, { mediaTypes: Record<string, string>; extensi
 };
 
 const KINDS = Object.keys(FILE_TYPES) as FileKind[];
+const MEDIA_KINDS: FileKind[] = ['image', 'video'];
+
+function acceptOf(kinds: FileKind[]): string {
+  return kinds
+    .flatMap((kind) => [
+      ...Object.keys(FILE_TYPES[kind].mediaTypes),
+      ...Object.keys(FILE_TYPES[kind].extensions).map((extension) => `.${extension}`),
+    ])
+    .join(',');
+}
 
 /** The `accept` of the file inputs. */
-export const FILE_ACCEPT = KINDS.flatMap((kind) => [
-  ...Object.keys(FILE_TYPES[kind].mediaTypes),
-  ...Object.keys(FILE_TYPES[kind].extensions).map((extension) => `.${extension}`),
-]).join(',');
+export const FILE_ACCEPT = acceptOf(KINDS);
+/** Images and videos only: on a phone, the camera and photo picker. */
+export const MEDIA_ACCEPT = acceptOf(MEDIA_KINDS);
+/** Every other kind, without any image or video: on a phone, the file manager. */
+export const DOCUMENT_ACCEPT = acceptOf(KINDS.filter((kind) => !MEDIA_KINDS.includes(kind)));
 
 /**
  * `null`: not a file the app reads. A known media type wins; an unknown or empty one falls back to the extension. A
