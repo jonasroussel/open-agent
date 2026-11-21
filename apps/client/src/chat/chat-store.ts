@@ -1,5 +1,13 @@
 import { Chat } from '@ai-sdk/react';
-import { API_ROUTES, apiPath, type ChatMessage, type ConversationResponse, type PersonDto } from '@open-agent/shared';
+import {
+  API_ROUTES,
+  apiPath,
+  type ChatMessage,
+  type ComparisonDto,
+  type ComparisonRequest,
+  type ConversationResponse,
+  type PersonDto,
+} from '@open-agent/shared';
 import { DefaultChatTransport } from 'ai';
 
 import { sessionQuery } from '@/auth/session.ts';
@@ -11,7 +19,7 @@ import { memoryRulesQuery } from '@/memory/memory-query.ts';
 import { quotaQuery } from '@/quota/quota-query.ts';
 
 import { setAnswering } from './answering-store.ts';
-import { conversationsQuery } from './conversations-query.ts';
+import { conversationQuery, conversationsQuery } from './conversations-query.ts';
 
 const transport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat, fetch: apiFetch });
 /** The server creates the conversation ephemeral; its later messages stay so whatever is sent. */
@@ -40,6 +48,11 @@ function questionsAnswered({ messages }: { messages: ChatMessage[] }): boolean {
 const chats = new Map<string, Chat<ChatMessage>>();
 /** Ephemeral conversations, known only here: their page left, they are deleted (`discardEphemeral`). */
 const ephemeralIds = new Set<string>();
+/**
+ * Comparisons started here, by their left conversation: known before the list or the conversation itself says so,
+ * which the server can only once both threads exist.
+ */
+const comparisons = new Map<string, ComparisonDto>();
 
 /**
  * `answering`: whose message the server is answering there, from the saved copy: when it is the user's, the page
@@ -48,15 +61,28 @@ const ephemeralIds = new Set<string>();
 export function chatFor(
   id: string,
   messages: ChatMessage[] = [],
-  { ephemeral = false, answering = null }: { ephemeral?: boolean; answering?: PersonDto | null } = {},
+  {
+    ephemeral = false,
+    comparison = null,
+    answering = null,
+  }: { ephemeral?: boolean; comparison?: ComparisonRequest | null; answering?: PersonDto | null } = {},
 ): Chat<ChatMessage> {
   let chat = chats.get(id);
   if (!chat) {
     if (ephemeral) ephemeralIds.add(id);
+    let chatTransport = ephemeral ? ephemeralTransport : transport;
+    // The right thread of a comparison, created by its first message; the server knows its model from then on.
+    if (comparison) {
+      chatTransport = new DefaultChatTransport<ChatMessage>({
+        api: API_ROUTES.chat,
+        body: { comparison },
+        fetch: apiFetch,
+      });
+    }
     chat = new Chat({
       id,
       messages,
-      transport: ephemeral ? ephemeralTransport : transport,
+      transport: chatTransport,
       generateId: () => crypto.randomUUID(),
       sendAutomaticallyWhen: questionsAnswered,
       // A new conversation got its title meanwhile, every answer moves its conversation to the top, may have changed
@@ -92,6 +118,23 @@ function followIfMine(chat: Chat<ChatMessage>, answering: PersonDto | null): voi
 export function stopAnswer(id: string): void {
   void chats.get(id)?.stop();
   void api(apiPath(API_ROUTES.chatStream, { conversationId: id }), { method: 'DELETE' });
+}
+
+/** A new comparison: `rightId`'s first message makes it the right thread of `leftId`, answered by `modelId`. */
+export function startComparison(leftId: string, rightId: string, modelId: string): Chat<ChatMessage> {
+  comparisons.set(leftId, { conversationId: rightId, modelId });
+  return chatFor(rightId, [], { comparison: { with: leftId, modelId } });
+}
+
+/** The right thread of conversation `id`, from this tab, the conversation list, or the conversation once opened. */
+export function comparisonOf(id: string): ComparisonDto | null {
+  const listed = queryClient.getQueryData(conversationsQuery.queryKey)?.conversations.find((item) => item.id === id);
+  return (
+    comparisons.get(id) ??
+    listed?.comparison ??
+    queryClient.getQueryData(conversationQuery(id).queryKey)?.conversation.comparison ??
+    null
+  );
 }
 
 export function hasChat(id: string): boolean {
@@ -131,6 +174,7 @@ export function forgetChat(id: string): void {
 /** Signing out: the previous person's conversations must not come back for the next one. */
 export function forgetAllChats(): void {
   for (const id of chats.keys()) forgetChat(id);
+  comparisons.clear();
 }
 
 /** Waiting for nothing: an answer on its way would arrive by itself, and must not be cut short. */

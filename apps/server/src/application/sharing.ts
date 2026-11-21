@@ -1,4 +1,5 @@
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
+import { isOutsideHistory } from '../domain/conversation.ts';
 import type { UserRepository } from '../domain/user-repository.ts';
 import { nameOf, type User } from '../domain/user.ts';
 import type { Participants } from './participants.ts';
@@ -47,8 +48,11 @@ export class Sharing {
   async invite(user: User, id: string, userIds: unknown): Promise<SharingResult> {
     const access = await this.#participants.access(user, id);
     if (access?.role !== 'owner') return { ok: false, reason: 'not_found' };
-    // An ephemeral conversation is nobody else's business, and goes when its page is left.
-    if (access.conversation.ephemeral) return { ok: false, reason: 'invalid_request' };
+    // An ephemeral conversation is nobody else's business, and goes when its page is left. A comparison is the admin's
+    // test: neither of its threads is shared.
+    if (isOutsideHistory(access.conversation) || (await this.#conversations.rightThreadOf(user.id, id))) {
+      return { ok: false, reason: 'invalid_request' };
+    }
     if (!Array.isArray(userIds) || userIds.length === 0 || !userIds.every(Number.isInteger)) {
       return { ok: false, reason: 'invalid_request' };
     }

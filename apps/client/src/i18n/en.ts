@@ -290,6 +290,15 @@ export const en = {
       'It stays out of your history and the assistant learns nothing from it. It disappears as soon as you leave the page.',
     hint: 'Ephemeral chat: it disappears when you leave the page.',
   },
+  comparison: {
+    switch: 'Compare',
+    pickModel: 'Choose a model',
+    pickTitle: 'Compare with which model?',
+    pickDescription:
+      'The usual assistant answers on the left, this model on the right, to the same messages. Only models that can use tools are listed.',
+    usual: 'Usual assistant',
+    mobileNote: 'Comparison: open it on a computer to see both answers.',
+  },
   sharing: {
     share: 'Share',
     members: 'People',

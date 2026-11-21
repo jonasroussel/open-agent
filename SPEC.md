@@ -397,6 +397,31 @@ A conversation shared with other people of the app, who all write to the assista
   tool, and then reaches the model whoever answers; a file the model only listed, read or used as a source opens for
   its owner alone. A member may attach only files they may open. Everyone reads and edits its canvas documents.
 
+### Comparison (admin)
+
+Two agents answer the same messages side by side, to compare a model with the usual assistant. Admin only, on a
+computer (hidden below the `md` breakpoint).
+
+- **Turned on at the start:** in the composer of a new conversation (not mid-chat, not an ephemeral one), with a
+  model picked from the Settings page's list (`GET /api/admin/models`), limited to models with tools. The client
+  sends the first message (text and files) to two new conversations at once: the left one as usual, the right one with
+  `comparison: { with: <left id>, modelId }` (`ComparisonRequest`). Every later message goes to both.
+- **Two conversations:** each keeps its own history and runs its own pre-analysis, so each may ask its own
+  clarifying question. The left one is the usual assistant (the admin's settings, the route the pre-analysis picks).
+  The right one is answered by the picked model on both routes, thinking (`medium`) on the reasoning route only when
+  the model has `reasoning`, else as on the fast one; its pre-analysis, the images and the making tools use the
+  settings. Each answer's cost is recorded under the model that made it, paid by the own key when there is one.
+- **Stored:** the right thread is a conversation with `compared_with` (the left id, no foreign key: either request may
+  arrive first) and `model_id`. The server refuses (`400 invalid_request`) a comparison from someone else than the
+  admin, with a model unknown or without tools, with an ephemeral request, or naming a conversation that is not the
+  admin's, is ephemeral, is shared, is a right thread or already has one. It only counts on the first message.
+- **Out of the history:** the sidebar shows one row, the left conversation, whose `ConversationDto.comparison` names
+  the right thread and its model; opening it loads both columns. The right thread is never named, listed, found by
+  the search, nor read by `search_conversations` / `read_conversation`.
+- **Memory:** only the left thread learns (a remark there becomes a rule as usual); the right one follows the rules
+  and teaches nothing, and refuses « Remember », so a remark is not learned twice.
+- **Not shared:** neither thread can be shared. Deleting the left conversation deletes the right one with it.
+
 ### Admin panel
 
 - Invitations: create and revoke access by email. Cost per person for the month and their quota.
@@ -501,7 +526,7 @@ Same layout and tooling as `inscript-carte`.
 | `users` | email, name given by the admin (`null`: the start of the email), role, locale, invited at/by, last sign-in, revoked at, monthly quota in USD (`null`: the default), own OpenRouter key (sealed) and when it was added |
 | `sign_in_requests` | user, token hash, code hash (none for invitations), code tries, the locale the form asked for, expiry, used at |
 | `sessions` | token hash, user, expiry |
-| `conversations` | id chosen by the client (UUID), user (its owner), title, pinned (by the owner), ephemeral, created/updated at |
+| `conversations` | id chosen by the client (UUID), user (its owner), title, pinned (by the owner), ephemeral, the left conversation a comparison's right thread is compared with (`compared_with`, indexed), the model that answers it (`model_id`), created/updated at |
 | `conversation_members` | conversation, user, status (`invited` / `member`), pinned (for them), invited at, joined at |
 | `messages` | conversation, id (unique per conversation: the client chooses it), position, role, the whole AI SDK UI message as JSON |
 | `message_search` | FTS5 over the text parts of each message, sharing its `rowid`; filled by triggers on `messages` |

@@ -16,6 +16,7 @@ import {
   type DragEvent,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -61,6 +62,8 @@ export function Composer({
   onSend,
   onStop,
   placeholder,
+  tools,
+  sendBlocked = false,
 }: {
   busy: boolean;
   /** The assistant answers someone else in this shared conversation: the user may write, and send once it is done. */
@@ -68,6 +71,10 @@ export function Composer({
   onSend: (text: string, files: LibraryFileDto[], command: CommandDto | null) => void;
   onStop: () => void;
   placeholder: string;
+  /** Just left of the send button. */
+  tools?: ReactNode;
+  /** Something next to the composer is not ready: the message cannot be sent yet. */
+  sendBlocked?: boolean;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -90,7 +97,8 @@ export function Composer({
   const uploading = attachments.some((attachment) => !attachment.file && !attachment.error);
   const ready = attachments.flatMap((attachment) => (attachment.file ? [attachment.file] : []));
   const room = MAX_FILES_PER_MESSAGE - attachments.length;
-  const canSend = !busy && !waiting && !uploading && (text.trim() !== '' || ready.length > 0 || command !== null);
+  const canSend =
+    !busy && !waiting && !uploading && !sendBlocked && (text.trim() !== '' || ready.length > 0 || command !== null);
 
   const update = (key: string, change: Partial<Attachment>) =>
     setAttachments((current) =>
@@ -384,6 +392,7 @@ export function Composer({
             event.target.value = '';
           }}
         />
+        {tools}
         {busy ? (
           <Button type='button' size='icon' className='rounded-full' onClick={onStop} aria-label={t('chat.stop')}>
             <Square className='size-3.5 fill-current' />

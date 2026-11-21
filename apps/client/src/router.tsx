@@ -15,7 +15,7 @@ import { sessionQuery } from './auth/session.ts';
 import { SignInPage } from './auth/sign-in-page.tsx';
 import { VerifyLinkPage } from './auth/verify-link-page.tsx';
 import { openCanvasOf } from './canvas/open-canvas.ts';
-import { discardEphemeral, hasChat, isEphemeral } from './chat/chat-store.ts';
+import { comparisonOf, discardEphemeral, hasChat, isEphemeral } from './chat/chat-store.ts';
 import { ConversationPage } from './chat/conversation-page.tsx';
 import { conversationQuery, conversationsQuery } from './chat/conversations-query.ts';
 import { NewChatPage } from './chat/new-chat-page.tsx';
@@ -83,10 +83,16 @@ const conversationRoute = createRoute({
     const doc = openCanvasOf(params.conversationId);
     if (doc) throw redirect({ to: '/c/$conversationId', params, search: { doc }, replace: true });
   },
-  // Messages arrive with the page, not right after it. A missing one stays an error in the cache: the page leaves.
+  // Messages arrive with the page, not right after it, a comparison's right thread too. A missing one stays an error
+  // in the cache: the page leaves.
   loader: async ({ context, params }) => {
-    if (hasChat(params.conversationId)) return;
-    await context.queryClient.ensureQueryData(conversationQuery(params.conversationId)).catch(() => undefined);
+    const ensure = async (id: string) => {
+      if (hasChat(id)) return;
+      await context.queryClient.ensureQueryData(conversationQuery(id)).catch(() => undefined);
+    };
+    await ensure(params.conversationId);
+    const comparison = comparisonOf(params.conversationId);
+    if (comparison) await ensure(comparison.conversationId);
   },
   component: ConversationPage,
 });

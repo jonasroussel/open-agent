@@ -307,6 +307,15 @@ export const fr: Translation = {
       'Il n’apparaît pas dans votre historique et l’assistant n’en retient rien. Il disparaît dès que vous quittez la page.',
     hint: 'Chat éphémère : il disparaît quand vous quittez la page.',
   },
+  comparison: {
+    switch: 'Comparer',
+    pickModel: 'Choisir un modèle',
+    pickTitle: 'Comparer avec quel modèle ?',
+    pickDescription:
+      'L’assistant habituel répond à gauche, ce modèle à droite, aux mêmes messages. Seuls les modèles qui savent utiliser des outils sont proposés.',
+    usual: 'Assistant habituel',
+    mobileNote: 'Comparaison : ouvrez-la sur un ordinateur pour voir les deux réponses.',
+  },
   sharing: {
     share: 'Partager',
     members: 'Participants',

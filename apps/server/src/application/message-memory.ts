@@ -1,6 +1,7 @@
 import type { MemoryNotice } from '@open-agent/shared';
 
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
+import { isOutsideHistory } from '../domain/conversation.ts';
 import { isExhausted } from '../domain/quota.ts';
 import { authorIdOf } from '../domain/sharing.ts';
 import type { User } from '../domain/user.ts';
@@ -53,9 +54,9 @@ export class MessageMemory {
       return { ok: false, reason: 'invalid_request' };
     }
     const access = await this.#participants.access(user, conversationId);
-    // Nothing said in an ephemeral conversation is learned.
+    // Nothing said in an ephemeral conversation, nor in the right thread of a comparison, is learned.
     const message =
-      access && !access.conversation.ephemeral
+      access && !isOutsideHistory(access.conversation)
         ? await this.#conversations.findMessage(conversationId, messageId)
         : null;
     if (message?.role !== 'user' || authorIdOf(message, access!.conversation.userId) !== user.id) {

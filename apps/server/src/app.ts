@@ -138,7 +138,7 @@ export async function createApp(
     clock,
     options.defaultModels,
   );
-  const roleModels = new Models(models, settings, secrets);
+  const roleModels = new Models(models, settings, secrets, modelDirectory);
   const reconciler = new MemoryReconciler(roleModels, usage, settings);
   if (options.adminEmail) await userAccess.ensureAdmin(options.adminEmail);
 

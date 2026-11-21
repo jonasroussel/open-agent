@@ -1,5 +1,5 @@
 import type { User } from '../domain/user.ts';
-import type { ModelCatalog, ModelChoice, ModelRole } from './ports/model-catalog.ts';
+import type { ModelCatalog, ModelChoice, ModelDirectory, ModelInfo, ModelRole } from './ports/model-catalog.ts';
 import type { SecretBox } from './ports/secret-box.ts';
 import type { Settings } from './settings.ts';
 
@@ -8,16 +8,46 @@ export class Models {
   readonly #catalog: ModelCatalog;
   readonly #settings: Settings;
   readonly #secrets: SecretBox;
+  readonly #directory: ModelDirectory;
 
-  constructor(catalog: ModelCatalog, settings: Settings, secrets: SecretBox) {
+  constructor(catalog: ModelCatalog, settings: Settings, secrets: SecretBox, directory: ModelDirectory) {
     this.#catalog = catalog;
     this.#settings = settings;
     this.#secrets = secrets;
+    this.#directory = directory;
   }
 
   /** Throws `ModelUnavailableError` when neither the app nor the user has a key. */
   choose(role: ModelRole, user: User): ModelChoice {
-    const ownKey = user.ownKey ? this.#secrets.open(user.ownKey.sealed) : null;
-    return this.#catalog.choose(role, this.#settings.modelId(role), ownKey);
+    return this.#catalog.choose(role, this.#settings.modelId(role), this.#ownKey(user));
+  }
+
+  /**
+   * The model the admin picked for a comparison, answering `route`: it thinks on the reasoning route only when it can,
+   * else it answers as on the fast one, as it does when the provider's list cannot be reached.
+   */
+  async choosePicked(route: 'fast' | 'reasoning', modelId: string, user: User): Promise<ModelChoice> {
+    let thinks = false;
+    if (route === 'reasoning') {
+      try {
+        thinks = (await this.#find(modelId))?.capabilities.includes('reasoning') === true;
+      } catch (error) {
+        console.error('Listing the models failed:', error);
+      }
+    }
+    return this.#catalog.choose(thinks ? 'reasoning' : 'fast', modelId, this.#ownKey(user));
+  }
+
+  /** Whether a comparison may pick it: answers use tools. Throws when the provider's list cannot be reached. */
+  async comparable(modelId: string): Promise<boolean> {
+    return (await this.#find(modelId))?.capabilities.includes('tools') === true;
+  }
+
+  async #find(modelId: string): Promise<ModelInfo | undefined> {
+    return (await this.#directory.list()).find((model) => model.id === modelId);
+  }
+
+  #ownKey(user: User): string | null {
+    return user.ownKey ? this.#secrets.open(user.ownKey.sealed) : null;
   }
 }

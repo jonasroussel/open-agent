@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 import { daysBetween, formatDay, parseDay, plusDays, weekdayOf } from '../domain/calendar.ts';
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
-import { cleanSnippet, searchTerms } from '../domain/conversation.ts';
+import { cleanSnippet, isOutsideHistory, searchTerms } from '../domain/conversation.ts';
 import { attachedNames, estimatedTokens } from '../domain/library-file.ts';
 import type { User } from '../domain/user.ts';
 import type { Library } from './library.ts';
@@ -122,7 +122,7 @@ export class ContextTools {
           spend('read_conversation');
           if (id === conversationId) throw new ToolRefusal('This is the current conversation: you already have it.');
           const access = await this.#participants.access(user, id);
-          if (!access || access.conversation.ephemeral) throw new ToolRefusal('No conversation with this id.');
+          if (!access || isOutsideHistory(access.conversation)) throw new ToolRefusal('No conversation with this id.');
           const lines = (await this.#conversations.messages(id)).map((message) => {
             const files = attachedNames(message);
             return `${message.role === 'user' ? 'User' : 'Assistant'}: ${textOf(message)}${files ? ` [Attached: ${files}]` : ''}`;

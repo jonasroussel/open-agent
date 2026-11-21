@@ -12,9 +12,21 @@ export type Conversation = {
   pinned: boolean;
   /** Outside the history: listed nowhere, found by no search, never learned from; deleted once its page is left. */
   ephemeral: boolean;
+  /**
+   * Set on the right thread of a comparison: the left conversation's id. Like an ephemeral one, it is listed nowhere,
+   * found by no search, never learned from nor shared; its left conversation shows it.
+   */
+  comparedWith: string | null;
+  /** The model that answers the right thread of a comparison; `null`: the admin's settings choose. */
+  modelId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
+
+/** Ephemeral, or the right thread of a comparison: nobody's history, so never named, learned from nor shared. */
+export function isOutsideHistory(conversation: Conversation): boolean {
+  return conversation.ephemeral || conversation.comparedWith !== null;
+}
 
 /** A piece of the text around what the search found; `match`: one of the searched words. */
 export type SnippetPart = { text: string; match: boolean };

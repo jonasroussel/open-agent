@@ -28,8 +28,19 @@ export type SharingView = {
   members: { user: User; status: MemberStatus }[];
 };
 
-/** A conversation as the user sees it: their own pin, and with whom it is shared (`null`: nobody). */
-export type ConversationView = { conversation: Conversation; pinned: boolean; sharing: SharingView | null };
+/** The right thread of a comparison, shown with its left conversation. */
+export type ComparisonView = { conversationId: string; modelId: string };
+
+/**
+ * A conversation as the user sees it: their own pin, with whom it is shared (`null`: nobody), and its right thread when
+ * it is the left conversation of a comparison.
+ */
+export type ConversationView = {
+  conversation: Conversation;
+  pinned: boolean;
+  sharing: SharingView | null;
+  comparison: ComparisonView | null;
+};
 
 export type Invitation = { conversation: Conversation; from: User; invitedAt: Date };
 
@@ -67,12 +78,14 @@ export class Conversations {
   async list(user: User): Promise<{ conversations: ConversationView[]; invitations: Invitation[] }> {
     await this.#conversations.deleteEphemeralBefore(new Date(this.#clock.now().getTime() - EPHEMERAL_MS));
 
-    const [owned, ownedMembers, memberships, people] = await Promise.all([
+    const [owned, ownedMembers, memberships, people, rightThreads] = await Promise.all([
       this.#conversations.listOf(user.id),
       this.#conversations.membersOfOwned(user.id),
       this.#conversations.memberships(user.id),
       this.#people(),
+      this.#conversations.rightThreadsOf(user.id),
     ]);
+    const comparisons = new Map(rightThreads.map((right) => [right.comparedWith, comparisonOf(right)]));
     const joined = memberships.filter(({ member }) => member.status === 'member');
     const joinedMembers = await Promise.all(
       joined.map(({ conversation }) => this.#conversations.members(conversation.id)),
@@ -88,11 +101,13 @@ export class Conversations {
           ownedMembers.filter((member) => member.conversationId === conversation.id),
           people,
         ),
+        comparison: comparisons.get(conversation.id) ?? null,
       })),
       ...joined.map(({ conversation, member }, index) => ({
         conversation,
         pinned: member.pinned,
         sharing: sharingOf('member', conversation, joinedMembers[index]!, people),
+        comparison: null,
       })),
     ].toSorted((a, b) => b.conversation.updatedAt.getTime() - a.conversation.updatedAt.getTime());
 
@@ -164,33 +179,51 @@ export class Conversations {
     return { ok: true, view: await this.#view(user, updated ?? access) };
   }
 
-  /** Its owner only, for everyone in it; a member leaves it instead. */
+  /**
+   * Its owner only, for everyone in it; a member leaves it instead. The left conversation of a comparison takes its
+   * right thread along.
+   */
   async delete(user: User, id: string): Promise<boolean> {
     const access = await this.#participants.access(user, id);
     if (access?.role !== 'owner') return false;
     // Read before: the members go with the conversation. Invited people lose their invitation.
     const everyone = [user.id, ...(await this.#conversations.members(id)).map((member) => member.userId)];
+    const right = await this.#conversations.rightThreadOf(user.id, id);
     // An answer being written stops: it would be saved into a conversation that no longer exists.
     this.#runs.stop(id);
     await this.#conversations.delete(id);
+    if (right) {
+      this.#runs.stop(right.id);
+      await this.#conversations.delete(right.id);
+      this.#participants.tell([user.id], { type: 'conversation', id: right.id });
+    }
     this.#participants.tell(everyone, { type: 'conversation', id });
     this.#participants.tell(everyone, { type: 'conversations' });
     return true;
   }
 
   async #view(user: User, access: ConversationAccess): Promise<ConversationView> {
-    const [members, people] = await Promise.all([this.#conversations.members(access.conversation.id), this.#people()]);
+    const [members, people, right] = await Promise.all([
+      this.#conversations.members(access.conversation.id),
+      this.#people(),
+      this.#conversations.rightThreadOf(access.conversation.userId, access.conversation.id),
+    ]);
     const own = members.find((member) => member.userId === user.id);
     return {
       conversation: access.conversation,
       pinned: access.role === 'owner' ? access.conversation.pinned : (own?.pinned ?? false),
       sharing: sharingOf(access.role, access.conversation, members, people),
+      comparison: right && comparisonOf(right),
     };
   }
 
   async #people(): Promise<Map<number, User>> {
     return new Map((await this.#users.list()).map((person) => [person.id, person]));
   }
+}
+
+function comparisonOf(right: Conversation): ComparisonView {
+  return { conversationId: right.id, modelId: right.modelId! };
 }
 
 /** `null` once nobody is invited nor in it any more. */

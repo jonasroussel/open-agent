@@ -133,7 +133,7 @@ export function createChatRoutes({ signedInUser, conversations, sharing, chatTur
           const body = await readJson(request);
           // A thinking model can be silent for longer than Bun's 10 s idle timeout.
           server.timeout(request, 0);
-          const result = await chatTurns.start(user, body?.id, body?.messages, body?.ephemeral);
+          const result = await chatTurns.start(user, body?.id, body?.messages, body?.ephemeral, body?.comparison);
           if (!result.ok) return error(result.reason, CHAT_STATUS[result.reason]);
           // The browser may leave at any time: the answer goes on, and `chatStream` gives it back.
           return createUIMessageStreamResponse({ stream: result.stream });

@@ -50,7 +50,7 @@ export function toQuotaResponse(quota: Quota): QuotaResponse {
   };
 }
 
-export function toConversationDto({ conversation, pinned, sharing }: ConversationView): ConversationDto {
+export function toConversationDto({ conversation, pinned, sharing, comparison }: ConversationView): ConversationDto {
   return {
     id: conversation.id,
     title: conversation.title,
@@ -62,6 +62,7 @@ export function toConversationDto({ conversation, pinned, sharing }: Conversatio
       owner: personOf(sharing.owner),
       members: sharing.members.map(({ user, status }) => ({ person: personOf(user), status })),
     },
+    comparison,
   };
 }
 

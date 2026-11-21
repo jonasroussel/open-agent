@@ -14,7 +14,7 @@ import type { InferUIMessageChunk } from 'ai';
 import { z } from 'zod';
 
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
-import { answersQuestions, hasAsked, withAnsweredQuestions } from '../domain/conversation.ts';
+import { answersQuestions, hasAsked, isOutsideHistory, withAnsweredQuestions } from '../domain/conversation.ts';
 import type { ChatMessage, Conversation } from '../domain/conversation.ts';
 import { attachmentsAreValid } from '../domain/library-file.ts';
 import type { MemoryRule } from '../domain/memory.ts';
@@ -92,6 +92,9 @@ export type ChatTurnResult =
         | 'conversation_changed';
     };
 
+/** What a conversation is created as, by its first message. */
+type NewConversation = Pick<Conversation, 'ephemeral' | 'comparedWith' | 'modelId'>;
+
 /**
  * One exchange: the client sends the whole history (its last message is the user's). The pre-analysis picks how to
  * answer; the answer streams back and the history with it is saved when the stream ends, even when the user stops it.
@@ -160,10 +163,17 @@ export class ChatTurns {
 
   /**
    * A new message from the user, or their answers to the questions ending the assistant's last message: that message
-   * then goes on. `ephemeral` only counts for a new conversation: it stays what it was created as. The answer is the
-   * server's: it goes on to its end whatever the browser does, which follows it with `AnswerRuns.follow`.
+   * then goes on. `ephemeral` and `comparison` only count for a new conversation: it stays what it was created as.
+   * The answer is the server's: it goes on to its end whatever the browser does, which follows it with
+   * `AnswerRuns.follow`.
    */
-  async start(user: User, id: unknown, rawMessages: unknown, ephemeral: unknown = false): Promise<ChatTurnResult> {
+  async start(
+    user: User,
+    id: unknown,
+    rawMessages: unknown,
+    ephemeral: unknown = false,
+    comparison?: unknown,
+  ): Promise<ChatTurnResult> {
     if (typeof id !== 'string' || !CONVERSATION_ID.test(id)) return { ok: false, reason: 'invalid_request' };
     const validated = await safeValidateUIMessages<ChatMessage>({ messages: rawMessages, dataSchemas });
     if (!validated.success) return { ok: false, reason: 'invalid_request' };
@@ -203,6 +213,12 @@ export class ChatTurns {
     if (!resumed && !(await this.#library.canAttach(user, messages.at(-1)!))) {
       return { ok: false, reason: 'invalid_request' };
     }
+    let created: NewConversation = { ephemeral: ephemeral === true, comparedWith: null, modelId: null };
+    if (!existing && comparison !== undefined && comparison !== null) {
+      const right = await this.#rightThread(user, id, comparison, created.ephemeral);
+      if (!right.ok) return right;
+      created = right.conversation;
+    }
 
     try {
       this.#models.choose('fast', user);
@@ -217,14 +233,50 @@ export class ChatTurns {
     if (!signal) return { ok: false, reason: 'conversation_busy' };
 
     try {
-      const conversation = access?.conversation ?? { ephemeral: ephemeral === true };
-      const stream = await this.#answer(user, id, conversation, people, messages, resumed, signal);
+      const stream = await this.#answer(user, id, access?.conversation ?? created, people, messages, resumed, signal);
       this.#runs.feed(id, stream);
       return { ok: true, stream: this.#runs.follow(id)! };
     } catch (error) {
       this.#runs.end(id, signal);
       throw error;
     }
+  }
+
+  /**
+   * The admin's comparison: the new conversation becomes the right thread of `with`, which is theirs, in their history,
+   * and has no right thread yet, or does not exist yet (its first message is sent at the same time).
+   */
+  async #rightThread(
+    user: User,
+    id: string,
+    comparison: unknown,
+    ephemeral: boolean,
+  ): Promise<
+    { ok: true; conversation: NewConversation } | { ok: false; reason: 'invalid_request' | 'model_unavailable' }
+  > {
+    const refused = { ok: false, reason: 'invalid_request' } as const;
+    if (user.role !== 'admin' || ephemeral || typeof comparison !== 'object' || comparison === null) return refused;
+    const { with: left, modelId } = comparison as Record<string, unknown>;
+    if (typeof left !== 'string' || !CONVERSATION_ID.test(left) || left === id || typeof modelId !== 'string') {
+      return refused;
+    }
+    const existingLeft = await this.#conversations.find(left);
+    if (
+      existingLeft &&
+      (existingLeft.userId !== user.id ||
+        isOutsideHistory(existingLeft) ||
+        (await this.#conversations.members(left)).length > 0 ||
+        (await this.#conversations.rightThreadOf(user.id, left)))
+    ) {
+      return refused;
+    }
+    try {
+      if (!(await this.#models.comparable(modelId))) return refused;
+    } catch (error) {
+      console.error('Listing the models failed:', error);
+      return { ok: false, reason: 'model_unavailable' };
+    }
+    return { ok: true, conversation: { ephemeral: false, comparedWith: left, modelId } };
   }
 
   /**
@@ -249,8 +301,8 @@ export class ChatTurns {
   async #answer(
     user: User,
     id: string,
-    /** A new one: only whether it is ephemeral. */
-    existing: Conversation | { ephemeral: boolean },
+    /** A new one: what it is created as. */
+    existing: Conversation | NewConversation,
     people: readonly User[],
     messages: ChatMessage[],
     resumed: ChatMessage | null,
@@ -258,10 +310,9 @@ export class ChatTurns {
   ): Promise<ReadableStream<InferUIMessageChunk<ChatMessage>>> {
     const now = this.#clock.now();
     const conversation =
-      'id' in existing
-        ? existing
-        : await this.#conversations.create({ id, userId: user.id, ephemeral: existing.ephemeral, now });
+      'id' in existing ? existing : await this.#conversations.create({ id, userId: user.id, ...existing, now });
     const { ephemeral } = conversation;
+    const outside = isOutsideHistory(conversation);
     const shared = people.length > 1;
     // Saved at once: a page opened or reloaded meanwhile shows the message, then follows its answer. The others in a
     // shared conversation see that the assistant is answering it.
@@ -272,9 +323,10 @@ export class ChatTurns {
     // Each command gets its prompt before the user's words: for the pre-analysis, the title and the model, never in
     // the saved conversation, which keeps the badge.
     const expanded = await this.#commands.expand(messages, conversation.userId);
-    if (!resumed) void this.#commands.recordUse(user, messages.at(-1)!);
-    // Listed nowhere, an ephemeral conversation needs no name.
-    if (!ephemeral && (!conversation.title || !conversation.icon)) {
+    // A comparison's message is sent to both threads: the left one counts it.
+    if (!resumed && !conversation.comparedWith) void this.#commands.recordUse(user, messages.at(-1)!);
+    // Listed nowhere, an ephemeral conversation or a comparison's right thread needs no name.
+    if (!outside && (!conversation.title || !conversation.icon)) {
       void this.#naming.name(user, conversation, expanded[0]!);
     }
     const names = new Map(people.map((person) => [person.id, nameOf(person)]));
@@ -301,9 +353,9 @@ export class ChatTurns {
         const analysis = await this.#analysis(user, conversation.id, expanded, resumed, rules, abortSignal);
         const messageId = resumed?.id ?? crypto.randomUUID();
         // An answer to a question is a choice, not a remark about how the assistant works. An ephemeral conversation
-        // follows the memory, and teaches it nothing.
+        // follows the memory, and teaches it nothing; so does a comparison's right thread, its left one learns.
         const remembering =
-          analysis.feedback && !resumed && !ephemeral
+          analysis.feedback && !resumed && !outside
             ? this.#remember(
                 user,
                 analysis.feedback,
@@ -330,7 +382,10 @@ export class ChatTurns {
           // Sent first: the badge "Deep thinking" shows while the model thinks. A resumed question gets its route.
           writer.write({ type: 'start', messageId, messageMetadata: metadata });
 
-          const choice = this.#models.choose(analysis.route, user);
+          // The right thread of a comparison answers with the model the admin picked; everything else is the settings'.
+          const choice = conversation.modelId
+            ? await this.#models.choosePicked(analysis.route, conversation.modelId, user)
+            : this.#models.choose(analysis.route, user);
           const documents = await this.#artifacts.latestOf(conversation.id);
           // Expanded after the rewrite: the clearer request replaces only the user's words, never a command's prompt.
           const requested = analysis.rewrittenRequest

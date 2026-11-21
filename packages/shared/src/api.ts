@@ -46,10 +46,11 @@ export const API_ROUTES = {
   /** GET `?q=`: full-text search in the signed-in user's history, as `SearchResponse`. */
   search: '/api/search',
   /**
-   * POST, the AI SDK chat transport: `{ id, messages, ephemeral? }` with the whole history; creates the conversation
-   * on its first message, ephemeral when `ephemeral` is `true` (outside the history, deleted with DELETE on the
-   * conversation when its page is left). Answers a UI message stream. The answer is the server's: leaving the page or
-   * losing the connection stops nothing.
+   * POST, the AI SDK chat transport: `{ id, messages, ephemeral?, comparison? }` with the whole history; creates the
+   * conversation on its first message, ephemeral when `ephemeral` is `true` (outside the history, deleted with DELETE on
+   * the conversation when its page is left), or the right thread of a comparison with `comparison` (`ComparisonRequest`,
+   * admin only). Answers a UI message stream. The answer is the server's: leaving the page or losing the connection
+   * stops nothing.
    */
   chat: '/api/chat',
   /**
@@ -418,7 +419,18 @@ export type ConversationDto = {
   updatedAt: string;
   /** `null`: not shared with anyone. */
   sharing: SharingDto | null;
+  /** Its right thread, when the admin compares two models: `null` everywhere else, the right thread's own DTO included. */
+  comparison: ComparisonDto | null;
 };
+
+/** The right thread of a comparison: a conversation of its own, answered by the model the admin picked. */
+export type ComparisonDto = { conversationId: string; modelId: string };
+
+/**
+ * The chat body's `comparison`, on the right thread's first message only: it becomes the right thread of the
+ * conversation `with`, answered by `modelId`, which needs the `tools` capability.
+ */
+export type ComparisonRequest = { with: string; modelId: string };
 
 /** A shared conversation the user was invited to and has not joined yet. */
 export type InvitationDto = {

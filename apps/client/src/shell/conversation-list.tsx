@@ -7,7 +7,7 @@ import {
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useMatchRoute } from '@tanstack/react-router';
-import { LogOut, MoreHorizontal, Pencil, Pin, PinOff, Trash2, UserPlus, Users } from 'lucide-react';
+import { Columns2, LogOut, MoreHorizontal, Pencil, Pin, PinOff, Trash2, UserPlus, Users } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -154,7 +154,7 @@ function ConversationGroup({ label, conversations, onNavigate, onRename, onDelet
                   )}
                 >
                   <Link to='/c/$conversationId' params={{ conversationId: conversation.id }} onClick={onNavigate}>
-                    <ConversationIcon name={conversation.icon} />
+                    {conversation.comparison ? <Columns2 /> : <ConversationIcon name={conversation.icon} />}
                     <span className='truncate'>{conversation.title ?? t('conversations.untitled')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -176,10 +176,13 @@ function ConversationGroup({ label, conversations, onNavigate, onRename, onDelet
                       {conversation.pinned ? <PinOff /> : <Pin />}
                       {conversation.pinned ? t('conversations.unpin') : t('conversations.pin')}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => onShare(conversation)}>
-                      {conversation.sharing ? <Users /> : <UserPlus />}
-                      {conversation.sharing ? t('sharing.members') : t('sharing.share')}
-                    </DropdownMenuItem>
+                    {/* A comparison is never shared. */}
+                    {!conversation.comparison && (
+                      <DropdownMenuItem onSelect={() => onShare(conversation)}>
+                        {conversation.sharing ? <Users /> : <UserPlus />}
+                        {conversation.sharing ? t('sharing.members') : t('sharing.share')}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem variant='destructive' onSelect={() => onDelete(conversation)}>
                       {member ? <LogOut /> : <Trash2 />}
                       {member ? t('sharing.leave') : t('conversations.delete')}
