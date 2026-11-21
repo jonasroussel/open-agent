@@ -499,7 +499,9 @@ computer (hidden below the `md` breakpoint).
   memory for the memory. Structured outputs keep the JSON fields even if a prompt forgets them. **Everything the
   model reads besides the tools' descriptions is in French** (the three prompts, what the code adds, the notes in the
   user's message): every user writes French, and with English prompts the thoughts shown under « Réflexion
-  approfondie » were in English (18 of 21 in production); now nearly all are French.
+  approfondie » were in English (18 of 21 in production); now nearly all are French. Gemini returns Google's thought
+  summaries, in English whatever the prompt; they show only when the user unfolds the thinking line, which is folded
+  by default.
 - **Memory:** a person's rules ("See their memory"), each one can be forgotten.
 
 ### Other

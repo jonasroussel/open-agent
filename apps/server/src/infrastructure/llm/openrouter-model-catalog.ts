@@ -47,10 +47,7 @@ export class OpenRouterModelCatalog implements ModelCatalog {
       const model = chosen.chat(modelId, { usage: { include: true }, extraBody: { modalities: ['image', 'text'] } });
       return { model, modelId, paidByUser: ownKey !== null };
     }
-    // Gemini 4's reasoning text is Google's summary, in English whatever the prompt's language (5 of 5, 2026-11-21):
-    // it is not shown. The model still thinks, and the thinking is billed.
-    const exclude = modelId.startsWith('google/');
-    const model = chosen.chat(modelId, { usage: { include: true }, reasoning: { ...REASONING[thinking], exclude } });
+    const model = chosen.chat(modelId, { usage: { include: true }, reasoning: REASONING[thinking] });
     return { model, modelId, paidByUser: ownKey !== null };
   }
 

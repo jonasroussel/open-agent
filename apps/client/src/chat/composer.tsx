@@ -350,12 +350,6 @@ export function Composer({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <VoiceRecorder
-          disabled={room <= 0}
-          onRecorded={(file) => addFiles([file])}
-          onRecordingChange={setRecording}
-          onError={setNotice}
-        />
         {/* In the user's order, between the paperclip and the send button; scrolled sideways when they do not fit. */}
         <div className='flex min-w-0 flex-1 [scrollbar-width:none] gap-1.5 overflow-x-auto'>
           {commands.map((candidate) => (
@@ -407,6 +401,12 @@ export function Composer({
           }}
         />
         {tools}
+        <VoiceRecorder
+          disabled={room <= 0}
+          onRecorded={(file) => addFiles([file])}
+          onRecordingChange={setRecording}
+          onError={setNotice}
+        />
         {busy ? (
           <Button type='button' size='icon' className='rounded-full' onClick={onStop} aria-label={t('chat.stop')}>
             <Square className='size-3.5 fill-current' />
