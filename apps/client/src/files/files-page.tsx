@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { api } from '@/lib/api.ts';
+import { TOUCH_SCREEN } from '@/lib/touch-screen.ts';
 import { cn } from '@/lib/utils.ts';
 import { usePageTitle } from '@/shell/page-title.tsx';
 
@@ -80,11 +81,12 @@ export function FilesPage() {
           <Upload />
           {uploading ? t('files.adding') : t('files.add')}
         </Button>
+        {/* As in the composer: a phone gets no `accept` so its chooser shows files, whose kind the server checks. */}
         <input
           ref={input}
           type='file'
           multiple
-          accept={FILE_ACCEPT}
+          accept={TOUCH_SCREEN ? undefined : FILE_ACCEPT}
           hidden
           onChange={(event) => {
             void add([...(event.target.files ?? [])]);

@@ -31,12 +31,10 @@ import {
 import { FileChip } from '@/files/file-chip.tsx';
 import { FilePickerDialog } from '@/files/file-picker-dialog.tsx';
 import { libraryFilesQuery, uploadFile } from '@/files/library.ts';
+import { TOUCH_SCREEN } from '@/lib/touch-screen.ts';
 import { cn } from '@/lib/utils.ts';
 
 import { VoiceRecorder } from './voice-recorder.tsx';
-
-/** On a touch screen, Enter adds a line, like in a text message; the button sends. */
-const touchScreen = window.matchMedia('(pointer: coarse)').matches;
 
 /**
  * The text with the request to make a command at its start: kept as it is when it has it, completed when the user cut
@@ -217,7 +215,8 @@ export function Composer({
       setCommand(null);
       return;
     }
-    if (event.key === 'Enter' && !event.shiftKey && !touchScreen && !event.nativeEvent.isComposing) submit(event);
+    // On a touch screen, Enter adds a line, like in a text message; the button sends.
+    if (event.key === 'Enter' && !event.shiftKey && !TOUCH_SCREEN && !event.nativeEvent.isComposing) submit(event);
   }
 
   // A screenshot pasted with Ctrl+V becomes an attachment; pasted text stays text.
@@ -316,7 +315,7 @@ export function Composer({
         placeholder={placeholder}
         aria-label={placeholder}
         rows={1}
-        autoFocus={!touchScreen}
+        autoFocus={!TOUCH_SCREEN}
         className='placeholder:text-muted-foreground field-sizing-content max-h-52 min-h-10 w-full resize-none bg-transparent px-1 text-base outline-none'
       />
       <div className='flex items-center gap-2'>
@@ -338,7 +337,7 @@ export function Composer({
               <Upload />
               {t('files.fromDevice')}
             </DropdownMenuItem>
-            {touchScreen && (
+            {TOUCH_SCREEN && (
               <DropdownMenuItem onSelect={() => cameraInput.current?.click()}>
                 <Camera />
                 {t('files.takePhoto')}
@@ -378,11 +377,13 @@ export function Composer({
             {t('commands.newShort')}
           </button>
         </div>
+        {/* Chrome on Android reads its chooser from `accept`: media types leave only camera and photos, so a phone
+            gets no `accept` and files show too; the kind is checked after picking. */}
         <input
           ref={deviceInput}
           type='file'
           multiple
-          accept={FILE_ACCEPT}
+          accept={TOUCH_SCREEN ? undefined : FILE_ACCEPT}
           hidden
           onChange={(event) => {
             addFiles([...(event.target.files ?? [])]);
