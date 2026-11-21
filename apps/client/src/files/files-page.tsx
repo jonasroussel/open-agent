@@ -38,6 +38,7 @@ import { KIND_ICONS } from './file-chip.tsx';
 import { fileDetails } from './file-details.ts';
 import { ImagePreview, type PreviewedImage } from './image-preview.tsx';
 import { libraryFilesQuery, uploadFile } from './library.ts';
+import { pickDocuments } from './pick-documents.ts';
 
 /** "My files": everything the user sent, as tiles to open again, add (button or drop), or delete. */
 export function FilesPage() {
@@ -98,7 +99,7 @@ export function FilesPage() {
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <p className='text-muted-foreground max-w-xl'>{t('files.description')}</p>
         {TOUCH_SCREEN ? (
-          // As in the composer: Chrome on Android hides documents once images or videos are accepted.
+          // As in the composer: photos from their own field, documents from the file manager.
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size='lg' disabled={uploading}>
@@ -111,7 +112,14 @@ export function FilesPage() {
                 <Images />
                 {t('files.fromPhotos')}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => documentInput.current?.click()}>
+              <DropdownMenuItem
+                onSelect={() =>
+                  pickDocuments(
+                    () => documentInput.current?.click(),
+                    (picked) => void add(picked),
+                  )
+                }
+              >
                 <FileText />
                 {t('files.fromDocuments')}
               </DropdownMenuItem>

@@ -123,6 +123,8 @@ const FILE_TYPES: Record<FileKind, { mediaTypes: Record<string, string>; extensi
 
 const KINDS = Object.keys(FILE_TYPES) as FileKind[];
 const MEDIA_KINDS: FileKind[] = ['image', 'video'];
+/** Text extensions Android's `MimeTypeMap` reads as a video. */
+const ANDROID_MEDIA_EXTENSIONS = ['.ts'];
 
 function acceptOf(kinds: FileKind[]): string {
   return kinds
@@ -137,8 +139,14 @@ function acceptOf(kinds: FileKind[]): string {
 export const FILE_ACCEPT = acceptOf(KINDS);
 /** Images and videos only: on a phone, the camera and photo picker. */
 export const MEDIA_ACCEPT = acceptOf(MEDIA_KINDS);
-/** Every other kind, without any image or video: on a phone, the file manager. */
-export const DOCUMENT_ACCEPT = acceptOf(KINDS.filter((kind) => !MEDIA_KINDS.includes(kind)));
+/**
+ * Every other kind, for a phone's documents field when the file manager cannot be opened directly. Without the
+ * extensions Android maps to a video type (`.ts` is `video/mp2t`): Chrome would add the camcorder to the chooser.
+ */
+export const DOCUMENT_ACCEPT = acceptOf(KINDS.filter((kind) => !MEDIA_KINDS.includes(kind)))
+  .split(',')
+  .filter((entry) => !ANDROID_MEDIA_EXTENSIONS.includes(entry))
+  .join(',');
 
 /**
  * `null`: not a file the app reads. A known media type wins; an unknown or empty one falls back to the extension. A

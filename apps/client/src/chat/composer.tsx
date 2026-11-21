@@ -45,6 +45,7 @@ import {
 import { FileChip } from '@/files/file-chip.tsx';
 import { FilePickerDialog } from '@/files/file-picker-dialog.tsx';
 import { libraryFilesQuery, uploadFile } from '@/files/library.ts';
+import { pickDocuments } from '@/files/pick-documents.ts';
 import { TOUCH_SCREEN } from '@/lib/touch-screen.ts';
 import { cn } from '@/lib/utils.ts';
 
@@ -360,7 +361,7 @@ export function Composer({
                   <Images />
                   {t('files.fromPhotos')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => documentInput.current?.click()}>
+                <DropdownMenuItem onSelect={() => pickDocuments(() => documentInput.current?.click(), addFiles)}>
                   <FileText />
                   {t('files.fromDocuments')}
                 </DropdownMenuItem>
@@ -409,8 +410,8 @@ export function Composer({
             {t('commands.newShort')}
           </button>
         </div>
-        {/* Chrome on Android opens only the camera and photos once images or videos are accepted: a phone gets
-            documents in a field of their own, without them. */}
+        {/* Chrome on Android offers the camera and camcorder as soon as one accepted type maps to an image or a video:
+            photos get a field of their own; documents open the file manager (see `pickDocuments`). */}
         {TOUCH_SCREEN ? (
           <>
             <input ref={mediaInput} type='file' multiple accept={MEDIA_ACCEPT} hidden onChange={onFilesPicked} />

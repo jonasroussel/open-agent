@@ -50,6 +50,8 @@ describe('accept lists', () => {
     const documents = DOCUMENT_ACCEPT.split(',');
     expect(documents.some((entry) => entry.startsWith('image/') || entry.startsWith('video/'))).toBe(false);
     expect(documents.some((entry) => MEDIA_ACCEPT.split(',').includes(entry))).toBe(false);
-    expect(new Set([...MEDIA_ACCEPT.split(','), ...documents])).toEqual(new Set(FILE_ACCEPT.split(',')));
+    // `.ts` is left out: Android reads it as `video/mp2t`.
+    expect(documents).not.toContain('.ts');
+    expect(new Set([...MEDIA_ACCEPT.split(','), ...documents, '.ts'])).toEqual(new Set(FILE_ACCEPT.split(',')));
   });
 });
