@@ -12,8 +12,15 @@ import { cn } from '@/lib/utils.ts';
 import { adminModelsQuery } from './admin-settings-query.ts';
 
 export function price(model: ModelInfoDto): string {
+  if (model.inputPrice === null || model.outputPrice === null) return i18n.t('settings.variablePrice');
   const format = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 3 });
   return i18n.t('settings.price', { input: format.format(model.inputPrice), output: format.format(model.outputPrice) });
+}
+
+/** Routers, whose price depends on the model they pick, come after the priced models. */
+function cost(model: ModelInfoDto): number {
+  if (model.inputPrice === null || model.outputPrice === null) return Number.POSITIVE_INFINITY;
+  return model.inputPrice + model.outputPrice;
 }
 
 /**
@@ -40,7 +47,7 @@ export function ModelList({
   const shown = (models.data ?? [])
     .filter(suitable)
     .filter((model) => words.every((word) => `${model.id} ${model.name}`.toLowerCase().includes(word)))
-    .toSorted((a, b) => a.inputPrice + a.outputPrice - (b.inputPrice + b.outputPrice));
+    .toSorted((a, b) => (cost(a) === cost(b) ? 0 : cost(a) - cost(b)));
 
   return (
     <>

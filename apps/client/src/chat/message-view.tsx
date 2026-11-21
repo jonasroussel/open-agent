@@ -208,10 +208,12 @@ export function AssistantMessage({
       <BrandIcon className='mt-1 hidden size-7 md:block' />
       <div className='flex min-w-0 flex-1 flex-col items-start gap-2'>
         {/* `min-w-0`: a long code line scrolls in its block instead of widening the bubble; a long word (a sum without
-            spaces, a link) breaks. A block, not a grid: on a phone the small icon floats beside the first line only. */}
+            spaces, a link) breaks. A block, not a grid: on a phone the small icon floats beside the first line only.
+            The bubble's width ignores a float beside a block, so an empty float in the first paragraph's line counts
+            the icon's room: else a one-word answer, without that room, breaks in two. */}
         <div className='bg-muted flow-root max-w-full min-w-0 rounded-2xl rounded-tl-md px-4 py-3 wrap-break-word'>
           <BrandIcon className='float-left mt-0.5 mr-2 size-5 md:hidden' />
-          <div className='space-y-2'>
+          <div className='space-y-2 max-md:[&>:first-child>:first-child]:before:float-left max-md:[&>:first-child>:first-child]:before:w-7'>
             {/* A question comes before the work its answer led to. */}
             {questions.map((part) => (
               <Question key={part.toolCallId} part={part} onAnswer={onAnswer} />

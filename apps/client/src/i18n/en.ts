@@ -239,6 +239,7 @@ export const en = {
     changed: 'Changed',
     change: 'Change',
     price: '{{input}} $ in · {{output}} $ out per million tokens',
+    variablePrice: 'Variable price, depends on the model it picks',
     pickTitle: 'Model for “{{role}}”',
     search: 'Search by name or id',
     noModel: 'No model matches.',

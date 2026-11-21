@@ -255,6 +255,7 @@ export const fr: Translation = {
     changed: 'Modifié',
     change: 'Changer',
     price: '{{input}} $ en entrée · {{output}} $ en sortie par million de tokens',
+    variablePrice: 'Prix variable selon le modèle choisi',
     pickTitle: 'Modèle pour « {{role}} »',
     search: 'Chercher par nom ou identifiant',
     noModel: 'Aucun modèle ne correspond.',

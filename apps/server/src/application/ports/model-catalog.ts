@@ -42,9 +42,9 @@ export type ModelInfo = {
   id: string;
   name: string;
   capabilities: ModelCapability[];
-  /** USD per million tokens. */
-  inputPrice: number;
-  outputPrice: number;
+  /** USD per million tokens; `null` for both when it depends on the model a router picks. */
+  inputPrice: number | null;
+  outputPrice: number | null;
 };
 
 export interface ModelDirectory {

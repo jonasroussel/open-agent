@@ -41,11 +41,13 @@ function toModelInfo(model: OpenRouterModel): ModelInfo {
   if (!model.reasoning?.mandatory) capabilities.push('thinking_off');
   if (parameters.includes('structured_outputs')) capabilities.push('structured_outputs');
   if (model.architecture.output_modalities?.includes('image')) capabilities.push('image_output');
+  // Routers (`openrouter/auto`…) give "-1": their price is the one of the model they pick.
+  const variable = Number(model.pricing.prompt) < 0 || Number(model.pricing.completion) < 0;
   return {
     id: model.id,
     name: model.name,
     capabilities,
-    inputPrice: Number(model.pricing.prompt) * 1_000_000,
-    outputPrice: Number(model.pricing.completion) * 1_000_000,
+    inputPrice: variable ? null : Number(model.pricing.prompt) * 1_000_000,
+    outputPrice: variable ? null : Number(model.pricing.completion) * 1_000_000,
   };
 }
