@@ -90,6 +90,7 @@ export const fr: Translation = {
     readingPage: 'Lecture de {{site}}…',
     readPage: 'A lu {{site}}',
     downloadingFile: 'Téléchargement d’un fichier…',
+    downloadFile: 'Téléchargement de « {{name}} »',
     downloadedFile: 'A lu « {{name}} » ({{size}})',
     readingAttachment: 'Relecture d’un fichier…',
     readAttachment: 'A relu « {{name}} »',

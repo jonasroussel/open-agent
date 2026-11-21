@@ -8,6 +8,7 @@ import mammoth from 'mammoth';
 
 import {
   DocumentTooLong,
+  TooManyPages,
   UnreadableDocument,
   type DocumentReader,
   type PdfPage,
@@ -25,8 +26,13 @@ const COMMAND_TIMEOUT_MS = 30_000;
 const AUDIO_TIMEOUT_MS = 180_000;
 /** A compressed file expands far past what it weighs: what a tool prints is read up to this. */
 const MAX_OUTPUT_CHARACTERS = 2_000_000;
-/** Rendered pages: far past what the model reads at once, and every page is a picture to make. */
-const MAX_PDF_PAGES = 100;
+/** What Gemini reads natively (it gets the original); past it, a PDF is refused. */
+const MAX_PDF_PAGES = 1000;
+/**
+ * Pages rendered as pictures, for models that do not read PDFs: every page is a picture to make. A 433-page rulebook
+ * (32 MB): its text in 0.2 s, its first 100 pages in 0.8 s and 19 MB of pictures on an M-series Mac (2026-11-21).
+ */
+const MAX_PDF_PICTURES = 100;
 /** Pictures kept from a Word file, whose zip may hold far more than the upload weighs. */
 const MAX_WORD_IMAGE_BYTES = MAX_FILE_BYTES;
 /** A Word or Excel file's zip, expanded: mammoth and exceljs read it in memory, so a zip bomb is refused before. */
@@ -51,21 +57,36 @@ export class PopplerMammothReader implements DocumentReader {
       // Read before any picture is made: rendering thousands of pages would take the server down.
       const pages = await pageCount(pdf);
       if (pages > MAX_PDF_PAGES) {
-        throw new DocumentTooLong(`${pages} pages is more than the ${MAX_PDF_PAGES} the assistant reads at once.`);
+        throw new TooManyPages(
+          `This PDF has ${pages.toLocaleString('en-US')} pages, more than the ${MAX_PDF_PAGES.toLocaleString('en-US')} that can be read.`,
+        );
       }
       // `-layout` keeps the columns of tables and forms; pages end with a form feed.
       await run(['pdftotext', '-layout', '-enc', 'UTF-8', pdf, join(folder, 'text.txt')]);
-      await run(['pdftoppm', '-r', String(PAGE_DPI), '-jpeg', '-jpegopt', 'quality=80', pdf, join(folder, 'page')]);
+      await run([
+        'pdftoppm',
+        '-r',
+        String(PAGE_DPI),
+        '-jpeg',
+        '-jpegopt',
+        'quality=80',
+        '-l',
+        String(MAX_PDF_PICTURES),
+        pdf,
+        join(folder, 'page'),
+      ]);
       const texts = (await Bun.file(join(folder, 'text.txt')).text()).split('\f');
       // `page-1.jpg`, or `page-01.jpg` when there are 10 pages or more.
-      const images = (await readdir(folder))
-        .filter((name) => /^page-\d+\.jpg$/.test(name))
-        .toSorted((a, b) => pageNumber(a) - pageNumber(b));
+      const images = new Map(
+        (await readdir(folder))
+          .filter((name) => /^page-\d+\.jpg$/.test(name))
+          .map((name) => [pageNumber(name), join(folder, name)]),
+      );
       return await Promise.all(
-        images.map(async (name, index) => ({
-          text: texts[index]?.trim() ?? '',
-          image: await Bun.file(join(folder, name)).bytes(),
-        })),
+        Array.from({ length: pages }, async (_, index) => {
+          const image = images.get(index + 1);
+          return { text: texts[index]?.trim() ?? '', image: image ? await Bun.file(image).bytes() : null };
+        }),
       );
     } finally {
       await rm(folder, { recursive: true, force: true });

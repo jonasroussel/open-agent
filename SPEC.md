@@ -298,9 +298,12 @@ try the model then made right is not shown.
   Images, Word, Excel and text as below, whatever the model.
 - **Photos:** made at most 2,048 px wide or tall in the browser (JPEG) before upload: fast on a phone, small print
   stays readable. The model sees them.
-- **PDFs:** read at upload into every page's text (`pdftotext -layout`, keeps tables) and picture (`pdftoppm`, 110
-  dpi), for models that do not read PDFs and for `read_file`; at most 100 pages. Measured: a page picture costs a few
-  hundred tokens on DeepSeek; a 1-page PDF sent whole to Gemini 4 Hydrogen, 628 input tokens, 2.4 s.
+- **PDFs:** read at upload into every page's text (`pdftotext -layout`, keeps tables) and a picture (`pdftoppm`, 110
+  dpi) of the first 100 pages, for models that do not read PDFs and for `read_file`; past page 100, such a model gets
+  the text only, with a note saying so. A model that reads files gets the original whole. At most 1,000 pages (what
+  Gemini reads natively); longer, the PDF is refused and `download_file` tells the model its page count. Measured: a
+  page picture costs a few hundred tokens on DeepSeek; a 1-page PDF sent whole to Gemini 4 Hydrogen, 628 input
+  tokens, 2.4 s.
 - **Recordings:** OpenRouter takes mp3, wav, ogg, aac, m4a, aiff, flac and pcm as they are, and refuses the
   `audio/webm` of Chrome's recorder: anything else is converted at upload to m4a (AAC, 96 kb/s, so an hour stays
   under 50 MB) with `ffmpeg` (in the image), and the converted file is the stored original. Measured: 40 minutes

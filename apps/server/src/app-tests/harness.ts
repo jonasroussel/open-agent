@@ -69,8 +69,8 @@ type State = {
   scriptedCalls: { toolName: string; input: unknown }[];
   /** While set, the answering models wait for it before they write: an answer still being written. */
   answerHeld: Promise<void> | null;
-  /** What the fake document reader finds in the next PDF; `null`: the PDF is broken. */
-  pdfPages: PdfPage[] | null;
+  /** What the fake document reader finds in the next PDF; `null`: the PDF is broken; an error: what it throws. */
+  pdfPages: PdfPage[] | null | Error;
   /** The files the fake web serves for download, by url; any other url answers 404. */
   downloads: Record<string, DownloadedFile>;
 };
@@ -346,6 +346,7 @@ export function useApp() {
           documents: {
             readPdf: async () => {
               if (!state.pdfPages) throw new UnreadableDocument('broken');
+              if (state.pdfPages instanceof Error) throw state.pdfPages;
               return state.pdfPages;
             },
             readWord: async () => [],

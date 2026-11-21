@@ -274,7 +274,11 @@ export class ContextTools {
           spend('download_file');
           const file = await this.#downloads.download(url, abortSignal);
           const read = await this.#library.readDownload(file, capabilities);
-          if (!read.ok) throw new ToolRefusal(DOWNLOAD_REFUSALS[read.reason]);
+          if (!read.ok) {
+            throw new ToolRefusal(
+              read.detail ? `${DOWNLOAD_REFUSALS[read.reason]} ${read.detail}` : DOWNLOAD_REFUSALS[read.reason],
+            );
+          }
           readFiles.push({ name: read.name, pieces: read.pieces });
           return { url: file.url, name: read.name, kind: read.kind, size: read.size };
         },

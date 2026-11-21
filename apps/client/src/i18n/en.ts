@@ -76,6 +76,7 @@ export const en = {
     readingPage: 'Reading {{site}}…',
     readPage: 'Read {{site}}',
     downloadingFile: 'Downloading a file…',
+    downloadFile: 'Downloading “{{name}}”',
     downloadedFile: 'Read “{{name}}” ({{size}})',
     readingAttachment: 'Reading a file again…',
     readAttachment: 'Read “{{name}}” again',

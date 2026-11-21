@@ -21,14 +21,17 @@ import type { LibraryRepository } from '../domain/library-repository.ts';
 import type { User } from '../domain/user.ts';
 import type { ChangeFeed } from './ports/change-feed.ts';
 import type { Clock } from './ports/clock.ts';
-import { DocumentTooLong, UnreadableDocument, type DocumentReader } from './ports/document-reader.ts';
+import { DocumentTooLong, TooManyPages, UnreadableDocument, type DocumentReader } from './ports/document-reader.ts';
 import type { FileStore } from './ports/file-store.ts';
 
 export type Upload = { name: string; mediaType: string; bytes: Uint8Array };
 
 type ReadFailure = 'file_too_large' | 'file_type_unsupported' | 'file_unreadable' | 'file_too_long';
 
-export type UploadResult = { ok: true; file: LibraryFile } | { ok: false; reason: ReadFailure };
+/** `detail`: why, in English for the model, when the reason alone does not say it (a PDF's page count). */
+type Refusal = { ok: false; reason: ReadFailure; detail?: string };
+
+export type UploadResult = { ok: true; file: LibraryFile } | Refusal;
 
 /** What the model gets of a file: text, and files (pictures, a PDF, a recording, a video) as their bytes. */
 export type ModelPiece =
@@ -36,9 +39,7 @@ export type ModelPiece =
   | { type: 'file'; mediaType: string; data: Uint8Array; filename?: string };
 
 /** A downloaded file, read for one answer: nothing of it is stored. */
-export type DownloadReading =
-  | { ok: true; name: string; kind: FileKind; size: number; pieces: ModelPiece[] }
-  | { ok: false; reason: ReadFailure };
+export type DownloadReading = { ok: true; name: string; kind: FileKind; size: number; pieces: ModelPiece[] } | Refusal;
 
 type Picture = { name: string; bytes: Uint8Array };
 
@@ -259,7 +260,7 @@ export class Library {
   }
 
   /** Read as at upload: refused when too big, of a kind the app does not read, broken, or too long for the model. */
-  async #readUpload(upload: Upload): Promise<{ ok: true; reading: Reading } | { ok: false; reason: ReadFailure }> {
+  async #readUpload(upload: Upload): Promise<{ ok: true; reading: Reading } | Refusal> {
     if (upload.bytes.length > MAX_FILE_BYTES) return { ok: false, reason: 'file_too_large' };
     const kind = fileKindOf(upload.name, upload.mediaType);
     if (!kind) return { ok: false, reason: 'file_type_unsupported' };
@@ -279,6 +280,7 @@ export class Library {
       }
       reading.content = await this.#read(kind, reading.mediaType, reading.bytes, reading.pictures);
     } catch (error) {
+      if (error instanceof TooManyPages) return { ok: false, reason: 'file_too_long', detail: error.message };
       if (error instanceof DocumentTooLong) return { ok: false, reason: 'file_too_long' };
       if (error instanceof UnreadableDocument) return { ok: false, reason: 'file_unreadable' };
       throw error;
@@ -326,14 +328,23 @@ export class Library {
       }
       case 'pdf': {
         const pages = await this.#reader.readPdf(bytes);
+        const firstWithout = pages.findIndex((page) => !page.image);
         return pages.flatMap((page, index) => {
-          const name = pageImageName(index + 1);
-          pictures.push({ name, bytes: page.image });
-          const text = page.text || '(No text layer: read the picture.)';
-          return [
-            { type: 'text' as const, text: `Page ${index + 1} of ${pages.length}:\n${text}` },
-            { type: 'image' as const, name, mediaType: 'image/jpeg' },
-          ];
+          const pieces: FilePiece[] = [];
+          if (index === firstWithout) {
+            pieces.push({
+              type: 'text',
+              text: `[Les pages ${index + 1} à ${pages.length} n'ont que leur texte : leurs images (graphiques, schémas, pages scannées) ne sont pas jointes.]`,
+            });
+          }
+          const text = page.text || (page.image ? '(No text layer: read the picture.)' : '(Page sans texte.)');
+          pieces.push({ type: 'text', text: `Page ${index + 1} of ${pages.length}:\n${text}` });
+          if (page.image) {
+            const name = pageImageName(index + 1);
+            pictures.push({ name, bytes: page.image });
+            pieces.push({ type: 'image', name, mediaType: 'image/jpeg' });
+          }
+          return pieces;
         });
       }
       case 'spreadsheet':

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { SearchResponse, UploadFileResponse } from '@open-agent/shared';
 
+import { TooManyPages } from '../application/ports/document-reader.ts';
 import {
   ADMIN,
   ANSWER,
@@ -219,6 +220,18 @@ describe('downloads', () => {
     ]);
     expect(JSON.stringify(state.models.fast.doStreamCalls.at(-1)!.prompt)).toContain('Rendez-vous le 12.');
     expect(JSON.stringify((await open(cookie, CONVERSATION)).messages)).not.toContain('Rendez-vous le 12.');
+  });
+
+  test('a downloaded PDF over 1,000 pages is refused with its page count', async () => {
+    const cookie = await signIn(ADMIN);
+    state.pdfPages = new TooManyPages('This PDF has 1,200 pages, more than the 1,000 that can be read.');
+    state.downloads[BAIL] = { url: BAIL, name: 'bail.pdf', mediaType: 'application/pdf', bytes: BAIL_BYTES };
+    state.scriptedCalls = [{ toolName: 'download_file', input: { url: BAIL } }];
+    await chat(cookie, CONVERSATION, [userMessage('m1', `Que dit ce bail ? ${BAIL}`)]);
+
+    expect((await toolResults(cookie)).map(({ error }) => error)).toEqual([
+      'The file is too long to read whole. This PDF has 1,200 pages, more than the 1,000 that can be read.',
+    ]);
   });
 });
 describe('web search', () => {

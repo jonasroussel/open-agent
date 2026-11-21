@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import ExcelJS from 'exceljs';
 
-import { DocumentTooLong, UnreadableDocument } from '../../application/ports/document-reader.ts';
+import { DocumentTooLong, TooManyPages, UnreadableDocument } from '../../application/ports/document-reader.ts';
 import { PopplerMammothReader } from './document-reader.ts';
 
 const page = (contents: number) =>
@@ -31,11 +31,47 @@ function twoPagePdf(): Uint8Array {
   return new TextEncoder().encode(`%PDF-1.4\n${body}\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n`);
 }
 
+/** `count` tiny pages, each saying its number: rendering them is fast. */
+function manyPagePdf(count: number): Uint8Array {
+  const numbers = Array.from({ length: count }, (_, index) => index + 1);
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Kids [${numbers.map((number) => `${number + 3} 0 R`).join(' ')}] /Count ${count} >>`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    ...numbers.map(
+      (number) =>
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 40 20] /Contents ${number + 3 + count} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`,
+    ),
+    ...numbers.map((number) => {
+      const stream = `BT /F1 8 Tf 2 6 Td (${number}) Tj ET`;
+      return `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+    }),
+  ];
+  const body = objects.map((object, index) => `${index + 1} 0 obj\n${object}\nendobj`).join('\n');
+  return new TextEncoder().encode(`%PDF-1.4\n${body}\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n`);
+}
+
 describe('PopplerMammothReader.readPdf', () => {
   test('gives every page in order, with its text and its picture', async () => {
     const pages = await new PopplerMammothReader().readPdf(twoPagePdf());
     expect(pages.map(({ text: pageText }) => pageText)).toEqual(['Total: 42 EUR', 'Signed in Nantes']);
-    for (const { image } of pages) expect([image[0], image[1]]).toEqual([0xff, 0xd8]);
+    for (const { image } of pages) expect([image?.[0], image?.[1]]).toEqual([0xff, 0xd8]);
+  });
+
+  test('reads the text of every page of a long PDF, with pictures of the first 100 only', async () => {
+    const pages = await new PopplerMammothReader().readPdf(manyPagePdf(120));
+    expect(pages.map(({ text: pageText }) => pageText)).toEqual(
+      Array.from({ length: 120 }, (_, index) => `${index + 1}`),
+    );
+    expect(pages.filter(({ image }) => image).length).toBe(100);
+    expect(pages[99]!.image).not.toBeNull();
+    expect(pages[100]!.image).toBeNull();
+  });
+
+  test('refuses a PDF over 1,000 pages, naming its page count', async () => {
+    const reading = new PopplerMammothReader().readPdf(manyPagePdf(1001));
+    await expect(reading).rejects.toBeInstanceOf(TooManyPages);
+    await expect(reading).rejects.toThrow('This PDF has 1,001 pages, more than the 1,000 that can be read.');
   });
 
   test('refuses what is not a PDF', async () => {

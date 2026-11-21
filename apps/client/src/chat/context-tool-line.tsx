@@ -51,6 +51,16 @@ export function siteOf(url: string | undefined): string {
   }
 }
 
+/** A link's file name, decoded: what a download that failed shows, having no name from the server. */
+function fileNameOf(url: string): string {
+  try {
+    const segment = new URL(url).pathname.split('/').findLast(Boolean);
+    return segment ? decodeURIComponent(segment) : siteOf(url);
+  } catch {
+    return url;
+  }
+}
+
 /** What a line says, with its icon and where it leads; `running` while the tool works. */
 type Line = { icon: LucideIcon; label: string; target?: ReactNode };
 
@@ -124,6 +134,9 @@ function lineOf(
       };
     }
     case 'tool-download_file': {
+      if (part.state === 'output-error' && part.input?.url) {
+        return { icon: Download, label: t('tools.downloadFile', { name: fileNameOf(part.input.url) }) };
+      }
       if (!done) return { icon: Download, label: t('tools.downloadingFile') };
       const label = t('tools.downloadedFile', { name: part.output.name, size: fileSize(part.output.size, language) });
       return {

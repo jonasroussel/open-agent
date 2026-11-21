@@ -228,6 +228,27 @@ describe('files', () => {
     expect(filesSent(pages)).toEqual(['image/jpeg', 'image/jpeg']);
   });
 
+  test('a PDF over 100 pages is read: a model that does not read files gets every page’s text, the pictures of the first 100 and a note', async () => {
+    const cookie = await signIn(ADMIN);
+    state.pdfPages = Array.from({ length: 433 }, (_, index) => ({
+      text: `Article ${index + 1}`,
+      image: index < 100 ? new Uint8Array([0xff, 0xd8, index]) : null,
+    }));
+    const file = await uploaded(cookie, 'reglement.pdf', 'application/pdf', '%PDF-1.7 fake');
+    const preview = await call(file.previewUrl!, { cookie });
+    expect([...new Uint8Array(await preview.arrayBuffer())]).toEqual([0xff, 0xd8, 0]);
+
+    await chat(cookie, CONVERSATION, [withFile('m1', 'Quelle règle pour les équipes ?', file)]);
+    expect(filesSent(state.models.fast.doStreamCalls[0]!.prompt)).toEqual(['application/pdf']);
+
+    expect((await setFast(cookie, 'vendor/newer-model')).status).toBe(200);
+    await say(cookie, withFile('m3', 'Et en tir 3D ?', file));
+    const prompt = state.models.fast.doStreamCalls[1]!.prompt;
+    expect(filesSent(prompt)).toEqual(Array.from({ length: 100 }, () => 'image/jpeg'));
+    expect(JSON.stringify(prompt)).toContain('Page 433 of 433:\\nArticle 433');
+    expect(JSON.stringify(prompt)).toContain("[Les pages 101 à 433 n'ont que leur texte");
+  });
+
   test('a recording reaches a model that listens, and a note tells one that does not', async () => {
     const cookie = await signIn(ADMIN);
     const voice = await uploaded(cookie, 'message.m4a', 'audio/x-m4a', new Uint8Array([0, 0, 0, 24, 1, 2, 3]));
