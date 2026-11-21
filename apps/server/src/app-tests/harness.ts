@@ -228,7 +228,8 @@ function refusingModel() {
   return new MockLanguageModelV4({ doStream: async () => refuseKey(), doGenerate: async () => refuseKey() });
 }
 
-/** The models OpenRouter offers in the tests: those of the environment, a newer one, one blind to pictures, one that draws. */
+/** The models OpenRouter offers in the tests: those of the environment, a newer one, one blind to pictures, one whose
+ * thinking cannot be turned off, one that draws. */
 const MODEL_LIST: ModelInfo[] = [
   ...(['fast-model', 'reasoning-model', 'background-model'] as const).map((id) => ({
     id,
@@ -250,6 +251,13 @@ const MODEL_LIST: ModelInfo[] = [
     capabilities: ['text', 'tools', 'thinking_off'],
     inputPrice: 0.05,
     outputPrice: 0.2,
+  },
+  {
+    id: 'vendor/always-thinking',
+    name: 'Always thinking',
+    capabilities: ['text', 'image', 'tools', 'reasoning'],
+    inputPrice: 0.2,
+    outputPrice: 0.8,
   },
   {
     id: 'image-model',

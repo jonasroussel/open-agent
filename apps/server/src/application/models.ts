@@ -23,17 +23,20 @@ export class Models {
   }
 
   /**
-   * The model the admin picked for a comparison, answering `route`: it thinks on the reasoning route only when it can,
-   * else it answers as on the fast one, as it does when the provider's list cannot be reached.
+   * The model the admin picked for a comparison, answering `route`: it thinks on the reasoning route when it can, and on
+   * every route when its thinking cannot be turned off (OpenRouter refuses the call otherwise). It answers as on the fast
+   * route when the provider's list cannot be reached.
    */
   async choosePicked(route: 'fast' | 'reasoning', modelId: string, user: User): Promise<ModelChoice> {
     let thinks = false;
-    if (route === 'reasoning') {
-      try {
-        thinks = (await this.#find(modelId))?.capabilities.includes('reasoning') === true;
-      } catch (error) {
-        console.error('Listing the models failed:', error);
+    try {
+      const model = await this.#find(modelId);
+      if (model) {
+        const canThink = route === 'reasoning' && model.capabilities.includes('reasoning');
+        thinks = canThink || !model.capabilities.includes('thinking_off');
       }
+    } catch (error) {
+      console.error('Listing the models failed:', error);
     }
     return this.#catalog.choose(thinks ? 'reasoning' : 'fast', modelId, this.#ownKey(user));
   }

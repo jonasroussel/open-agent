@@ -126,6 +126,20 @@ describe('comparison', () => {
     expect(await state.database('conversations').where({ id: RIGHT })).toEqual([]);
   });
 
+  test('a picked model whose thinking cannot be turned off thinks on the fast route too', async () => {
+    const cookie = await signIn(ADMIN);
+    const message = [userMessage('m1', 'Bonjour')];
+    await (await sendTurn(cookie, LEFT, message)).text();
+    const response = await sendTurn(cookie, RIGHT, message, {
+      comparison: { with: LEFT, modelId: 'vendor/always-thinking' },
+    });
+    await response.text();
+    expect(response.status).toBe(200);
+    expect(state.models.fast.doStreamCalls).toHaveLength(1);
+    expect(state.models.reasoning.doStreamCalls).toHaveLength(1);
+    expect(await answerModels(RIGHT)).toEqual(['vendor/always-thinking']);
+  });
+
   test('a remark in the right thread teaches the memory nothing; the same in the left one does', async () => {
     const cookie = await signIn(ADMIN);
     state.analysis = plainAnalysis({ feedback: 'Préfère le vouvoiement.' });
