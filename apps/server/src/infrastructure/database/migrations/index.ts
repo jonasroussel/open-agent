@@ -20,6 +20,7 @@ import * as ephemeralConversations from './0017-ephemeral-conversations.ts';
 import * as signInTries from './0018-sign-in-tries.ts';
 import * as artifactVersionAuthor from './0019-artifact-version-author.ts';
 import * as comparisons from './0020-comparisons.ts';
+import * as a2uiQuestions from './0021-a2ui-questions.ts';
 
 /** Listed explicitly so migrations survive `bun build`. Append new ones at the end; never rename. */
 const migrations: Record<string, Knex.Migration> = {
@@ -43,6 +44,7 @@ const migrations: Record<string, Knex.Migration> = {
   '0018-sign-in-tries': signInTries,
   '0019-artifact-version-author': artifactVersionAuthor,
   '0020-comparisons': comparisons,
+  '0021-a2ui-questions': a2uiQuestions,
 };
 
 export const migrationSource: Knex.MigrationSource<string> = {

@@ -1,6 +1,7 @@
 import type { PersonDto } from '@open-agent/shared';
 
 import type { ChatMessage, Conversation } from './conversation.ts';
+import { isWaitingForAnswer } from './questions.ts';
 
 export type MemberStatus = 'invited' | 'member';
 
@@ -43,22 +44,18 @@ type Part = ChatMessage['parts'][number];
 function withAnswersFrom(saved: ChatMessage, sent: ChatMessage): ChatMessage {
   const answers = new Map(
     sent.parts.flatMap((part) =>
-      part.type === 'tool-ask_user' && part.state === 'output-available' ? [[part.toolCallId, part.output.answer]] : [],
+      part.type === 'tool-ask' && part.state === 'output-available' ? [[part.toolCallId, part.output]] : [],
     ),
   );
   return {
     ...saved,
-    parts: saved.parts.map((part): Part =>
-      part.type === 'tool-ask_user' && part.state === 'input-available' && answers.has(part.toolCallId)
-        ? {
-            type: part.type,
-            toolCallId: part.toolCallId,
-            state: 'output-available',
-            input: part.input,
-            output: { answer: answers.get(part.toolCallId)! },
-          }
-        : part,
-    ),
+    parts: saved.parts.map((part): Part => {
+      if (part.type !== 'tool-ask' || part.state !== 'input-available') return part;
+      const output = answers.get(part.toolCallId);
+      return output
+        ? { type: part.type, toolCallId: part.toolCallId, state: 'output-available', input: part.input, output }
+        : part;
+    }),
   };
 }
 
@@ -85,7 +82,7 @@ export function continuedHistory(
 
   if (last.role === 'assistant') {
     const answered = saved.at(-1);
-    const pending = answered?.parts.some((part) => part.type === 'tool-ask_user' && part.state === 'input-available');
+    const pending = answered && isWaitingForAnswer(answered);
     if (!answered || !pending || !sameIds(idsOf(sent), idsOf(saved))) {
       return { ok: false, reason: 'conversation_changed' };
     }

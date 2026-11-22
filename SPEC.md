@@ -68,8 +68,8 @@ flowchart TD
   Q -- no --> B[Blocked + reset date]
   Q -- yes --> P["Pre-pass: 1 call, background model"]
   P --> C{Truly ambiguous?}
-  C -- yes --> D["One short question (ask_user) with answers to tap;<br/>the answer resumes the message, analyzed again"]
-  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>files of the latest message in whole, earlier ones as notes<br/>tools: web_search, canvas, lookups, files and images, ask_user"]
+  C -- yes --> D["One short question (an ask surface) with answers to tap;<br/>the answer resumes the message, analyzed again"]
+  C -- no --> M["Main streamed call<br/>model by route: fast / reasoning<br/>files of the latest message in whole, earlier ones as notes<br/>tools: web_search, canvas, lookups, files and images, show_ui, ask"]
   P -- feedback detected --> R["Memory reconciler<br/>ADD / UPDATE / DELETE / NOOP"]
   R --> T["Notice under the answer: 'Remembered: …' + Undo"]
   M --> U[Usage ledger]
@@ -84,8 +84,10 @@ runs before every answer, so it must stay fast) returns:
 - `route`: `fast` (Gemini 4 Hydrogen) | `reasoning` (Gemini 4 Neon, thinking `medium`). No `vision` route: both read
   pictures, recordings, videos and PDFs. The pre-pass only reads text: the files' names, never their content;
 - `clarifyingQuestion`: one short question instead of an answer, or null, with `clarifyingOptions`, up to 4 likely
-  answers to tap (none when they cannot be guessed). It is sent as an `ask_user` call, the same as the model's own
-  questions. Never twice in a row: after a question, answered or not, the next analysis cannot ask;
+  answers to tap (none when they cannot be guessed). The server writes it as an `ask` call, the same as the model's own
+  questions: a surface of the question as `Text`, the options as `ChoiceChips`, a `TextField` for another answer, and a
+  send `Button`, chips and field writing the same `/answer`. The JSON of the pre-pass stays as it is. Never twice in a
+  row: after a question, answered or not, the next analysis cannot ask;
 - `rewrittenRequest`: the same request, clear and in the first person, when it was written in a hurry, or null. Only
   the model sees it; the conversation keeps the user's words, and the answer's metadata keeps the rewrite;
 - `feedback`: a lasting preference about how the assistant works ("your answers are always too long"), or null for a
@@ -158,16 +160,53 @@ shows a "Deep thinking" line, pulsing while the model thinks, with its reasoning
   per conversation, last updated first, with the passage of its best message and the words found highlighted;
   Markdown marks are removed from the passage. Enter opens the first one. Triggers keep the index in step with every
   write, edits and deletions included. Titles are not searched: they repeat the first message.
-- **Questions to the user** (`ask_user`, like in Claude Code): the pre-pass or the model asks one question, with up to
-  4 answers to tap; the user may also type their own in the composer, which then says "Your answer…". The model's
-  tool has no `execute`: its call ends the stream, and the question waits, saved, even across a reload. The answer is
-  the tool's output; once every question of the message has one, the client sends the history again
-  (`sendAutomaticallyWhen`), the server takes from it only the answers to the questions still pending (the rest of the
-  assistant's message stays as saved), and the same message goes on: after the pre-pass's question, the pre-pass runs
-  again with the answer (and may not ask again); after the model's, its answer goes on with the same route. One round
-  of questions per answer: asked again in the same message, the tool answers `null` itself, and the model decides
-  alone and says what it assumed. A question left unanswered (the user wrote something else) reaches the model as
-  `null`. The question and its answer show first in the bubble.
+- **Questions to the user** (`ask`, like in Claude Code): the pre-pass or the model asks one question, drawn as a
+  generative UI surface (below) whose buttons answer it; the user may also type their own answer in the composer,
+  which then says "Your answer…" and answers with the event `reply`, context `{ text }`. The model's tool has no
+  `execute`: its call ends the stream, and the question waits, saved, even across a reload; a surface that cannot be
+  drawn is refused by the tool's schema, so the model gets the error and goes on. The answer is the tool's output,
+  `{ action: { name, context } }`, the tapped event with its bindings resolved; the server takes only an event of the
+  surface's buttons or `reply`, at most 4,000 characters of JSON. Once every question of the message has one, the
+  client sends the history again (`sendAutomaticallyWhen`), the server takes from it only the answers to the questions
+  still pending (the rest of the assistant's message stays as saved), and the same message goes on: after the
+  pre-pass's question, the pre-pass runs again, reading « [Question posée : …] [Réponse : …] » (the question's texts,
+  then the answer's values, or the tapped button's label), and may not ask again; after the model's, its answer goes on
+  with the same route. One round of questions per answer: asked again in the same message, the tool answers
+  `{ action: null }` itself, and the model decides alone and says what it assumed. A question left unanswered (the user
+  wrote something else) reaches the model as `{ action: null }`. The question and its answer show first in the bubble.
+
+### Generative UI
+
+The assistant may answer with a small interface, in the style of A2UI v1.0 (https://a2ui.org/), a subset only, drawn
+by our own renderer with our components and theme (no `@a2ui/*` package: 0.x and 8.5 MB of dependencies). The catalog
+lives in `packages/shared/src/a2ui.ts` as zod schemas, with `validateSurface` and `resolveBindings`.
+
+- **Shape:** a surface is `{ title?, components, dataModel? }`: a flat list of `{ id, component, ...props }`, `root`
+  first, children named by id (`child`, `children`), values bound to the JSON data model with `{ "@path": "/x" }` (a
+  JSON pointer). A surface is refused with a precise English error when a component or prop is unknown, an id repeats,
+  a child is missing, used twice, unreachable or in a cycle, or past 60 components or 20,000 characters of JSON.
+- **Catalog:** `Column`, `Row`, `Card`, `Text` (`heading` | `body` | `caption`; plain text with **bold** only),
+  `Badge`, `Divider`, `Table` (header and rows of strings), `Image` (only the app's own files, `/api/files/<id>`),
+  `Checklist` (items `{ id, label }`, ticked ids bound to an object), `ChoiceChips` (options `{ value, label }`, single
+  or multiple, bound), `TextField` (one line, bound; in a question only), `Button` (label, primary or secondary; an
+  `action.event` in a question, or a `message`: the text of a new user message it sends). `ToolStatus` (icon, label,
+  `running` | `done` | `failed`, optional link) and `Sources` (links) are the client's, for tool lines.
+- **`show_ui`** (the model goes on): only when the user has something to do with the result: tick (a shopping list,
+  steps to follow), choose between a few options, compare a few items side by side; never for a plain answer nor to
+  decorate, and always with one sentence of text. The server validates it in `execute`; an invalid surface is a tool
+  refusal the model can fix. Its output, `{ dataModel }`, starts as the input's and is the surface's current state.
+- **`ask`**: the question above, a surface whose buttons carry events.
+- **State:** ticking or choosing in a `show_ui` surface saves the whole data model
+  (`PUT /api/conversations/:id/messages/:messageId/surfaces/:toolCallId`, any participant, `show_ui` parts only, as
+  the output's `dataModel`), and every participant's devices hear of it through `/api/events`. The model reads it at
+  the next answer; an answer saved while someone ticked keeps the saved states. In a comparison each column's surfaces
+  act on that column only.
+- **Tool lines:** the client maps each tool part (searches, lookups, downloads, re-reads, weather, made files, the
+  memory notice) to a surface of `ToolStatus` and `Sources`, drawn by the same renderer; the server's outputs do not
+  change for them.
+- **Migration `0021-a2ui-questions`:** every saved `tool-ask_user` part became a `tool-ask` part with the surface the
+  pre-pass now writes (in the owner's language), its answer `{ action: { name: "send", context: { answer } } }`, or
+  `{ action: null }`: no other way of drawing questions remains.
 
 ### Web search
 

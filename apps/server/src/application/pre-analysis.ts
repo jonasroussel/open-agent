@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { mayAskToClarify, type ChatMessage } from '../domain/conversation.ts';
 import { attachedNames } from '../domain/library-file.ts';
 import type { MemoryRule } from '../domain/memory.ts';
+import { answerTextOf, questionTextOf } from '../domain/questions.ts';
 import type { User } from '../domain/user.ts';
 import type { Models } from './models.ts';
 import type { Settings } from './settings.ts';
@@ -156,13 +157,10 @@ export function textOf(message: ChatMessage): string {
   return message.parts
     .flatMap((part) => {
       if (part.type === 'text') return [part.text];
-      if (part.type !== 'tool-ask_user' || !part.input) return [];
-      const answer = part.state === 'output-available' ? part.output.answer : null;
-      return [
-        answer
-          ? `[Question posée : ${part.input.question}] [Réponse : ${answer}]`
-          : `[Question posée : ${part.input.question}]`,
-      ];
+      if (part.type !== 'tool-ask' || part.state === 'input-streaming' || !part.input) return [];
+      const question = questionTextOf(part.input);
+      const answer = part.state === 'output-available' ? answerTextOf(part.input, part.output) : null;
+      return [answer ? `[Question posée : ${question}] [Réponse : ${answer}]` : `[Question posée : ${question}]`];
     })
     .join('\n')
     .trim();

@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ChatMessage, ConversationDto, ListConversationsResponse, UploadFileResponse } from '@open-agent/shared';
+import type {
+  AskInput,
+  ChatMessage,
+  ConversationDto,
+  ListConversationsResponse,
+  UploadFileResponse,
+} from '@open-agent/shared';
 
 import {
   ADMIN,
@@ -20,6 +26,7 @@ import {
   upload,
   withFile,
   state,
+  toolResults,
   useApp,
 } from './harness.ts';
 
@@ -199,9 +206,19 @@ describe('chat', () => {
   });
 });
 
-type QuestionPart = Extract<ChatMessage['parts'][number], { type: 'tool-ask_user' }>;
+type QuestionPart = Extract<ChatMessage['parts'][number], { type: 'tool-ask' }>;
 const questionsOf = (message: ChatMessage) =>
-  message.parts.filter((part): part is QuestionPart => part.type === 'tool-ask_user');
+  message.parts.filter((part): part is QuestionPart => part.type === 'tool-ask');
+/** The model's own question: one button per answer. */
+const SEA_OR_MOUNTAIN = {
+  components: [
+    { id: 'root', component: 'Column', children: ['question', 'sea', 'mountain'] },
+    { id: 'question', component: 'Text', text: 'Mer ou montagne ?' },
+    { id: 'sea', component: 'Button', label: 'Mer', action: { event: { name: 'sea' } } },
+    { id: 'mountain', component: 'Button', label: 'Montagne', action: { event: { name: 'mountain' } } },
+  ],
+};
+const SEA = { name: 'sea', context: {} };
 /** A copy of the assistant's message with words it never wrote. */
 const forged = (message: ChatMessage): ChatMessage => ({
   ...message,
@@ -209,6 +226,28 @@ const forged = (message: ChatMessage): ChatMessage => ({
 });
 
 describe('questions to the user', () => {
+  test("the app's language sent with a message becomes the person's: the question's labels and the instructions follow it", async () => {
+    const cookie = await signIn(ADMIN);
+    const send = (locale: unknown) =>
+      call('/api/chat', {
+        method: 'POST',
+        body: { id: CONVERSATION, messages: [userMessage('m1', 'Résilie mon abonnement.')], locale },
+        cookie,
+      });
+    expect(await errorOf(await send('de'))).toBe('invalid_request');
+
+    state.analysis = plainAnalysis({ clarifyingQuestion: 'Which provider?' });
+    await (await send('en')).text();
+    const surface = questionsOf((await open(cookie, CONVERSATION)).messages[1]!)[0]!.input as AskInput;
+    expect(surface.components).toContainEqual(expect.objectContaining({ component: 'Button', label: 'Send' }));
+    expect(await state.database('users').where({ email: ADMIN }).first('locale')).toEqual({ locale: 'en' });
+
+    await chat(cookie, CONVERSATION, answered((await open(cookie, CONVERSATION)).messages, 'SFR'));
+    expect(JSON.stringify(state.models.fast.doStreamCalls[0]!.prompt)).toContain(
+      "L'application de l'utilisateur est en anglais",
+    );
+  });
+
   test('an ambiguous request gets one question with answers to tap; the answer resumes the same message, with no second question', async () => {
     const cookie = await signIn(ADMIN);
     state.analysis = plainAnalysis({
@@ -220,12 +259,16 @@ describe('questions to the user', () => {
     const asked = (await open(cookie, CONVERSATION)).messages;
     expect(state.models.fast.doStreamCalls).toHaveLength(0);
     expect(asked[1]!.metadata).toEqual({ route: 'clarify' });
-    expect(questionsOf(asked[1]!)).toMatchObject([
-      {
-        state: 'input-available',
-        input: { question: 'Chez quel opérateur êtes-vous ?', options: ['Orange', 'SFR', 'Free', 'Bouygues'] },
-      },
-    ]);
+    expect(questionsOf(asked[1]!)).toMatchObject([{ state: 'input-available' }]);
+    const surface = questionsOf(asked[1]!)[0]!.input as AskInput;
+    expect(surface.components).toContainEqual(
+      expect.objectContaining({ component: 'Text', text: 'Chez quel opérateur êtes-vous ?' }),
+    );
+    const chips = surface.components.find((component) => component.component === 'ChoiceChips');
+    expect(chips).toMatchObject({
+      options: ['Orange', 'SFR', 'Free', 'Bouygues'].map((option) => ({ value: option, label: option })),
+    });
+    expect(surface.components.map((component) => component.component)).toContain('TextField');
 
     state.analysis = plainAnalysis({ clarifyingQuestion: 'Et depuis quand ?' });
     await chat(cookie, CONVERSATION, answered(asked, 'SFR'));
@@ -241,39 +284,35 @@ describe('questions to the user', () => {
 
   test('the model may stop to ask once; the answer goes on in the same message, and a second question is answered for it', async () => {
     const cookie = await signIn(ADMIN);
-    state.scriptedCalls = [
-      { toolName: 'ask_user', input: { question: 'Mer ou montagne ?', options: ['Mer', 'Montagne'] } },
-    ];
+    state.scriptedCalls = [{ toolName: 'ask', input: SEA_OR_MOUNTAIN }];
     await chat(cookie, CONVERSATION, [userMessage('m1', 'Propose-moi un week-end.')]);
 
     const asked = (await open(cookie, CONVERSATION)).messages;
     expect(state.models.fast.doStreamCalls).toHaveLength(1);
-    expect(questionsOf(asked[1]!)).toMatchObject([
-      { state: 'input-available', input: { question: 'Mer ou montagne ?' } },
-    ]);
+    expect(questionsOf(asked[1]!)).toMatchObject([{ state: 'input-available', input: SEA_OR_MOUNTAIN }]);
     expect(textOfMessage(asked[1]!)).toBe('');
 
-    state.scriptedCalls = [{ toolName: 'ask_user', input: { question: 'Hôtel ou gîte ?', options: [] } }];
-    await chat(cookie, CONVERSATION, answered(asked, 'Mer'));
+    state.scriptedCalls = [{ toolName: 'ask', input: SEA_OR_MOUNTAIN }];
+    await chat(cookie, CONVERSATION, answered(asked, SEA));
     const done = (await open(cookie, CONVERSATION)).messages;
     expect(done).toHaveLength(2);
-    expect(questionsOf(done[1]!).map((part) => part.output)).toEqual([{ answer: 'Mer' }, { answer: null }]);
+    expect(questionsOf(done[1]!).map((part) => part.output)).toEqual([{ action: SEA }, { action: null }]);
     expect(textOfMessage(done[1]!)).toBe(ANSWER);
     expect(state.models.fast.doStreamCalls).toHaveLength(3);
-    expect(JSON.stringify(state.models.fast.doStreamCalls[1]!.prompt)).toContain('"answer":"Mer"');
+    expect(JSON.stringify(state.models.fast.doStreamCalls[1]!.prompt)).toContain('"name":"sea"');
     expect(prePasses()).toHaveLength(1);
   });
 
   test('answering a question takes only the answer: the copy can neither rewrite the message nor a finished one', async () => {
     const cookie = await signIn(ADMIN);
-    state.scriptedCalls = [{ toolName: 'ask_user', input: { question: 'Mer ou montagne ?', options: [] } }];
+    state.scriptedCalls = [{ toolName: 'ask', input: SEA_OR_MOUNTAIN }];
     await chat(cookie, CONVERSATION, [userMessage('m1', 'Propose-moi un week-end.')]);
-    const reply = answered((await open(cookie, CONVERSATION)).messages, 'Mer');
+    const reply = answered((await open(cookie, CONVERSATION)).messages, SEA);
 
     expect((await chat(cookie, CONVERSATION, [reply[0]!, forged(reply[1]!)])).status).toBe(200);
     const done = (await open(cookie, CONVERSATION)).messages;
     expect(JSON.stringify(done)).not.toContain('Réponse inventée.');
-    expect(questionsOf(done[1]!).map((part) => part.output)).toEqual([{ answer: 'Mer' }]);
+    expect(questionsOf(done[1]!).map((part) => part.output)).toEqual([{ action: SEA }]);
 
     const rewritten = await call('/api/chat', {
       method: 'POST',
@@ -286,19 +325,46 @@ describe('questions to the user', () => {
 
   test('a question left unanswered never blocks the conversation, and only answered questions resume a message', async () => {
     const cookie = await signIn(ADMIN);
-    state.scriptedCalls = [
-      { toolName: 'ask_user', input: { question: 'Mer ou montagne ?', options: ['Mer', 'Montagne'] } },
-    ];
+    state.scriptedCalls = [{ toolName: 'ask', input: SEA_OR_MOUNTAIN }];
     await chat(cookie, CONVERSATION, [userMessage('m1', 'Propose-moi un week-end.')]);
     const asked = (await open(cookie, CONVERSATION)).messages;
 
     expect((await chat(cookie, CONVERSATION, asked)).status).toBe(400);
-    expect((await chat(cookie, CONVERSATION, answered(asked, 'x'.repeat(4001)))).status).toBe(400);
+    const tooLong = { name: 'sea', context: { note: 'x'.repeat(4001) } };
+    expect((await chat(cookie, CONVERSATION, answered(asked, tooLong))).status).toBe(400);
+    expect((await chat(cookie, CONVERSATION, answered(asked, { name: 'desert', context: {} }))).status).toBe(400);
 
     const moved = [...asked, userMessage('m3', 'Finalement, une sortie au cinéma.')];
     expect((await chat(cookie, CONVERSATION, moved)).status).toBe(200);
-    expect(JSON.stringify(state.models.fast.doStreamCalls[1]!.prompt)).toContain('"answer":null');
+    expect(JSON.stringify(state.models.fast.doStreamCalls[1]!.prompt)).toContain('"action":null');
     expect(textOfMessage((await open(cookie, CONVERSATION)).messages[3]!)).toBe(ANSWER);
+  });
+
+  test('text typed instead of tapping answers the question, and the model reads it', async () => {
+    const cookie = await signIn(ADMIN);
+    state.scriptedCalls = [{ toolName: 'ask', input: SEA_OR_MOUNTAIN }];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Propose-moi un week-end.')]);
+    const asked = (await open(cookie, CONVERSATION)).messages;
+
+    expect((await chat(cookie, CONVERSATION, answered(asked, { name: 'reply', context: { text: ' ' } }))).status).toBe(
+      400,
+    );
+    const reply = { name: 'reply', context: { text: 'Plutôt la campagne' } };
+    expect((await chat(cookie, CONVERSATION, answered(asked, reply))).status).toBe(200);
+    expect(JSON.stringify(state.models.fast.doStreamCalls[1]!.prompt)).toContain('Plutôt la campagne');
+  });
+
+  test('a question the client could not draw is refused to the model, which answers without it', async () => {
+    const cookie = await signIn(ADMIN);
+    const broken = { components: [{ id: 'root', component: 'Card', child: 'ghost' }] };
+    state.scriptedCalls = [{ toolName: 'ask', input: broken }];
+    await chat(cookie, CONVERSATION, [userMessage('m1', 'Propose-moi un week-end.')]);
+
+    const [result] = await toolResults(cookie);
+    expect(result!.error).toContain('names a child');
+    expect(result!.error).toContain('ghost');
+    const { messages } = await open(cookie, CONVERSATION);
+    expect(textOfMessage(messages[1]!)).toBe(ANSWER);
   });
 });
 

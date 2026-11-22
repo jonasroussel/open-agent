@@ -1,8 +1,10 @@
 import { API_ROUTES, apiPath, type ChatMessage, type ImageAspect } from '@open-agent/shared';
-import { Download, ImageIcon, LoaderCircle, TriangleAlert } from 'lucide-react';
+import { Download, ImageIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Surface } from '@/a2ui/surface.tsx';
+import { statusSurface } from '@/a2ui/tool-surfaces.ts';
 import { KIND_ICONS } from '@/files/file-chip.tsx';
 import { fileSize } from '@/files/file-details.ts';
 import { ImagePreview } from '@/files/image-preview.tsx';
@@ -45,10 +47,7 @@ export function MadeFile({ part }: { part: MadeFilePart }) {
 
   if (part.state === 'output-error') {
     return (
-      <p className='text-muted-foreground flex items-start gap-1.5 text-sm'>
-        <TriangleAlert className='mt-0.5 size-4 shrink-0' />
-        {t(`made.failed.${tool}`)}
-      </p>
+      <Surface surface={statusSurface({ icon: 'alert', label: t(`made.failed.${tool}`) }, 'failed')} dataModel={{}} />
     );
   }
 
@@ -67,10 +66,7 @@ export function MadeFile({ part }: { part: MadeFilePart }) {
       );
     }
     return (
-      <p className='text-muted-foreground flex animate-pulse items-center gap-1.5 text-sm'>
-        <LoaderCircle className='size-4 shrink-0 animate-spin' />
-        {t(`made.making.${tool}`)}
-      </p>
+      <Surface surface={statusSurface({ icon: 'loader', label: t(`made.making.${tool}`) }, 'running')} dataModel={{}} />
     );
   }
 

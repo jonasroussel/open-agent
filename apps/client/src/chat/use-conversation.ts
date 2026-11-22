@@ -2,14 +2,17 @@ import { useChat, type Chat } from '@ai-sdk/react';
 import {
   API_ROUTES,
   apiPath,
+  ASK_REPLY_EVENT,
   OWN_KEY_REFUSED,
   type ApiError,
+  type AskAction,
   type ChatMessage,
   type CommandDto,
   type LibraryFileDto,
   type MemoryNotice,
   type PersonDto,
   type RememberMessageResponse,
+  type DataModel,
 } from '@open-agent/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -52,7 +55,11 @@ export type Conversation = {
   mine: (message: ChatMessage) => boolean;
   /** `false`: the text answered the waiting question, no new message was sent. */
   send: (text: string, files: LibraryFileDto[], command: CommandDto | null) => boolean;
-  answer: (toolCallId: string, text: string) => void;
+  /** A surface's button: its text as a new message, even while a question waits. */
+  sendText: (text: string) => void;
+  answer: (toolCallId: string, action: AskAction) => void;
+  /** `false`: the server refused it, the surface shows its saved state again. */
+  saveSurface: (messageId: string, toolCallId: string, dataModel: DataModel) => Promise<boolean>;
   edit: (message: ChatMessage, text: string) => void;
   regenerate: () => void;
   stop: () => void;
@@ -109,9 +116,39 @@ export function useConversation(chat: Chat<ChatMessage>): Conversation {
   }, [status, queryClient]);
 
   /** The `Chat` sends the answers once every question of the message has one (`chat-store.ts`). */
-  const answer = (toolCallId: string, text: string) => {
+  const answer = (toolCallId: string, action: AskAction) => {
     clearError();
-    void addToolOutput({ tool: 'ask_user', toolCallId, output: { answer: text } });
+    void addToolOutput({ tool: 'ask', toolCallId, output: { action } });
+  };
+
+  const sendText = (text: string) => {
+    clearError();
+    void sendMessage({ text });
+  };
+
+  /** Kept here at once, so a refresh of the conversation shows it too; others get it through `/api/events`. */
+  const saveSurface = async (messageId: string, toolCallId: string, dataModel: DataModel) => {
+    const result = await api(apiPath(API_ROUTES.surfaceState, { conversationId: chat.id, messageId, toolCallId }), {
+      method: 'PUT',
+      body: { dataModel },
+      keepalive: true,
+    });
+    if (!result.ok) return false;
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              parts: message.parts.map((part) =>
+                part.type === 'tool-show_ui' && part.toolCallId === toolCallId && part.state === 'output-available'
+                  ? { ...part, output: { ...part.output, dataModel } }
+                  : part,
+              ),
+            }
+          : message,
+      ),
+    );
+    return true;
   };
 
   // While a question waits, what the user types answers it; files or a command make it a new message, the question
@@ -119,7 +156,7 @@ export function useConversation(chat: Chat<ChatMessage>): Conversation {
   const myQuestion = ownTurn ? pendingQuestion : null;
   const send = (text: string, files: LibraryFileDto[], command: CommandDto | null) => {
     if (myQuestion && text && files.length === 0 && !command) {
-      answer(myQuestion, text);
+      answer(myQuestion, { name: ASK_REPLY_EVENT, context: { text } });
       return false;
     }
     clearError();
@@ -190,7 +227,9 @@ export function useConversation(chat: Chat<ChatMessage>): Conversation {
     authorOf,
     mine,
     send,
+    sendText,
     answer,
+    saveSurface,
     edit,
     regenerate: () => void regenerate(),
     stop: () => stopAnswer(chat.id),
@@ -220,7 +259,7 @@ function errorKeyOf(error: Error, code: ApiError['error'] | null) {
 function pendingQuestionOf(message: ChatMessage | undefined): string | null {
   if (message?.role !== 'assistant') return null;
   const part = message.parts.find(
-    (candidate) => candidate.type === 'tool-ask_user' && candidate.state === 'input-available',
+    (candidate) => candidate.type === 'tool-ask' && candidate.state === 'input-available',
   );
-  return part?.type === 'tool-ask_user' ? part.toolCallId : null;
+  return part?.type === 'tool-ask' ? part.toolCallId : null;
 }

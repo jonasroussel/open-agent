@@ -66,6 +66,10 @@ export const en = {
     searched: 'Searched the web: “{{query}}”',
     searchFailed: 'The web search did not work.',
   },
+  a2ui: {
+    invalid: 'This display could not be shown.',
+    saveFailed: 'Your change could not be saved.',
+  },
   tools: {
     searchConversations: 'Searched your conversations: “{{query}}”',
     readingConversation: 'Reading another conversation…',

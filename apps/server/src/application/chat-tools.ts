@@ -1,4 +1,11 @@
-import type { AskUserOutput, DocumentToolOutput, WebSearchOutput } from '@open-agent/shared';
+import {
+  normalizeBindingKeys,
+  validateSurface,
+  type AskOutput,
+  type DataModel,
+  type ShowUiOutput,
+} from '@open-agent/shared';
+import type { DocumentToolOutput, WebSearchOutput } from '@open-agent/shared';
 import { tool } from 'ai';
 import { z } from 'zod';
 
@@ -19,9 +26,36 @@ function toolOutput(artifact: Artifact): DocumentToolOutput {
   return { id: artifact.id, kind: artifact.kind, title: artifact.title, version: artifact.version };
 }
 
-const askInput = z.object({ question: z.string(), options: z.array(z.string()) });
-const ASK_DESCRIPTION =
-  'Ask the user one question when you cannot go on without a choice only they can make. Offer 2 to 4 short answers they can tap, or [] when none can be guessed; they may also type their own. Your answer stops until they reply, then goes on. An answer null means you may not ask again in this answer: decide yourself and say what you assumed.';
+const CATALOG =
+  'Components: a flat list, the first with id "root", each { "id", "component", ...props }, children named by id. Column { children: [ids] }; Row { children: [ids] }; Card { child: id }; Text { text (plain, **bold** only), variant?: "heading" | "body" | "caption" }; Badge { text }; Divider {}; Table { header: [strings], rows: [[strings]] }; Image { url: "/api/files/<id>", a file of the user only }; Checklist { items: [{ id, label }], checked: { "@path": "/checked" } }, an object item id → true; ChoiceChips { options: [{ value, label }], multiple?: boolean, value: { "@path": "/choice" } }, a string, or an array of strings when multiple. A { "@path": "/x" } is a JSON pointer into dataModel, which holds the starting values. At most 60 components.';
+
+/** Checked by `execute` rather than the schema: the model gets every mistake as one error it can fix. */
+const looseSurface = {
+  components: z.array(z.looseObject({ id: z.string(), component: z.string() })),
+  dataModel: z.record(z.string(), z.unknown()).optional(),
+};
+
+/** A small interface the user acts on; its state (what was ticked or chosen) is saved, and is its output. */
+export const showUiTool = tool({
+  description: `Show the user a small interactive interface in the answer. Use it only when the user has something to DO with the result: tick items (a shopping list, a packing list, steps to follow), choose between a few options, or compare a few items side by side. Never for a plain answer, never to decorate. Still write one short sentence of text with it. The output is the surface's current state: later in the conversation it tells what the user ticked or chose. ${CATALOG} Button { label, variant?: "primary" | "secondary", message }: tapping it sends "message" as the user's next message.`,
+  inputSchema: z.object({ title: z.string().optional(), ...looseSurface }).transform(normalizeBindingKeys),
+  execute: async (input): Promise<ShowUiOutput> => {
+    const validation = validateSurface(input, 'show');
+    if (!validation.ok) throw new ToolRefusal(`Invalid surface, nothing was shown:\n${validation.error}`);
+    return { dataModel: (input.dataModel ?? {}) as DataModel };
+  },
+});
+
+const ASK_DESCRIPTION = `Ask the user one question when the request cannot be answered without a choice only they can make. Draw the question as a small surface: the question as Text, and a few likely answers to tap, each a Button with its own event, or ChoiceChips with one send Button; a TextField when they may type their own. Your answer stops until they reply, then goes on: the output is { action: { name, context } }, the tapped event with its context's "@path" values filled in, or the name "reply" with { text } when they typed an answer instead. An action null means you may not ask again in this answer: decide yourself and say what you assumed. ${CATALOG} TextField { placeholder?, value: { "@path": "/answer" } }. Button { label, variant?: "primary" | "secondary", action: { event: { name, context?: { key: value or { "@path" } } } } }.`;
+
+/** Checked here: without `execute`, a surface that cannot be drawn would stop the answer for nothing. */
+const askInput = z
+  .object(looseSurface)
+  .transform(normalizeBindingKeys)
+  .superRefine((input, context) => {
+    const validation = validateSurface(input, 'ask');
+    if (!validation.ok) context.addIssue({ code: 'custom', message: validation.error });
+  });
 
 /**
  * Without `execute`, a call ends the answer until the user replies. Once a question was asked in this answer, the
@@ -32,7 +66,7 @@ export function askTool(alreadyAsked: boolean) {
   return tool({
     description: ASK_DESCRIPTION,
     inputSchema: askInput,
-    execute: async (): Promise<AskUserOutput> => ({ answer: null }),
+    execute: async (): Promise<AskOutput> => ({ action: null }),
   });
 }
 

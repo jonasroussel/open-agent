@@ -1,4 +1,4 @@
-import { MAX_CONVERSATION_TITLE_LENGTH } from '@open-agent/shared';
+import { MAX_CONVERSATION_TITLE_LENGTH, dataModelIsValid } from '@open-agent/shared';
 
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
 import {
@@ -9,6 +9,7 @@ import {
   type SnippetPart,
 } from '../domain/conversation.ts';
 import { visibleTo, type ConversationAccess, type ConversationMember, type MemberStatus } from '../domain/sharing.ts';
+import { withSurfaceState } from '../domain/surfaces.ts';
 import type { UserRepository } from '../domain/user-repository.ts';
 import type { User } from '../domain/user.ts';
 import type { AnswerRuns } from './answer-runs.ts';
@@ -177,6 +178,29 @@ export class Conversations {
     }
     const updated = await this.#participants.access(user, id);
     return { ok: true, view: await this.#view(user, updated ?? access) };
+  }
+
+  /**
+   * A participant ticked or chose something in a `show_ui` surface: its whole new state, which every participant's
+   * devices then load, and the model reads at the next answer.
+   */
+  async saveSurfaceState(
+    user: User,
+    id: string,
+    messageId: string,
+    toolCallId: string,
+    dataModel: unknown,
+  ): Promise<{ ok: true } | { ok: false; reason: 'not_found' | 'invalid_request' }> {
+    if (!dataModelIsValid(dataModel)) return { ok: false, reason: 'invalid_request' };
+    const access = await this.#participants.access(user, id);
+    if (!access) return { ok: false, reason: 'not_found' };
+    const message = await this.#conversations.findMessage(id, messageId);
+    if (!message) return { ok: false, reason: 'not_found' };
+    const changed = withSurfaceState(message, toolCallId, dataModel);
+    if (!changed.ok) return changed;
+    await this.#conversations.updateMessage(id, changed.message);
+    await this.#participants.publish(access.conversation, { type: 'conversation', id });
+    return { ok: true };
   }
 
   /**

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 
 import type {
   ApiError,
+  AskAction,
   ChatMessage,
   ChangeEvent,
   ArtifactDto,
@@ -459,12 +460,16 @@ export const CONVERSATION = '6f1c2a9e-3b7d-4c51-9a0e-1d2f3a4b5c6d';
 export const textOfMessage = (message: UIMessage) =>
   message.parts.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('');
 
-/** The history the client sends back once the user answered the questions of the last message. */
-export function answered(history: ChatMessage[], answer: string | null): ChatMessage[] {
+/**
+ * The history the client sends back once the user answered the questions of the last message: a text is the answer
+ * sent from the pre-analysis' question, an action a tap on one of the model's buttons.
+ */
+export function answered(history: ChatMessage[], answer: string | AskAction | null): ChatMessage[] {
+  const action = typeof answer === 'string' ? { name: 'send', context: { answer } } : answer;
   const last = history.at(-1)!;
   const parts = last.parts.map((part) =>
-    part.type === 'tool-ask_user' && part.state === 'input-available'
-      ? { ...part, state: 'output-available' as const, output: { answer } }
+    part.type === 'tool-ask' && part.state === 'input-available'
+      ? { ...part, state: 'output-available' as const, output: { action } }
       : part,
   );
   return [...history.slice(0, -1), { ...last, parts }];

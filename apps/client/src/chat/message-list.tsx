@@ -57,6 +57,8 @@ export function MessageList({
               onUndoMemory={conversation.undoMemory}
               onOpenDocument={onOpenDocument}
               onAnswer={!locked && ownTurn && index === lastIndex ? conversation.answer : null}
+              onSend={locked ? null : conversation.sendText}
+              onSaveSurface={conversation.saveSurface}
             />
           ),
         )}

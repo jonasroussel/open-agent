@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { ChatMessage } from './conversation.ts';
+import { QUESTION_SEND_EVENT, questionSurface } from './questions.ts';
 import { continuedHistory, visibleTo } from './sharing.ts';
 
 const OWNER = { id: 1, name: 'jonas', email: 'jonas@example.com' };
@@ -13,7 +14,7 @@ const user = (id: string, author = OWNER): ChatMessage => ({
   parts: [{ type: 'text', text: id }],
 });
 const answer = (id: string): ChatMessage => ({ id, role: 'assistant', parts: [{ type: 'text', text: id }] });
-const QUESTION = { question: 'Mer ?', options: [] };
+const QUESTION = questionSurface('Mer ?', [], 'fr');
 /** The assistant's message asking one question: pending, or answered with `reply`. */
 const asking = (id: string, reply?: string): ChatMessage => ({
   id,
@@ -21,13 +22,13 @@ const asking = (id: string, reply?: string): ChatMessage => ({
   parts: [
     { type: 'text', text: 'Une question.' },
     reply === undefined
-      ? { type: 'tool-ask_user', toolCallId: 'q1', state: 'input-available', input: QUESTION }
+      ? { type: 'tool-ask', toolCallId: 'q1', state: 'input-available', input: QUESTION }
       : {
-          type: 'tool-ask_user',
+          type: 'tool-ask',
           toolCallId: 'q1',
           state: 'output-available',
           input: QUESTION,
-          output: { answer: reply },
+          output: { action: { name: QUESTION_SEND_EVENT, context: { answer: reply } } },
         },
   ],
 });

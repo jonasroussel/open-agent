@@ -1,4 +1,4 @@
-import { fileKindOf, MAX_ASK_OPTIONS, type ChatMessage, type MemoryNotice, type WebResult } from '@open-agent/shared';
+import { fileKindOf, type AskAction, type ChatMessage, type DataModel, type MemoryNotice } from '@open-agent/shared';
 import { Link } from '@tanstack/react-router';
 import {
   AppWindow,
@@ -6,10 +6,8 @@ import {
   BookmarkPlus,
   Check,
   ChevronRight,
-  CornerDownRight,
   Copy,
   FileText,
-  Globe,
   Lightbulb,
   Pencil,
   RotateCcw,
@@ -17,15 +15,16 @@ import {
 import { Suspense, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { isRunning, isToolLinePart } from '@/a2ui/tool-surfaces.ts';
 import { BrandIcon } from '@/components/brand-icon.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Textarea } from '@/components/ui/textarea.tsx';
 import { FileChip } from '@/files/file-chip.tsx';
 import { cn } from '@/lib/utils.ts';
 
-import { ContextToolLine, isContextToolPart, siteOf } from './context-tool-line.tsx';
 import { isMadeFilePart, MadeFile } from './made-file.tsx';
 import { Markdown } from './markdown-loader.ts';
+import { Ask, ShowUi, ToolLine } from './surface-parts.tsx';
 
 function partsText(message: ChatMessage, type: 'text' | 'reasoning'): string {
   return message.parts
@@ -174,6 +173,8 @@ export function AssistantMessage({
   onUndoMemory,
   onOpenDocument,
   onAnswer,
+  onSend,
+  onSaveSurface,
 }: {
   message: ChatMessage;
   streaming: boolean;
@@ -181,15 +182,17 @@ export function AssistantMessage({
   onUndoMemory: (notice: MemoryNotice) => Promise<UndoOutcome>;
   onOpenDocument: (id: string) => void;
   /** Only for the last answer, while nothing streams: the user may still answer its questions. */
-  onAnswer: ((toolCallId: string, answer: string) => void) | null;
+  onAnswer: ((toolCallId: string, action: AskAction) => void) | null;
+  /** A surface's button sends its text: not while an answer is on its way. */
+  onSend: ((text: string) => void) | null;
+  onSaveSurface: (messageId: string, toolCallId: string, dataModel: DataModel) => Promise<boolean>;
 }) {
   const { t } = useTranslation();
   const text = partsText(message, 'text');
   const deepThinking = message.metadata?.route === 'reasoning';
   const notices = message.parts.flatMap((part) => (part.type === 'data-memory' ? [part.data] : []));
-  const searches = message.parts.flatMap((part) => (part.type === 'tool-web_search' ? [part] : []));
-  const lookups = message.parts.filter(isContextToolPart);
-  const lookingUp = lookups.some((part) => part.state === 'input-streaming' || part.state === 'input-available');
+  const lines = message.parts.filter(isToolLinePart);
+  const lookingUp = lines.some(isRunning);
   // A failed try the model then made right is no news for the user.
   const made = message.parts
     .filter(isMadeFilePart)
@@ -201,8 +204,9 @@ export function AssistantMessage({
   const documents = message.parts.flatMap((part) =>
     part.type === 'tool-create_document' || part.type === 'tool-update_document' ? [part] : [],
   );
-  const questions = message.parts.flatMap((part) => (part.type === 'tool-ask_user' ? [part] : []));
+  const questions = message.parts.flatMap((part) => (part.type === 'tool-ask' ? [part] : []));
   const asking = questions.some((part) => part.state !== 'output-available');
+  const surfaces = message.parts.flatMap((part) => (part.type === 'tool-show_ui' ? [part] : []));
   return (
     <div className='group flex gap-3'>
       <BrandIcon className='mt-1 hidden size-7 md:block' />
@@ -216,19 +220,11 @@ export function AssistantMessage({
           <div className='space-y-2 max-md:[&>:first-child>:first-child]:before:float-left max-md:[&>:first-child>:first-child]:before:w-7'>
             {/* A question comes before the work its answer led to. */}
             {questions.map((part) => (
-              <Question key={part.toolCallId} part={part} onAnswer={onAnswer} />
+              <Ask key={part.toolCallId} part={part} onAnswer={onAnswer} />
             ))}
             {deepThinking && <Reasoning text={partsText(message, 'reasoning')} thinking={streaming && !text} />}
-            {searches.map((search) => (
-              <WebSearchLine
-                key={search.toolCallId}
-                query={search.input?.query ?? ''}
-                results={search.state === 'output-available' ? search.output.results : null}
-                failed={search.state === 'output-error'}
-              />
-            ))}
-            {lookups.map((part) => (
-              <ContextToolLine key={part.toolCallId} part={part} />
+            {lines.map((part) => (
+              <ToolLine key={part.toolCallId} part={part} />
             ))}
             {documents.map((part) => (
               <DocumentCard key={part.toolCallId} part={part} onOpen={onOpenDocument} />
@@ -245,9 +241,20 @@ export function AssistantMessage({
               streaming &&
               documents.length === 0 &&
               made.length === 0 &&
+              surfaces.length === 0 &&
               !asking &&
               !lookingUp && <Dots />
             )}
+            {surfaces.map((part) => (
+              <ShowUi
+                key={part.toolCallId}
+                part={part}
+                messageId={message.id}
+                streaming={streaming}
+                onSave={onSaveSurface}
+                onSend={onSend}
+              />
+            ))}
           </div>
         </div>
         {notices.map((notice) => (
@@ -264,53 +271,6 @@ export function AssistantMessage({
           </MessageActions>
         )}
       </div>
-    </div>
-  );
-}
-
-type QuestionPart = Extract<ChatMessage['parts'][number], { type: 'tool-ask_user' }>;
-
-/**
- * A question to the user, from the pre-analysis or from the model: answers to tap while it waits, then the one given.
- * A question the model was not allowed to ask (a second one in the same answer) does not show.
- */
-function Question({
-  part,
-  onAnswer,
-}: {
-  part: QuestionPart;
-  onAnswer: ((toolCallId: string, answer: string) => void) | null;
-}) {
-  const { t } = useTranslation();
-  if (part.state === 'input-streaming' || !part.input) return null;
-  const answer = part.state === 'output-available' ? part.output.answer : undefined;
-  if (answer === null) return null;
-  const waiting = answer === undefined && onAnswer !== null;
-  return (
-    <div className='grid gap-2.5'>
-      <p className='text-[15px] leading-relaxed whitespace-pre-wrap'>{part.input.question}</p>
-      {waiting && (part.input.options?.length ?? 0) > 0 && (
-        <div className='flex flex-wrap gap-2'>
-          {part.input.options!.slice(0, MAX_ASK_OPTIONS).map((option) => (
-            <Button
-              key={option}
-              variant='outline'
-              size='sm'
-              className='bg-background h-auto min-h-8 rounded-full py-1.5 text-left whitespace-normal'
-              onClick={() => onAnswer(part.toolCallId, option)}
-            >
-              {option}
-            </Button>
-          ))}
-        </div>
-      )}
-      {waiting && <p className='text-muted-foreground text-xs'>{t('chat.answerHint')}</p>}
-      {answer !== undefined && (
-        <p className='text-primary flex items-start gap-1.5 text-sm font-medium'>
-          <CornerDownRight className='mt-0.5 size-4 shrink-0' />
-          <span className='whitespace-pre-wrap'>{answer}</span>
-        </p>
-      )}
     </div>
   );
 }
@@ -424,46 +384,6 @@ function Reasoning({ text, thinking }: { text: string; thinking: boolean }) {
         {text && <ChevronRight className={cn('size-4 transition-transform', open && 'rotate-90')} />}
       </button>
       {open && <p className='mt-2 border-l-2 pl-3 whitespace-pre-wrap'>{text}</p>}
-    </div>
-  );
-}
-
-/** A search the model made: pulsing while it runs, then the sites it read, as links (one per site). */
-function WebSearchLine({ query, results, failed }: { query: string; results: WebResult[] | null; failed: boolean }) {
-  const { t } = useTranslation();
-  const searching = !results && !failed;
-  const sites = new Map<string, WebResult>();
-  for (const result of results ?? []) {
-    const site = siteOf(result.url);
-    if (!sites.has(site)) sites.set(site, result);
-  }
-  let label = t('chat.searched', { query });
-  if (searching) label = t('chat.searching', { query });
-  if (failed) label = t('chat.searchFailed');
-
-  return (
-    <div className='text-muted-foreground grid gap-2 text-sm'>
-      <div className={cn('flex items-center gap-1.5', searching && 'animate-pulse')}>
-        <Globe className='size-4 shrink-0' />
-        <span className='min-w-0'>{label}</span>
-      </div>
-      {sites.size > 0 && (
-        <ul className='flex flex-wrap gap-1.5'>
-          {[...sites].map(([site, result]) => (
-            <li key={site}>
-              <a
-                href={result.url}
-                target='_blank'
-                rel='noreferrer'
-                title={result.title}
-                className='bg-background hover:text-foreground block max-w-48 truncate rounded-full border px-2.5 py-0.5 text-xs'
-              >
-                {site}
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

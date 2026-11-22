@@ -1,5 +1,6 @@
 import {
   API_ROUTES,
+  isLocale,
   MAX_SEARCH_LENGTH,
   type ConversationResponse,
   type ListConversationsResponse,
@@ -14,6 +15,7 @@ import type { ChatTurns } from '../../application/chat-turns.ts';
 import type { Conversations } from '../../application/conversations.ts';
 import type { Quotas } from '../../application/quotas.ts';
 import type { Sharing, SharingResult } from '../../application/sharing.ts';
+import type { UserAccess } from '../../application/user-access.ts';
 import { personOf, type User } from '../../domain/user.ts';
 import { error, readJson, type ServerHandle } from './http.ts';
 import { toConversationDto, toInvitationDto, toQuotaResponse } from './presenters.ts';
@@ -24,6 +26,7 @@ export type ChatHttpDependencies = {
   sharing: Sharing;
   chatTurns: ChatTurns;
   quotas: Quotas;
+  userAccess: UserAccess;
 };
 
 const CHAT_STATUS = {
@@ -40,7 +43,14 @@ function sharingResponse(result: SharingResult): Response {
   return error(result.reason, result.reason === 'not_found' ? 404 : 400);
 }
 
-export function createChatRoutes({ signedInUser, conversations, sharing, chatTurns, quotas }: ChatHttpDependencies) {
+export function createChatRoutes({
+  signedInUser,
+  conversations,
+  sharing,
+  chatTurns,
+  quotas,
+  userAccess,
+}: ChatHttpDependencies) {
   const withUser = async (request: BunRequest, handle: (user: User) => Promise<Response>) => {
     const user = await signedInUser(request);
     return user ? handle(user) : error('not_signed_in', 401);
@@ -83,6 +93,24 @@ export function createChatRoutes({ signedInUser, conversations, sharing, chatTur
             ? new Response(null, { status: 204 })
             : error('not_found', 404),
         ),
+    },
+
+    [API_ROUTES.surfaceState]: {
+      PUT: (request: BunRequest<typeof API_ROUTES.surfaceState>) =>
+        withUser(request, async (user) => {
+          const body = await readJson(request);
+          if (!body) return error('invalid_request', 400);
+          const { conversationId, messageId, toolCallId } = request.params;
+          const result = await conversations.saveSurfaceState(
+            user,
+            conversationId,
+            messageId,
+            toolCallId,
+            body.dataModel,
+          );
+          if (!result.ok) return error(result.reason, result.reason === 'not_found' ? 404 : 400);
+          return new Response(null, { status: 204 });
+        }),
     },
 
     [API_ROUTES.conversationMembers]: {
@@ -133,7 +161,11 @@ export function createChatRoutes({ signedInUser, conversations, sharing, chatTur
           const body = await readJson(request);
           // A thinking model can be silent for longer than Bun's 10 s idle timeout.
           server.timeout(request, 0);
-          const result = await chatTurns.start(user, body?.id, body?.messages, body?.ephemeral, body?.comparison);
+          // The language of the app the person is using now; the one saved at sign-in may be stale.
+          const locale = body?.locale;
+          if (locale !== undefined && !isLocale(locale)) return error('invalid_request', 400);
+          const speaker = locale === undefined ? user : await userAccess.useLocale(user, locale);
+          const result = await chatTurns.start(speaker, body?.id, body?.messages, body?.ephemeral, body?.comparison);
           if (!result.ok) return error(result.reason, CHAT_STATUS[result.reason]);
           // The browser may leave at any time: the answer goes on, and `chatStream` gives it back.
           return createUIMessageStreamResponse({ stream: result.stream });

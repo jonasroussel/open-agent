@@ -54,6 +54,16 @@ export class UserAccess {
     return this.#users.findById(id);
   }
 
+  /**
+   * The language of the app the person is using, sent with each message: the one of the sign-in form may be stale.
+   * Labels, instructions and emails follow it.
+   */
+  async useLocale(user: User, locale: Locale): Promise<User> {
+    if (locale === user.locale) return user;
+    await this.#users.setLocale(user.id, locale);
+    return { ...user, locale };
+  }
+
   /** New address: creates the user. Revoked: restores the access. Either way, emails an invitation. */
   async invite(admin: User, rawEmail: string, locale: Locale): Promise<InviteResult> {
     const email = normalizeEmail(rawEmail);

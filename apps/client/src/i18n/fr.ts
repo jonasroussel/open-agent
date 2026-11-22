@@ -80,6 +80,10 @@ export const fr: Translation = {
     searched: 'Recherche sur le web : « {{query}} »',
     searchFailed: 'La recherche sur le web n’a pas abouti.',
   },
+  a2ui: {
+    invalid: 'Cet affichage n’a pas pu être montré.',
+    saveFailed: 'Votre modification n’a pas pu être enregistrée.',
+  },
   tools: {
     searchConversations: 'A cherché dans vos conversations : « {{query}} »',
     readingConversation: 'Lecture d’une autre conversation…',

@@ -1,5 +1,6 @@
 import type { UIMessage } from 'ai';
 
+import type { AskInput, AskOutput, ShowUiInput, ShowUiOutput } from './a2ui.ts';
 import type { FileKind } from './files.ts';
 import type { Locale } from './locale.ts';
 import type { ModelCapability, ModelRole, PromptName } from './settings.ts';
@@ -46,11 +47,12 @@ export const API_ROUTES = {
   /** GET `?q=`: full-text search in the signed-in user's history, as `SearchResponse`. */
   search: '/api/search',
   /**
-   * POST, the AI SDK chat transport: `{ id, messages, ephemeral?, comparison? }` with the whole history; creates the
-   * conversation on its first message, ephemeral when `ephemeral` is `true` (outside the history, deleted with DELETE on
-   * the conversation when its page is left), or the right thread of a comparison with `comparison` (`ComparisonRequest`,
-   * admin only). Answers a UI message stream. The answer is the server's: leaving the page or losing the connection
-   * stops nothing.
+   * POST, the AI SDK chat transport: `{ id, messages, ephemeral?, comparison?, locale? }` with the whole history;
+   * creates the conversation on its first message, ephemeral when `ephemeral` is `true` (outside the history, deleted
+   * with DELETE on the conversation when its page is left), or the right thread of a comparison with `comparison`
+   * (`ComparisonRequest`, admin only). `locale`: the language of the app the person is using, which becomes theirs
+   * (labels, instructions, emails). Answers a UI message stream. The answer is the server's: leaving the page or losing
+   * the connection stops nothing.
    */
   chat: '/api/chat',
   /**
@@ -83,6 +85,11 @@ export const API_ROUTES = {
   filePreview: '/api/files/:fileId/preview',
   /** GET: the conversation's canvas documents, as `ListArtifactsResponse`. */
   conversationArtifacts: '/api/conversations/:conversationId/artifacts',
+  /**
+   * PUT `SaveSurfaceStateBody`: the whole data model of a `show_ui` surface, after a participant ticked or chose
+   * something. 204.
+   */
+  surfaceState: '/api/conversations/:conversationId/messages/:messageId/surfaces/:toolCallId',
   /** GET: one document with its latest content and its versions, as `ArtifactResponse`. */
   artifact: '/api/artifacts/:artifactId',
   /** POST `SaveArtifactBody`: the user's edit, or an old version brought back. */
@@ -292,16 +299,12 @@ export type CreateDocumentInput = { kind: ArtifactKind; title: string; content: 
 export type UpdateDocumentInput = { id: string; content: string };
 export type DocumentToolOutput = { id: string; kind: ArtifactKind; title: string; version: number };
 
-/** A question to the user, with up to `MAX_ASK_OPTIONS` short answers to tap; they may also type their own. */
-export type AskUserInput = { question: string; options: string[] };
-/**
- * The user's answer. `null`: never answered, either because the user wrote something else, or because a question was
- * already asked in this answer and the model must decide alone.
- */
-export type AskUserOutput = { answer: string | null };
-
+/** At most this many answers to tap in the pre-analysis' question. */
 export const MAX_ASK_OPTIONS = 4;
-/** The longest answer the server accepts: a typed answer is a few sentences, not a document to attach. */
+/**
+ * The longest answer to an `ask` the server accepts, as the JSON of its action's context: a typed answer is a few
+ * sentences, not a document to attach.
+ */
 export const MAX_ASK_ANSWER_LENGTH = 4000;
 
 /** One of the user's other conversations the model found by its words. */
@@ -383,7 +386,8 @@ export type ChatTools = {
   web_search: { input: WebSearchInput; output: WebSearchOutput };
   create_document: { input: CreateDocumentInput; output: DocumentToolOutput };
   update_document: { input: UpdateDocumentInput; output: DocumentToolOutput };
-  ask_user: { input: AskUserInput; output: AskUserOutput };
+  show_ui: { input: ShowUiInput; output: ShowUiOutput };
+  ask: { input: AskInput; output: AskOutput };
   search_conversations: { input: { query: string }; output: SearchConversationsOutput };
   read_conversation: { input: { id: string }; output: ReadConversationOutput };
   list_files: { input: Record<string, never>; output: ListFilesOutput };

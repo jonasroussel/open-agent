@@ -145,7 +145,7 @@ export function createRoutes({
 
     ...createAdminRoutes({ signedInUser, userAccess, quotas }),
     ...createAdminSettingsRoutes({ signedInUser, settings, modelDirectory, userAccess, memory }),
-    ...createChatRoutes({ signedInUser, conversations, sharing, chatTurns, quotas }),
+    ...createChatRoutes({ signedInUser, conversations, sharing, chatTurns, quotas, userAccess }),
     ...createMemoryRoutes({ signedInUser, memory, messageMemory }),
     ...createCommandRoutes({ signedInUser, commands }),
     ...createOwnKeyRoutes({ signedInUser, ownKeys }),

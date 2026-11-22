@@ -13,6 +13,7 @@ import { DefaultChatTransport } from 'ai';
 import { sessionQuery } from '@/auth/session.ts';
 import { commandsQuery } from '@/commands/commands-query.ts';
 import { libraryFilesQuery } from '@/files/library.ts';
+import { currentLocale } from '@/i18n/i18n.ts';
 import { api, apiFetch } from '@/lib/api.ts';
 import { queryClient } from '@/lib/query-client.ts';
 import { memoryRulesQuery } from '@/memory/memory-query.ts';
@@ -21,11 +22,16 @@ import { quotaQuery } from '@/quota/quota-query.ts';
 import { setAnswering } from './answering-store.ts';
 import { conversationQuery, conversationsQuery } from './conversations-query.ts';
 
-const transport = new DefaultChatTransport<ChatMessage>({ api: API_ROUTES.chat, fetch: apiFetch });
+// Read at each request: a language switched meanwhile applies to the next message.
+const transport = new DefaultChatTransport<ChatMessage>({
+  api: API_ROUTES.chat,
+  body: () => ({ locale: currentLocale() }),
+  fetch: apiFetch,
+});
 /** The server creates the conversation ephemeral; its later messages stay so whatever is sent. */
 const ephemeralTransport = new DefaultChatTransport<ChatMessage>({
   api: API_ROUTES.chat,
-  body: { ephemeral: true },
+  body: () => ({ ephemeral: true, locale: currentLocale() }),
   fetch: apiFetch,
 });
 
@@ -37,7 +43,7 @@ function questionsAnswered({ messages }: { messages: ChatMessage[] }): boolean {
   const last = messages.at(-1);
   if (last?.role !== 'assistant') return false;
   const lastStep = last.parts.slice(last.parts.findLastIndex((part) => part.type === 'step-start') + 1);
-  const questions = lastStep.filter((part) => part.type === 'tool-ask_user');
+  const questions = lastStep.filter((part) => part.type === 'tool-ask');
   return questions.length > 0 && questions.every((part) => part.state === 'output-available');
 }
 
@@ -75,7 +81,7 @@ export function chatFor(
     if (comparison) {
       chatTransport = new DefaultChatTransport<ChatMessage>({
         api: API_ROUTES.chat,
-        body: { comparison },
+        body: () => ({ comparison, locale: currentLocale() }),
         fetch: apiFetch,
       });
     }

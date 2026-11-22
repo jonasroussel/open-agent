@@ -14,12 +14,14 @@ import type { InferUIMessageChunk } from 'ai';
 import { z } from 'zod';
 
 import type { ConversationRepository } from '../domain/conversation-repository.ts';
-import { answersQuestions, hasAsked, isOutsideHistory, withAnsweredQuestions } from '../domain/conversation.ts';
+import { isOutsideHistory } from '../domain/conversation.ts';
 import type { ChatMessage, Conversation } from '../domain/conversation.ts';
 import { attachmentsAreValid } from '../domain/library-file.ts';
 import type { MemoryRule } from '../domain/memory.ts';
+import { answersQuestions, hasAsked, questionSurface, withAnsweredQuestions } from '../domain/questions.ts';
 import { isExhausted } from '../domain/quota.ts';
 import { continuedHistory, signedBy, withAuthorNames } from '../domain/sharing.ts';
+import { withSavedSurfaceStates } from '../domain/surfaces.ts';
 import { nameOf, personOf } from '../domain/user.ts';
 import type { User } from '../domain/user.ts';
 import type { AnswerRuns } from './answer-runs.ts';
@@ -34,7 +36,7 @@ import {
   withNotes,
   withoutDocumentBodies,
 } from './chat-prompt.ts';
-import { askTool, documentTools, MAX_SEARCHES, searchTool } from './chat-tools.ts';
+import { askTool, documentTools, MAX_SEARCHES, searchTool, showUiTool } from './chat-tools.ts';
 import type { Commands } from './commands.ts';
 import type { ContextTools } from './context-tools.ts';
 import { ConversationNaming } from './conversation-naming.ts';
@@ -341,7 +343,12 @@ export class ChatTurns {
           const deleted = ephemeral && !(await this.#conversations.find(conversation.id));
           // Stopped after 10 minutes, its run ended already: a newer answer may have begun there since.
           if (!deleted && !this.#runs.replaced(conversation.id, abortSignal)) {
-            await this.#conversations.replaceMessages(conversation.id, history, this.#clock.now());
+            const saved = await this.#conversations.messages(conversation.id);
+            await this.#conversations.replaceMessages(
+              conversation.id,
+              withSavedSurfaceStates(history, saved),
+              this.#clock.now(),
+            );
           }
         } finally {
           this.#runs.end(conversation.id, abortSignal);
@@ -367,14 +374,14 @@ export class ChatTurns {
             : Promise.resolve(null);
 
         if (analysis.clarifyingQuestion) {
-          // The same question the model would ask with `ask_user`: the user taps an option or types an answer.
+          // The same question the model would ask with `ask`: the user taps an option or types an answer.
           writer.write({ type: 'start', messageId, messageMetadata: { route: 'clarify' } });
           writer.write({ type: 'start-step' });
           writer.write({
             type: 'tool-input-available',
             toolCallId: `ask-${messageId}`,
-            toolName: 'ask_user',
-            input: { question: analysis.clarifyingQuestion, options: analysis.clarifyingOptions },
+            toolName: 'ask',
+            input: questionSurface(analysis.clarifyingQuestion, analysis.clarifyingOptions, user.locale),
           });
           writer.write({ type: 'finish-step' });
         } else {
@@ -404,7 +411,8 @@ export class ChatTurns {
             ...context.tools,
             ...this.#makingTools.for(user, conversation.id, abortSignal),
             save_command: this.#commands.toolFor(user),
-            ask_user: askTool(resumed !== null && hasAsked(resumed)),
+            show_ui: showUiTool,
+            ask: askTool(resumed !== null && hasAsked(resumed)),
           };
           const withoutSearch = Object.keys(tools).filter((name) => name !== 'web_search') as (keyof typeof tools)[];
           const searchFirst = this.#webSearch !== null && analysis.webSearch;
